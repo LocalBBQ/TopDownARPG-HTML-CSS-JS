@@ -54,7 +54,7 @@ const PlayerCombatRenderer = {
 
     drawSword(ctx, screenX, screenY, transform, movement, combat, camera) {
         if (!movement || !combat || !transform) return;
-        const swordLength = (combat.attackRange || 80) * 0.32 * camera.zoom;
+        const swordLength = (combat.attackRange || 100) * 0.32 * camera.zoom;
         const bladeWidth = Math.max(2, 4 / camera.zoom);
         const sideOffset = (transform.width / 2 + 4) * camera.zoom;
         const gripX = screenX + Math.cos(movement.facingAngle + Math.PI / 2) * sideOffset;

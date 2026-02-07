@@ -88,7 +88,8 @@ class PlayerAttack {
             duration: stageProps.duration,
             stageName: stageProps.stageName,
             animationKey: stageProps.animationKey,
-            isCircular: stageProps.isCircular
+            isCircular: stageProps.isCircular,
+            knockbackForce: stageProps.knockbackForce
         };
     }
     

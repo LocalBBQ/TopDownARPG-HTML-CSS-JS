@@ -28,6 +28,9 @@ class Combat {
         this.blockDamageReduction = 1.0; // 100% damage reduction when blocking
         this.blockStaminaCost = 5; // Stamina cost to start blocking (one-time)
         this.blockArc = Math.PI * 0.75; // 135 degrees - can block attacks from front
+
+        // Current attack knockback (player only; from weapon/stage config, used when applying hit)
+        this._currentAttackKnockbackForce = null;
     }
     
     // Set weapon for player
@@ -98,6 +101,7 @@ class Combat {
             // Player attack with weapon combos
             const attackData = this.playerAttack.startAttack(targetX, targetY, this.entity);
             if (attackData) {
+                this._currentAttackKnockbackForce = attackData.knockbackForce ?? null;
                 // Update legacy properties for compatibility
                 this.attackRange = attackData.range;
                 this.attackDamage = attackData.damage;
@@ -123,6 +127,7 @@ class Combat {
                 setTimeout(() => {
                     this.currentAttackIsCircular = false;
                     this.currentAttackAnimationKey = null;
+                    this._currentAttackKnockbackForce = null;
                     this.playerAttack.endAttack();
                 }, attackData.duration);
                 
@@ -186,6 +191,10 @@ class Combat {
             return this.playerAttack.hitEnemies;
         }
         return new Set();
+    }
+
+    get currentAttackKnockbackForce() {
+        return this._currentAttackKnockbackForce;
     }
     
     get windUpProgress() {

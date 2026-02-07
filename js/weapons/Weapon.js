@@ -1,6 +1,6 @@
 // Base weapon class - defines weapon types and their combos
 class Weapon {
-    constructor(name, baseRange, baseDamage, baseArcDegrees, cooldown, comboConfig, comboWindow = 1.5) {
+    constructor(name, baseRange, baseDamage, baseArcDegrees, cooldown, comboConfig, comboWindow = 1.5, knockback = null) {
         this.name = name;
         this.baseRange = baseRange;
         this.baseDamage = baseDamage;
@@ -8,6 +8,7 @@ class Weapon {
         this.cooldown = cooldown;
         this.comboConfig = comboConfig; // Array of combo stage configs
         this.comboWindow = comboWindow;
+        this.knockback = knockback; // Optional { force } for weapon-level default
     }
 
     static fromConfig(config) {
@@ -19,7 +20,8 @@ class Weapon {
             config.baseArcDegrees ?? 60,
             config.cooldown ?? 0.3,
             stages,
-            config.comboWindow ?? 1.5
+            config.comboWindow ?? 1.5,
+            config.knockback ?? null
         );
     }
     
@@ -37,6 +39,8 @@ class Weapon {
             ? Utils.degToRad(stageConfig.arcDegrees)
             : (stageConfig.arc != null ? stageConfig.arc : Utils.degToRad(this.baseArcDegrees));
         const isCircular = arcDegrees >= 360;
+        // Knockback: stage override → weapon default → null (caller uses player.knockback.force)
+        const knockbackForce = stageConfig.knockbackForce ?? stageConfig.knockback?.force ?? this.knockback?.force ?? null;
         return {
             range: this.baseRange * (stageConfig.rangeMultiplier || 1.0),
             damage: this.baseDamage * (stageConfig.damageMultiplier || 1.0),
@@ -47,7 +51,8 @@ class Weapon {
             dashDuration: stageConfig.dashDuration || 0,
             stageName: stageConfig.name || `stage${stage}`,
             animationKey: stageConfig.animationKey || 'melee',
-            isCircular
+            isCircular,
+            knockbackForce
         };
     }
     

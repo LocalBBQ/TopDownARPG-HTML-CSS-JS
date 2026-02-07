@@ -1,4 +1,4 @@
-// Enemy Manager - manages enemy entities
+add=// Enemy Manager - manages enemy entities
 class EnemyManager {
     constructor() {
         this.enemies = [];
@@ -264,13 +264,12 @@ class EnemyManager {
                     enemyHealth.takeDamage(combat.attackDamage);
                     hitEnemies.push(enemy);
                     
-                    // Apply knockback to enemy
+                    // Apply knockback to enemy (stage/weapon config or player default)
                     const enemyMovement = enemy.getComponent(Movement);
                     if (enemyMovement) {
-                        // Calculate direction from player to enemy
                         const dx = enemyTransform.x - transform.x;
                         const dy = enemyTransform.y - transform.y;
-                        const knockbackForce = GameConfig.player.knockback.force;
+                        const knockbackForce = combat.currentAttackKnockbackForce ?? GameConfig.player.knockback.force;
                         enemyMovement.applyKnockback(dx, dy, knockbackForce);
                     }
                     
@@ -355,25 +354,18 @@ class EnemyManager {
                     
                     playerHealth.takeDamage(finalDamage, blocked);
                     
-                    // Apply knockback to player if not blocked
-                    // Blocking prevents knockback entirely
+                    // Apply knockback to player if not blocked (per-attack: lunge.knockback or type default)
                     if (!blocked && playerMovement && (!playerCombat || !playerCombat.isBlocking)) {
-                        // Get enemy type to determine knockback force
                         const ai = enemy.getComponent(AI);
                         const enemyType = ai ? ai.enemyType : 'goblin';
                         const enemyConfig = GameConfig.enemy.types[enemyType] || GameConfig.enemy.types.goblin;
                         const knockbackConfig = enemyConfig.knockback || { force: 160, decay: 0.88 };
-                        
-                        // Lunge attacks have stronger knockback (1.5x multiplier)
-                        const lungeKnockbackForce = knockbackConfig.force * 1.5;
-                        
-                        // Calculate direction from enemy to player
+                        const lungeKnockbackForce = enemyConfig.lunge?.knockback?.force ?? knockbackConfig.force;
                         const dx = playerTransform.x - enemyTransform.x;
                         const dy = playerTransform.y - enemyTransform.y;
                         playerMovement.applyKnockback(dx, dy, lungeKnockbackForce);
                     }
                     
-                    // Mark attack as processed to prevent multiple damage applications
                     if (enemyCombat.enemyAttack) {
                         enemyCombat.enemyAttack.attackProcessed = true;
                     }
@@ -414,23 +406,18 @@ class EnemyManager {
                     // Deal damage to player
                     playerHealth.takeDamage(finalDamage, blocked);
                     
-                    // Apply knockback to player if not blocked
-                    // Blocking prevents knockback entirely
+                    // Apply knockback to player if not blocked (normal attack: type knockback)
                     if (!blocked && playerMovement && (!playerCombat || !playerCombat.isBlocking)) {
-                        // Get enemy type to determine knockback force
                         const ai = enemy.getComponent(AI);
                         const enemyType = ai ? ai.enemyType : 'goblin';
                         const enemyConfig = GameConfig.enemy.types[enemyType] || GameConfig.enemy.types.goblin;
                         const knockbackConfig = enemyConfig.knockback || { force: 160, decay: 0.88 };
-                        
-                        // Calculate direction from enemy to player
                         const dx = playerTransform.x - enemyTransform.x;
                         const dy = playerTransform.y - enemyTransform.y;
                         playerMovement.applyKnockback(dx, dy, knockbackConfig.force);
                     }
                 }
                 
-                // Mark attack as processed to prevent multiple damage applications
                 if (enemyCombat.enemyAttack) {
                     enemyCombat.enemyAttack.attackProcessed = true;
                 }

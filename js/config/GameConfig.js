@@ -48,7 +48,7 @@ const GameConfig = {
             staminaCost: 15 // stamina cost to dodge
         },
         knockback: {
-            force: 250, // Knockback force for player attacks (pixels per second initial velocity)
+            force: 550, // Knockback force for player attacks (pixels per second initial velocity)
             decay: 0.85 // Friction factor (higher = less friction, more distance)
         }
     },
@@ -75,7 +75,8 @@ const GameConfig = {
                     chargeTime: 0.8, // Time to charge up the lunge
                     lungeSpeed: 300, // Speed during lunge
                     lungeDistance: 120, // Maximum distance to lunge
-                    lungeDamage: 8 // Damage dealt by lunge (higher than normal attack)
+                    lungeDamage: 8, // Damage dealt by lunge (higher than normal attack)
+                    knockback: { force: 240 } // Per-attack knockback (default type is 160)
                 }
             },
             skeleton: {
