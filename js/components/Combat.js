@@ -3,6 +3,8 @@ class Combat {
     constructor(attackRange, attackDamage, attackArc, cooldown, windUpTime = 0.5, isPlayer = false, weapon = null) {
         this.entity = null;
         this.isPlayer = isPlayer;
+        this.currentAttackIsCircular = false;
+        this.currentAttackAnimationKey = null;
         
         // Use appropriate attack handler
         if (isPlayer) {
@@ -100,6 +102,8 @@ class Combat {
                 this.attackRange = attackData.range;
                 this.attackDamage = attackData.damage;
                 this.attackArc = attackData.arc;
+                this.currentAttackIsCircular = attackData.isCircular === true;
+                this.currentAttackAnimationKey = attackData.animationKey || null;
                 
                 // Emit attack event
                 if (this.entity && this.entity.systems) {
@@ -117,6 +121,8 @@ class Combat {
                 
                 // Set timeout to end attack
                 setTimeout(() => {
+                    this.currentAttackIsCircular = false;
+                    this.currentAttackAnimationKey = null;
                     this.playerAttack.endAttack();
                 }, attackData.duration);
                 

@@ -37,7 +37,7 @@ class EnemyManager {
             .addComponent(new Transform(x, y, 25, 25))
             .addComponent(new Health(config.maxHealth))
             .addComponent(new EnemyMovement(config.speed, type)) // Pass enemy type for type-specific behavior
-            .addComponent(new Combat(config.attackRange, config.attackDamage, Math.PI / 2, config.attackCooldown, config.windUpTime || 0.5, false)) // isPlayer=false
+            .addComponent(new Combat(config.attackRange, config.attackDamage, Utils.degToRad(config.attackArcDegrees ?? 90), config.attackCooldown, config.windUpTime || 0.5, false)) // isPlayer=false
             .addComponent(ai)
             .addComponent(new Renderable('enemy', { color: config.color }));
         
@@ -218,8 +218,8 @@ class EnemyManager {
         const rangeSensitivity = 30; // Extra 30 pixels of detection range
         const arcSensitivity = 0.3; // Extra ~17 degrees on each side
         
-        // Check if this is a 360 attack (combo stage 3)
-        const is360Attack = combat.comboStage === 3;
+        // Check if this is a 360/circular attack (shape-based, not stage index)
+        const is360Attack = combat.currentAttackIsCircular;
         
         for (const enemy of this.enemies) {
             const enemyHealth = enemy.getComponent(Health);
@@ -282,9 +282,9 @@ class EnemyManager {
             }
         }
         
-        // Only mark as processed for non-extended attacks (stage 1 & 2)
-        // Stage 3 continues checking during extended window
-        if (combat.isPlayer && combat.playerAttack && combat.playerAttack.comboStage !== 3) {
+        // Only mark as processed for non-extended attacks
+        // Circular attacks continue checking during extended window
+        if (combat.isPlayer && combat.playerAttack && !combat.currentAttackIsCircular) {
             // Player attacks handle their own processing
         } else if (combat.enemyAttack) {
             combat.enemyAttack.attackProcessed = true;
