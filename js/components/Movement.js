@@ -106,8 +106,18 @@ class Movement {
 
         const obstacleManager = systems ? systems.get('obstacles') : null;
         const entityManager = systems ? systems.get('entities') : null;
-        let newX = transform.x + this.velocityX * deltaTime;
-        let newY = transform.y + this.velocityY * deltaTime;
+        const renderable = this.entity.getComponent(Renderable);
+        const isPlayer = renderable && renderable.type === 'player';
+        const allowSwampPools = isPlayer ? { allowSwampPools: true } : null;
+
+        let vx = this.velocityX, vy = this.velocityY;
+        if (obstacleManager && isPlayer) {
+            const mul = obstacleManager.getSwampPoolSpeedMultiplier(transform.x, transform.y, transform.width, transform.height);
+            vx *= mul;
+            vy *= mul;
+        }
+        let newX = transform.x + vx * deltaTime;
+        let newY = transform.y + vy * deltaTime;
 
         // Check for entity collisions (player-enemy collisions)
         const wouldCollideWithEntity = this.checkEntityCollision(
@@ -115,9 +125,9 @@ class Movement {
             entityManager, this.entity
         );
 
-        // Check for obstacle collisions
-        const wouldCollideWithObstacle = obstacleManager && 
-            !obstacleManager.canMoveTo(newX, newY, transform.width, transform.height);
+        // Check for obstacle collisions (player can pass through swamp pools)
+        const wouldCollideWithObstacle = obstacleManager &&
+            !obstacleManager.canMoveTo(newX, newY, transform.width, transform.height, allowSwampPools);
 
         if (wouldCollideWithEntity || wouldCollideWithObstacle) {
             // If knocked back and hitting obstacle, stop knockback immediately
@@ -134,7 +144,7 @@ class Movement {
                 const canMoveX = !this.checkEntityCollision(
                     newX, transform.y, transform.width, transform.height,
                     entityManager, this.entity
-                ) && (!obstacleManager || obstacleManager.canMoveTo(newX, transform.y, transform.width, transform.height));
+                ) && (!obstacleManager || obstacleManager.canMoveTo(newX, transform.y, transform.width, transform.height, allowSwampPools));
 
                 if (canMoveX) {
                     transform.x = newX;
@@ -144,7 +154,7 @@ class Movement {
                     const canMoveY = !this.checkEntityCollision(
                         transform.x, newY, transform.width, transform.height,
                         entityManager, this.entity
-                    ) && (!obstacleManager || obstacleManager.canMoveTo(transform.x, newY, transform.width, transform.height));
+                    ) && (!obstacleManager || obstacleManager.canMoveTo(transform.x, newY, transform.width, transform.height, allowSwampPools));
 
                     if (canMoveY) {
                         transform.y = newY;

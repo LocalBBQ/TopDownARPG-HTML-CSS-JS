@@ -129,6 +129,21 @@ class PlayerMovement extends Movement {
                     this.isKnockedBack = false;
                     this.knockbackVelocityX = 0;
                     this.knockbackVelocityY = 0;
+                    // Resume movement from currently held keys so player doesn't have to re-press
+                    const inputSystem = systems ? systems.get('input') : null;
+                    if (inputSystem) {
+                        let moveX = 0;
+                        let moveY = 0;
+                        if (inputSystem.isKeyPressed('w')) moveY -= 1;
+                        if (inputSystem.isKeyPressed('s')) moveY += 1;
+                        if (inputSystem.isKeyPressed('a')) moveX -= 1;
+                        if (inputSystem.isKeyPressed('d')) moveX += 1;
+                        if (moveX !== 0 || moveY !== 0) {
+                            const normalized = Utils.normalize(moveX, moveY);
+                            this.velocityX = normalized.x * this.speed;
+                            this.velocityY = normalized.y * this.speed;
+                        }
+                    }
                 }
             } else {
                 // Handle blocking - reduce speed while blocking

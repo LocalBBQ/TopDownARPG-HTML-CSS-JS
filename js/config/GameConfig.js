@@ -30,12 +30,12 @@ const GameConfig = {
         speed: 100, // pixels per second (now properly scaled by deltaTime)
         maxHealth: 100,
         maxStamina: 50,
-        staminaRegen: 5, // stamina per second (scaled by deltaTime)
+        staminaRegen: 6.75, // stamina per second (scaled by deltaTime)
         attackRange: 80,
         attackDamage: 15,
         attackArcDegrees: 60,
         attackCooldown: 0.3, // seconds - faster for combos (was 0.5)
-        color: '#4444ff',
+        color: '#8b8b9a', // steel (fallback when knight sprites not loaded)
         defaultWeapon: 'sword',
         chargedAttack: {
             minChargeTime: 0.5, // Minimum time to charge (seconds)
@@ -60,12 +60,14 @@ const GameConfig = {
             receivedMultiplier: 3.0 // Multiplier applied to knockback received from enemies
         },
         projectile: {
+            enabled: false, // Temporarily disabled for player; projectile system still used by enemies
             speed: 400, // Pixels per second
             damage: 10, // Base damage
             range: 500, // Maximum travel distance
             cooldown: 0.5, // Seconds between shots
             staminaCost: 8 // Stamina cost per shot
-        }
+        },
+        healthOrbDropChance: 0.25 // 25% chance for enemies to drop a health orb on death
     },
     
     enemy: {
@@ -100,9 +102,8 @@ const GameConfig = {
                 attackRange: 50,
                 attackDamage: 8,
                 attackArcDegrees: 90,
-                detectionRange: 250,
                 color: '#cccccc',
-                attackCooldown: 0.83, // seconds (was 50 frames at 60fps)
+                attackCooldown: 1.5, // seconds (was 50 frames at 60fps)
                 windUpTime: 0.7, // seconds before attack hits
                 knockback: {
                     force: 190, // Knockback force when skeleton hits player (increased by 10)
@@ -112,7 +113,7 @@ const GameConfig = {
                     enabled: true, // Skeletons are ranged enemies
                     speed: 200, // Pixels per second - slowed down
                     damage: 6,
-                    range: 400,
+                    range: 280,
                     cooldown: 3.5 // Seconds between shots - increased cooldown
                 }
             },
@@ -129,6 +130,15 @@ const GameConfig = {
                 knockback: {
                     force: 230, // Knockback force when demon hits player (stronger, increased by 10)
                     decay: 0.86
+                },
+                pillarFlame: {
+                    castDelay: 1.6,   // Telegraph time before pillar spawns (more time to escape)
+                    activeDuration: 2.0,
+                    radius: 45,
+                    damage: 8,
+                    damageInterval: 0.4,
+                    cooldown: 10.0,   // Seconds before same demon can cast again (fewer pillars)
+                    pillarRange: 220
                 }
             }
         },
@@ -137,35 +147,101 @@ const GameConfig = {
         }
     },
     
+    // Portal spawns at this position when kills required for current level are met
+    portal: {
+        x: 2400,
+        y: 1400,
+        width: 80,
+        height: 80
+    },
+
     levels: {
-        // Level-based enemy pack spawn configuration
-        // Uses procedural generation similar to rocks/trees
+        // Level-based enemy pack + theme (ground colors) + obstacles; portal after killsToUnlockPortal
         1: {
-            packSpawn: {
-                density: 0.008,  // ~10-12 packs
-                packSize: { min: 2, max: 4 }
+            name: 'Village Outskirts',
+            packSpawn: { density: 0.008, packSize: { min: 2, max: 4 } },
+            enemyTypes: ['goblin'],
+            killsToUnlockPortal: 10,
+            theme: {
+                ground: { r: 38, g: 48, b: 38, variation: 8 },
+                sky: 'rgba(135, 206, 235, 0.05)'
+            },
+            obstacles: {
+                forest: { density: 0.025 },
+                mushrooms: { density: 0.012 },
+                rocks: { density: 0.022 },
+                border: { spacing: 50 },
+                structures: {
+                    houses: { enabled: true, count: 3 },
+                    woodClusters: { enabled: true, count: 3, treesPerCluster: 6 },
+                    settlements: { enabled: true, count: 1 },
+                    firepits: { enabled: true, count: 2 },
+                    sheds: { enabled: true, count: 2 },
+                    wells: { enabled: true, count: 1 },
+                    ruins: { enabled: true, rubblePiles: 12, pillarClusters: 6, ruinedWalls: 8, ruinedStructures: 4, brokenArches: 5, statueRemnants: 6 }
+                }
             }
         },
         2: {
-            packSpawn: {
-                density: 0.012,  // ~15-18 packs
-                packSize: { min: 3, max: 5 }
+            name: 'Cursed Wilds',
+            packSpawn: { density: 0.012, packSize: { min: 3, max: 5 } },
+            enemyTypes: ['goblin', 'goblin', 'skeleton', 'skeleton'],
+            killsToUnlockPortal: 15,
+            theme: {
+                ground: { r: 28, g: 26, b: 24, variation: 10 },
+                sky: 'rgba(60, 55, 70, 0.08)'
+            },
+            obstacles: {
+                mushrooms: { density: 0.028 },
+                darkRocks: { density: 0.02 },
+                border: { spacing: 50, type: 'mushroom' },
+                graves: { count: 18 },
+                swampPools: { count: 10 },
+                structures: {
+                    houses: { enabled: false },
+                    woodClusters: { enabled: false },
+                    settlements: { enabled: false },
+                    firepits: { enabled: true, count: 1 },
+                    sheds: { enabled: false },
+                    wells: { enabled: false },
+                    ruins: { enabled: true, rubblePiles: 15, pillarClusters: 4, ruinedWalls: 10, ruinedStructures: 2, brokenArches: 3, statueRemnants: 8 }
+                }
             }
         },
         3: {
-            packSpawn: {
-                density: 0.016,  // ~20-24 packs
-                packSize: { min: 4, max: 6 }
+            name: 'Demon Approach',
+            packSpawn: { density: 0.016, packSize: { min: 4, max: 6 } },
+            enemyTypes: ['goblin', 'skeleton', 'skeleton', 'demon', 'demon'],
+            killsToUnlockPortal: 20,
+            theme: {
+                ground: { r: 34, g: 16, b: 18, variation: 12 },
+                sky: 'rgba(80, 20, 30, 0.12)'
+            },
+            obstacles: {
+                lavaRocks: { density: 0.025 },
+                demonPillars: { count: 14 },
+                braziers: { count: 12 },
+                border: { spacing: 50, type: 'lavaRock' },
+                structures: {
+                    houses: { enabled: false },
+                    woodClusters: { enabled: false },
+                    settlements: { enabled: false },
+                    firepits: { enabled: false },
+                    sheds: { enabled: false },
+                    wells: { enabled: false },
+                    ruins: { enabled: true, rubblePiles: 20, pillarClusters: 8, ruinedWalls: 12, ruinedStructures: 6, brokenArches: 4, statueRemnants: 10 }
+                }
             }
         }
     },
-    
+
+    // Default obstacles config (used if a level omits obstacles; level configs override)
     obstacles: {
         forest: {
-            density: 0.03
+            density: 0.025
         },
         rocks: {
-            density: 0.015
+            density: 0.022
         },
         border: {
             spacing: 50
@@ -173,28 +249,37 @@ const GameConfig = {
         structures: {
             houses: {
                 enabled: true,
-                count: 5
+                count: 3
             },
             woodClusters: {
                 enabled: true,
-                count: 4,
-                treesPerCluster: 8
+                count: 3,
+                treesPerCluster: 6
             },
             settlements: {
                 enabled: true,
-                count: 2
+                count: 1
             },
             firepits: {
                 enabled: true,
-                count: 3
+                count: 2
             },
             sheds: {
                 enabled: true,
-                count: 4
+                count: 2
             },
             wells: {
                 enabled: true,
-                count: 2
+                count: 1
+            },
+            ruins: {
+                enabled: true,
+                rubblePiles: 12,
+                pillarClusters: 6,
+                ruinedWalls: 8,
+                ruinedStructures: 4,
+                brokenArches: 5,
+                statueRemnants: 6
             }
         }
     },

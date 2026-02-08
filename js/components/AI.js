@@ -24,6 +24,11 @@ class AI {
         
         // Projectile attack properties
         this.projectileCooldown = 0;
+
+        // Demon pillar-of-flame cast
+        this.pillarFlameCooldown = 0;
+        this.isCastingPillar = false;
+        this.pillarCastTimer = 0;
         
         // Attack initiation tracking (prevents multiple attack calls in same frame)
         this.attackInitiatedThisFrame = false;
@@ -75,14 +80,19 @@ class AI {
             this.projectileCooldown = Math.max(0, this.projectileCooldown - deltaTime);
         }
 
+        if (this.pillarFlameCooldown > 0) {
+            this.pillarFlameCooldown = Math.max(0, this.pillarFlameCooldown - deltaTime);
+        }
+
         // Calculate distance to player
         const distToPlayer = Utils.distance(
             transform.x, transform.y,
             playerTransform.x, playerTransform.y
         );
 
-        // Get enemy config once (used for lunge and projectile checks)
+        // Get enemy config once (used for lunge, projectile, and pillar checks)
         const enemyConfig = this.enemyType ? GameConfig.enemy.types[this.enemyType] : null;
+        const pillarConfig = this.enemyType === 'demon' && enemyConfig && enemyConfig.pillarFlame ? enemyConfig.pillarFlame : null;
         
         // Check for lunge attack (goblin-specific only)
         const isGoblin = this.enemyType === 'goblin';
@@ -94,8 +104,25 @@ class AI {
                         !this.isChargingLunge;
 
         // AI State machine
+        // Handle demon pillar-of-flame casting (pillarConfig already defined above)
+        if (this.isCastingPillar && pillarConfig) {
+            this.state = 'attack';
+            movement.stop();
+            this.pillarCastTimer -= deltaTime;
+            const dx = playerTransform.x - transform.x;
+            const dy = playerTransform.y - transform.y;
+            if (dx !== 0 || dy !== 0) movement.facingAngle = Math.atan2(dy, dx);
+            if (this.pillarCastTimer <= 0) {
+                this.isCastingPillar = false;
+                const enemyManager = systems ? systems.get('enemies') : null;
+                if (enemyManager && enemyManager.createPillar) {
+                    enemyManager.createPillar(playerTransform.x, playerTransform.y, pillarConfig);
+                }
+                this.pillarFlameCooldown = pillarConfig.cooldown;
+            }
+        }
         // Handle lunge charging
-        if (this.isChargingLunge) {
+        else if (this.isChargingLunge) {
             this.state = 'lunge';
             movement.stop();
             this.lungeChargeTimer -= deltaTime;
@@ -163,14 +190,31 @@ class AI {
                 this.state = 'attack';
             }
         }
-        // Normal attack
+        // Demon: optionally start pillar-of-flame (prioritize melee; occasionally cast at melee or at medium range)
+        if (pillarConfig && this.pillarFlameCooldown === 0 && !this.isCastingPillar && !combat.isAttacking) {
+            const inMeleeRange = distToPlayer < this.attackRange;
+            const inPillarRange = distToPlayer <= pillarConfig.pillarRange && distToPlayer > this.attackRange;
+            const canClaw = combat && combat.demonAttack && combat.demonAttack.canAttack();
+            if (inPillarRange && Math.random() < 0.5) {
+                // 50% chance when in range so pillars don't spam
+                this.isCastingPillar = true;
+                this.pillarCastTimer = pillarConfig.castDelay;
+                this.attackInitiatedThisFrame = true;
+            } else if (inMeleeRange && canClaw && !this.attackInitiatedThisFrame && Math.random() < 0.12) {
+                // Rare chance to cast from melee instead of claw
+                this.isCastingPillar = true;
+                this.pillarCastTimer = pillarConfig.castDelay;
+                this.attackInitiatedThisFrame = true;
+            }
+        }
+        // Normal attack (melee)
         // Demons use combo system, goblins use swipe attacks, skeletons don't melee
         const hasDemonAttack = combat && combat.demonAttack !== null && combat.demonAttack !== undefined;
         const hasGoblinAttack = combat && combat.goblinAttack !== null && combat.goblinAttack !== undefined;
         const isSkeleton = this.enemyType === 'skeleton';
         
         // Skeletons don't melee attack - they only use projectiles
-        if (!isSkeleton) {
+        if (!isSkeleton && !this.isCastingPillar) {
             const canAttack = combat && !this.attackInitiatedThisFrame && (
                 (hasDemonAttack && combat.demonAttack.canAttack() && !combat.isAttacking) ||
                 (hasGoblinAttack && combat.cooldown === 0 && !combat.isWindingUp && !combat.isLunging)
@@ -280,7 +324,7 @@ class AI {
 
         if (this.idleTimer <= 0) {
             this.idleTimer = Utils.randomInt(60, 180);
-            const wanderRadius = 100;
+            const wanderRadius = 40;
             this.wanderTargetX = transform.x + Utils.random(-wanderRadius, wanderRadius);
             this.wanderTargetY = transform.y + Utils.random(-wanderRadius, wanderRadius);
             
@@ -368,3 +412,6 @@ class AI {
     }
 }
 
+if (typeof window !== 'undefined') {
+    window.AI = AI;
+}

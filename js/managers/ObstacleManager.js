@@ -26,8 +26,8 @@ class ObjectFactory {
     constructor() {
         this.configs = {
             tree: {
-                minSize: 40,
-                maxSize: 60,
+                minSize: 30,
+                maxSize: 90,
                 defaultSpritePath: 'assets/tree.png',
                 color: '#2d5016'
             },
@@ -90,6 +90,99 @@ class ObjectFactory {
                 maxSize: 35,
                 defaultSpritePath: 'assets/barrel.png',
                 color: '#4a4a4a'
+            },
+            // Ruins-themed objects
+            pillar: {
+                minSize: 35,
+                maxSize: 55,
+                defaultSpritePath: 'assets/pillar.png',
+                color: '#6b6b6b'
+            },
+            brokenPillar: {
+                minSize: 40,
+                maxSize: 70,
+                defaultSpritePath: 'assets/broken_pillar.png',
+                color: '#5a5a5a'
+            },
+            rubble: {
+                minSize: 25,
+                maxSize: 45,
+                defaultSpritePath: 'assets/rubble.png',
+                color: '#4a4a4a'
+            },
+            crumblingWall: {
+                minSize: 20,
+                maxSize: 35,
+                defaultSpritePath: 'assets/crumbling_wall.png',
+                color: '#5c5c5c'
+            },
+            arch: {
+                minSize: 60,
+                maxSize: 90,
+                defaultSpritePath: 'assets/arch.png',
+                color: '#636363'
+            },
+            statueBase: {
+                minSize: 45,
+                maxSize: 65,
+                defaultSpritePath: 'assets/statue_base.png',
+                color: '#707070'
+            },
+            column: {
+                minSize: 30,
+                maxSize: 50,
+                defaultSpritePath: 'assets/column.png',
+                color: '#656565'
+            },
+            stoneDebris: {
+                minSize: 18,
+                maxSize: 32,
+                defaultSpritePath: 'assets/stone_debris.png',
+                color: '#555555'
+            },
+            // Level 2 - Cursed Wilds (mushroom = procedural “dead tree” shape)
+            mushroom: {
+                minSize: 13,
+                maxSize: 85,
+                defaultSpritePath: null,
+                color: '#3d3028'
+            },
+            grave: {
+                minSize: 28,
+                maxSize: 42,
+                defaultSpritePath: null,
+                color: '#4a4845'
+            },
+            swampPool: {
+                minSize: 50,
+                maxSize: 90,
+                defaultSpritePath: null,
+                color: '#1a2e2a'
+            },
+            darkRock: {
+                minSize: 28,
+                maxSize: 48,
+                defaultSpritePath: null,
+                color: '#3a3835'
+            },
+            // Level 3 - Demon Approach
+            lavaRock: {
+                minSize: 32,
+                maxSize: 55,
+                defaultSpritePath: null,
+                color: '#4a2520'
+            },
+            demonPillar: {
+                minSize: 38,
+                maxSize: 58,
+                defaultSpritePath: null,
+                color: '#2a1518'
+            },
+            brazier: {
+                minSize: 35,
+                maxSize: 50,
+                defaultSpritePath: null,
+                color: '#5c3020'
             }
         };
     }
@@ -501,6 +594,123 @@ class StructureGenerator {
         
         return structures;
     }
+
+    // --- Ruins-themed structure generators ---
+
+    // Irregular ruined wall (crumbling segments with gaps)
+    generateRuinedWall(startX, startY, endX, endY, segmentSpacing = 28, gapChance = 0.35) {
+        const objects = [];
+        const distance = Utils.distance(startX, startY, endX, endY);
+        const numSegments = Math.floor(distance / segmentSpacing);
+        const angle = Math.atan2(endY - startY, endX - startX);
+
+        for (let i = 0; i <= numSegments; i++) {
+            if (Math.random() < gapChance) continue; // Skip for collapsed gap
+            const t = numSegments > 0 ? i / numSegments : 0;
+            const x = startX + (endX - startX) * t + Utils.random(-5, 5);
+            const y = startY + (endY - startY) * t + Utils.random(-5, 5);
+            const seg = this.factory.createObject(x, y, 'crumblingWall');
+            objects.push(seg);
+        }
+        return objects;
+    }
+
+    // Cluster of standing or broken pillars
+    generatePillarCluster(centerX, centerY, radius = 80, count = 4, mixBroken = true) {
+        const objects = [];
+        for (let i = 0; i < count; i++) {
+            const angle = Math.random() * Math.PI * 2;
+            const dist = Utils.random(0, radius);
+            const x = centerX + Math.cos(angle) * dist;
+            const y = centerY + Math.sin(angle) * dist;
+            const type = mixBroken && Math.random() < 0.5 ? 'brokenPillar' : 'pillar';
+            objects.push(this.factory.createObject(x, y, type));
+        }
+        return objects;
+    }
+
+    // Scattered rubble and stone debris in an area
+    generateRubblePile(centerX, centerY, radius = 60, rubbleCount = 5, debrisCount = 8) {
+        const objects = [];
+        for (let i = 0; i < rubbleCount; i++) {
+            const angle = Math.random() * Math.PI * 2;
+            const dist = Utils.random(0, radius);
+            const x = centerX + Math.cos(angle) * dist;
+            const y = centerY + Math.sin(angle) * dist;
+            objects.push(this.factory.createObject(x, y, 'rubble'));
+        }
+        for (let i = 0; i < debrisCount; i++) {
+            const angle = Math.random() * Math.PI * 2;
+            const dist = Utils.random(0, radius);
+            const x = centerX + Math.cos(angle) * dist;
+            const y = centerY + Math.sin(angle) * dist;
+            objects.push(this.factory.createObject(x, y, 'stoneDebris'));
+        }
+        return objects;
+    }
+
+    // Collapsed building outline (broken walls with gaps and rubble inside)
+    generateRuinedStructure(centerX, centerY, size = 180) {
+        const objects = [];
+        const half = size / 2;
+        const gapChance = 0.4;
+
+        // Four walls with gaps
+        objects.push(...this.generateRuinedWall(
+            centerX - half, centerY - half,
+            centerX + half, centerY - half,
+            25, gapChance
+        ));
+        objects.push(...this.generateRuinedWall(
+            centerX + half, centerY - half,
+            centerX + half, centerY + half,
+            25, gapChance
+        ));
+        objects.push(...this.generateRuinedWall(
+            centerX + half, centerY + half,
+            centerX - half, centerY + half,
+            25, gapChance
+        ));
+        objects.push(...this.generateRuinedWall(
+            centerX - half, centerY + half,
+            centerX - half, centerY - half,
+            25, gapChance
+        ));
+
+        // Interior rubble
+        const rubbleInCenter = this.generateRubblePile(centerX, centerY, size * 0.35, 4, 6);
+        objects.push(...rubbleInCenter);
+
+        return objects;
+    }
+
+    // Single broken arch (arch + optional pillar stubs)
+    generateBrokenArch(centerX, centerY, size = 75) {
+        const objects = [];
+        objects.push(this.factory.createObject(centerX, centerY, 'arch', size));
+        if (Math.random() < 0.6) {
+            const offset = size * 0.55;
+            objects.push(this.factory.createObject(centerX - offset, centerY, 'column', size * 0.4));
+            objects.push(this.factory.createObject(centerX + offset, centerY, 'column', size * 0.4));
+        }
+        return objects;
+    }
+
+    // Statue base or broken monument
+    generateStatueRemnant(centerX, centerY, size = 50) {
+        const objects = [];
+        objects.push(this.factory.createObject(centerX, centerY, 'statueBase', size));
+        if (Math.random() < 0.5) {
+            const angle = Math.random() * Math.PI * 2;
+            const dist = size * 0.6;
+            objects.push(this.factory.createObject(
+                centerX + Math.cos(angle) * dist,
+                centerY + Math.sin(angle) * dist,
+                'stoneDebris'
+            ));
+        }
+        return objects;
+    }
 }
 
 // Manager for all obstacles
@@ -509,6 +719,7 @@ class ObstacleManager {
         this.obstacles = [];
         this.loadedSprites = new Map();
         this.factory = new ObjectFactory();
+        this.exclusionZones = [];
     }
 
     init(systems) {
@@ -545,16 +756,32 @@ class ObstacleManager {
         return img;
     }
 
-    canMoveTo(x, y, entityWidth, entityHeight) {
+    canMoveTo(x, y, entityWidth, entityHeight, options = null) {
+        const entityLeft = x - entityWidth / 2;
+        const entityTop = y - entityHeight / 2;
+        const allowSwampPools = options && options.allowSwampPools;
         for (const obstacle of this.obstacles) {
+            if (allowSwampPools && obstacle.type === 'swampPool') continue;
             if (Utils.rectCollision(
-                x - entityWidth/2, y - entityHeight/2, entityWidth, entityHeight,
+                entityLeft, entityTop, entityWidth, entityHeight,
                 obstacle.x, obstacle.y, obstacle.width, obstacle.height
             )) {
                 return false;
             }
         }
         return true;
+    }
+
+    /** Returns 0.5 if the given entity rect overlaps a swamp pool, else 1. Used for player swamp slow. */
+    getSwampPoolSpeedMultiplier(centerX, centerY, width, height) {
+        const left = centerX - width / 2;
+        const top = centerY - height / 2;
+        for (const obstacle of this.obstacles) {
+            if (obstacle.type !== 'swampPool') continue;
+            if (Utils.rectCollision(left, top, width, height, obstacle.x, obstacle.y, obstacle.width, obstacle.height))
+                return 0.5;
+        }
+        return 1;
     }
 
     wouldOverlap(x, y, width, height) {
@@ -566,7 +793,17 @@ class ObstacleManager {
                 return true;
             }
         }
+        const cx = x + width / 2;
+        const cy = y + height / 2;
+        for (const zone of this.exclusionZones) {
+            if (Utils.distance(cx, cy, zone.x, zone.y) < zone.radius) return true;
+        }
         return false;
+    }
+
+    clearWorld() {
+        this.obstacles = [];
+        this.exclusionZones = [];
     }
 
     generateForest(worldWidth, worldHeight, density = 0.02) {
@@ -639,13 +876,140 @@ class ObstacleManager {
         }
     }
 
-    generateBorderTrees(worldWidth, worldHeight, spacing = 50) {
+    generateMushrooms(worldWidth, worldHeight, density = 0.025) {
+        const tileSize = GameConfig.world.tileSize;
+        const numTrees = Math.floor(worldWidth * worldHeight * density / (tileSize * tileSize));
+        const config = this.factory.getConfig('mushroom');
+        let placed = 0;
+        let attempts = 0;
+        const maxAttempts = numTrees * 3;
+        while (placed < numTrees && attempts < maxAttempts) {
+            attempts++;
+            const x = Utils.randomInt(0, worldWidth - config.maxSize);
+            const y = Utils.randomInt(0, worldHeight - config.maxSize);
+            const obj = this.factory.createObject(x, y, 'mushroom');
+            if (!this.wouldOverlap(obj.x, obj.y, obj.width, obj.height)) {
+                const leafless = Math.random() < 0.5;
+                const leaflessVariant = leafless ? Math.floor(Math.random() * 3) : 0;
+                this.addObstacle(obj.x, obj.y, obj.width, obj.height, obj.type, obj.spritePath, { color: obj.color, leafless, leaflessVariant });
+                placed++;
+            }
+        }
+    }
+
+    generateDarkRocks(worldWidth, worldHeight, density = 0.02) {
+        const tileSize = GameConfig.world.tileSize;
+        const numRocks = Math.floor(worldWidth * worldHeight * density / (tileSize * tileSize));
+        const config = this.factory.getConfig('darkRock');
+        let placed = 0;
+        let attempts = 0;
+        const maxAttempts = numRocks * 3;
+        while (placed < numRocks && attempts < maxAttempts) {
+            attempts++;
+            const x = Utils.randomInt(0, worldWidth - config.maxSize);
+            const y = Utils.randomInt(0, worldHeight - config.maxSize);
+            const obj = this.factory.createObject(x, y, 'darkRock');
+            if (!this.wouldOverlap(obj.x, obj.y, obj.width, obj.height)) {
+                this.addObstacle(obj.x, obj.y, obj.width, obj.height, obj.type, obj.spritePath, { color: obj.color });
+                placed++;
+            }
+        }
+    }
+
+    generateGraves(worldWidth, worldHeight, count = 15) {
+        const config = this.factory.getConfig('grave');
+        let placed = 0;
+        let attempts = 0;
+        while (placed < count && attempts < count * 5) {
+            attempts++;
+            const x = Utils.randomInt(80, worldWidth - 80);
+            const y = Utils.randomInt(80, worldHeight - 80);
+            const obj = this.factory.createObject(x, y, 'grave');
+            if (!this.wouldOverlap(obj.x, obj.y, obj.width, obj.height)) {
+                this.addObstacle(obj.x, obj.y, obj.width, obj.height, obj.type, obj.spritePath, { color: obj.color });
+                placed++;
+            }
+        }
+    }
+
+    generateSwampPools(worldWidth, worldHeight, count = 10) {
+        const config = this.factory.getConfig('swampPool');
+        let placed = 0;
+        let attempts = 0;
+        while (placed < count && attempts < count * 6) {
+            attempts++;
+            const x = Utils.randomInt(100, worldWidth - 100);
+            const y = Utils.randomInt(100, worldHeight - 100);
+            const obj = this.factory.createObject(x, y, 'swampPool');
+            if (!this.wouldOverlap(obj.x, obj.y, obj.width, obj.height)) {
+                this.addObstacle(obj.x, obj.y, obj.width, obj.height, obj.type, obj.spritePath, { color: obj.color });
+                placed++;
+            }
+        }
+    }
+
+    generateLavaRocks(worldWidth, worldHeight, density = 0.025) {
+        const tileSize = GameConfig.world.tileSize;
+        const numRocks = Math.floor(worldWidth * worldHeight * density / (tileSize * tileSize));
+        const config = this.factory.getConfig('lavaRock');
+        let placed = 0;
+        let attempts = 0;
+        const maxAttempts = numRocks * 3;
+        while (placed < numRocks && attempts < maxAttempts) {
+            attempts++;
+            const x = Utils.randomInt(0, worldWidth - config.maxSize);
+            const y = Utils.randomInt(0, worldHeight - config.maxSize);
+            const obj = this.factory.createObject(x, y, 'lavaRock');
+            if (!this.wouldOverlap(obj.x, obj.y, obj.width, obj.height)) {
+                this.addObstacle(obj.x, obj.y, obj.width, obj.height, obj.type, obj.spritePath, { color: obj.color });
+                placed++;
+            }
+        }
+    }
+
+    generateDemonPillars(worldWidth, worldHeight, count = 14) {
+        const config = this.factory.getConfig('demonPillar');
+        let placed = 0;
+        let attempts = 0;
+        while (placed < count && attempts < count * 5) {
+            attempts++;
+            const x = Utils.randomInt(60, worldWidth - 60);
+            const y = Utils.randomInt(60, worldHeight - 60);
+            const obj = this.factory.createObject(x, y, 'demonPillar');
+            if (!this.wouldOverlap(obj.x, obj.y, obj.width, obj.height)) {
+                this.addObstacle(obj.x, obj.y, obj.width, obj.height, obj.type, obj.spritePath, { color: obj.color });
+                placed++;
+            }
+        }
+    }
+
+    generateBraziers(worldWidth, worldHeight, count = 12) {
+        const config = this.factory.getConfig('brazier');
+        let placed = 0;
+        let attempts = 0;
+        while (placed < count && attempts < count * 5) {
+            attempts++;
+            const x = Utils.randomInt(60, worldWidth - 60);
+            const y = Utils.randomInt(60, worldHeight - 60);
+            const obj = this.factory.createObject(x, y, 'brazier');
+            if (!this.wouldOverlap(obj.x, obj.y, obj.width, obj.height)) {
+                this.addObstacle(obj.x, obj.y, obj.width, obj.height, obj.type, obj.spritePath, { color: obj.color });
+                placed++;
+            }
+        }
+    }
+
+    generateBorderTrees(worldWidth, worldHeight, spacing = 50, borderType = 'tree') {
         const treeObjects = this.factory.createObjectsAlongBorder(
-            worldWidth, worldHeight, 'tree', spacing, 'all'
+            worldWidth, worldHeight, borderType, spacing, 'all'
         );
-        
         treeObjects.forEach(obj => {
-            this.addObstacle(obj.x, obj.y, obj.width, obj.height, obj.type, obj.spritePath);
+            const customProps = obj.color ? { color: obj.color } : {};
+            if (obj.type === 'mushroom') {
+                customProps.leafless = Math.random() < 0.5;
+                if (customProps.leafless) customProps.leaflessVariant = Math.floor(Math.random() * 3);
+            }
+            this.addObstacle(obj.x, obj.y, obj.width, obj.height, obj.type, obj.spritePath, Object.keys(customProps).length ? customProps : null);
         });
     }
 
@@ -890,21 +1254,191 @@ class ObstacleManager {
         }
     }
 
-    generateWorld(worldWidth, worldHeight, config) {
-        this.generateBorderTrees(worldWidth, worldHeight, config.border.spacing);
-        this.generateForest(worldWidth, worldHeight, config.forest.density);
-        this.generateRocks(worldWidth, worldHeight, config.rocks.density);
-        
-        // Add new structure generation
+    // --- Ruins generation ---
+
+    generateRubblePiles(worldWidth, worldHeight, count = 12) {
+        const excludeArea = { x: worldWidth / 2, y: worldHeight / 2, radius: 220 };
+        const generator = new StructureGenerator(this);
+        let placed = 0;
+        let attempts = 0;
+        while (placed < count && attempts < count * 5) {
+            attempts++;
+            const x = Utils.randomInt(80, worldWidth - 80);
+            const y = Utils.randomInt(80, worldHeight - 80);
+            if (Utils.distance(x, y, excludeArea.x, excludeArea.y) < excludeArea.radius) continue;
+            const objects = generator.generateRubblePile(x, y);
+            let canPlace = true;
+            for (const obj of objects) {
+                if (this.wouldOverlap(obj.x, obj.y, obj.width, obj.height)) { canPlace = false; break; }
+            }
+            if (canPlace) {
+                objects.forEach(obj => this.addObstacle(obj.x, obj.y, obj.width, obj.height, obj.type, obj.spritePath, obj.color ? { color: obj.color } : null));
+                placed++;
+            }
+        }
+    }
+
+    generatePillarClusters(worldWidth, worldHeight, count = 6) {
+        const excludeArea = { x: worldWidth / 2, y: worldHeight / 2, radius: 220 };
+        const generator = new StructureGenerator(this);
+        let placed = 0;
+        let attempts = 0;
+        while (placed < count && attempts < count * 5) {
+            attempts++;
+            const x = Utils.randomInt(100, worldWidth - 100);
+            const y = Utils.randomInt(100, worldHeight - 100);
+            if (Utils.distance(x, y, excludeArea.x, excludeArea.y) < excludeArea.radius) continue;
+            const objects = generator.generatePillarCluster(x, y, 80, Utils.randomInt(3, 5));
+            let canPlace = true;
+            for (const obj of objects) {
+                if (this.wouldOverlap(obj.x, obj.y, obj.width, obj.height)) { canPlace = false; break; }
+            }
+            if (canPlace) {
+                objects.forEach(obj => this.addObstacle(obj.x, obj.y, obj.width, obj.height, obj.type, obj.spritePath, obj.color ? { color: obj.color } : null));
+                placed++;
+            }
+        }
+    }
+
+    generateRuinedWalls(worldWidth, worldHeight, count = 8) {
+        const excludeArea = { x: worldWidth / 2, y: worldHeight / 2, radius: 280 };
+        const generator = new StructureGenerator(this);
+        let placed = 0;
+        let attempts = 0;
+        while (placed < count && attempts < count * 6) {
+            attempts++;
+            const cx = Utils.randomInt(150, worldWidth - 150);
+            const cy = Utils.randomInt(150, worldHeight - 150);
+            if (Utils.distance(cx, cy, excludeArea.x, excludeArea.y) < excludeArea.radius) continue;
+            const len = Utils.randomInt(120, 220);
+            const angle = Math.random() * Math.PI * 2;
+            const ex = cx + Math.cos(angle) * len;
+            const ey = cy + Math.sin(angle) * len;
+            const objects = generator.generateRuinedWall(cx, cy, ex, ey);
+            let canPlace = true;
+            for (const obj of objects) {
+                if (this.wouldOverlap(obj.x, obj.y, obj.width, obj.height)) { canPlace = false; break; }
+            }
+            if (canPlace) {
+                objects.forEach(obj => this.addObstacle(obj.x, obj.y, obj.width, obj.height, obj.type, obj.spritePath, obj.color ? { color: obj.color } : null));
+                placed++;
+            }
+        }
+    }
+
+    generateRuinedStructures(worldWidth, worldHeight, count = 4) {
+        const excludeArea = { x: worldWidth / 2, y: worldHeight / 2, radius: 350 };
+        const generator = new StructureGenerator(this);
+        let placed = 0;
+        let attempts = 0;
+        while (placed < count && attempts < count * 5) {
+            attempts++;
+            const x = Utils.randomInt(250, worldWidth - 250);
+            const y = Utils.randomInt(250, worldHeight - 250);
+            if (Utils.distance(x, y, excludeArea.x, excludeArea.y) < excludeArea.radius) continue;
+            const size = Utils.randomInt(140, 200);
+            if (this.wouldOverlap(x - size/2, y - size/2, size, size)) continue;
+            const objects = generator.generateRuinedStructure(x, y, size);
+            let canPlace = true;
+            for (const obj of objects) {
+                if (this.wouldOverlap(obj.x, obj.y, obj.width, obj.height)) { canPlace = false; break; }
+            }
+            if (canPlace) {
+                objects.forEach(obj => this.addObstacle(obj.x, obj.y, obj.width, obj.height, obj.type, obj.spritePath, obj.color ? { color: obj.color } : null));
+                placed++;
+            }
+        }
+    }
+
+    generateBrokenArches(worldWidth, worldHeight, count = 5) {
+        const excludeArea = { x: worldWidth / 2, y: worldHeight / 2, radius: 220 };
+        const generator = new StructureGenerator(this);
+        let placed = 0;
+        let attempts = 0;
+        while (placed < count && attempts < count * 5) {
+            attempts++;
+            const x = Utils.randomInt(80, worldWidth - 80);
+            const y = Utils.randomInt(80, worldHeight - 80);
+            if (Utils.distance(x, y, excludeArea.x, excludeArea.y) < excludeArea.radius) continue;
+            const objects = generator.generateBrokenArch(x, y);
+            let canPlace = true;
+            for (const obj of objects) {
+                if (this.wouldOverlap(obj.x, obj.y, obj.width, obj.height)) { canPlace = false; break; }
+            }
+            if (canPlace) {
+                objects.forEach(obj => this.addObstacle(obj.x, obj.y, obj.width, obj.height, obj.type, obj.spritePath, obj.color ? { color: obj.color } : null));
+                placed++;
+            }
+        }
+    }
+
+    generateStatueRemnants(worldWidth, worldHeight, count = 6) {
+        const excludeArea = { x: worldWidth / 2, y: worldHeight / 2, radius: 220 };
+        const generator = new StructureGenerator(this);
+        let placed = 0;
+        let attempts = 0;
+        while (placed < count && attempts < count * 5) {
+            attempts++;
+            const x = Utils.randomInt(60, worldWidth - 60);
+            const y = Utils.randomInt(60, worldHeight - 60);
+            if (Utils.distance(x, y, excludeArea.x, excludeArea.y) < excludeArea.radius) continue;
+            const objects = generator.generateStatueRemnant(x, y);
+            let canPlace = true;
+            for (const obj of objects) {
+                if (this.wouldOverlap(obj.x, obj.y, obj.width, obj.height)) { canPlace = false; break; }
+            }
+            if (canPlace) {
+                objects.forEach(obj => this.addObstacle(obj.x, obj.y, obj.width, obj.height, obj.type, obj.spritePath, obj.color ? { color: obj.color } : null));
+                placed++;
+            }
+        }
+    }
+
+    generateWorld(worldWidth, worldHeight, config, exclusionZone = null) {
+        this.exclusionZones = [{ x: worldWidth / 2, y: worldHeight / 2, radius: 200 }];
+        if (exclusionZone && exclusionZone.x != null && exclusionZone.y != null) {
+            this.exclusionZones.push({ x: exclusionZone.x, y: exclusionZone.y, radius: exclusionZone.radius || 120 });
+        }
+
+        const borderSpacing = (config.border && config.border.spacing) || 50;
+        const borderType = config.border && config.border.type || 'tree';
+        this.generateBorderTrees(worldWidth, worldHeight, borderSpacing, borderType);
+
+        if (config.forest && config.forest.density != null) {
+            this.generateForest(worldWidth, worldHeight, config.forest.density);
+        }
+        if (config.mushrooms && config.mushrooms.density != null) {
+            this.generateMushrooms(worldWidth, worldHeight, config.mushrooms.density);
+        }
+        if (config.rocks && config.rocks.density != null) {
+            this.generateRocks(worldWidth, worldHeight, config.rocks.density);
+        }
+        if (config.darkRocks && config.darkRocks.density != null) {
+            this.generateDarkRocks(worldWidth, worldHeight, config.darkRocks.density);
+        }
+        if (config.lavaRocks && config.lavaRocks.density != null) {
+            this.generateLavaRocks(worldWidth, worldHeight, config.lavaRocks.density);
+        }
+        if (config.graves && config.graves.count != null) {
+            this.generateGraves(worldWidth, worldHeight, config.graves.count);
+        }
+        if (config.swampPools && config.swampPools.count != null) {
+            this.generateSwampPools(worldWidth, worldHeight, config.swampPools.count);
+        }
+        if (config.demonPillars && config.demonPillars.count != null) {
+            this.generateDemonPillars(worldWidth, worldHeight, config.demonPillars.count);
+        }
+        if (config.braziers && config.braziers.count != null) {
+            this.generateBraziers(worldWidth, worldHeight, config.braziers.count);
+        }
+
         if (config.structures) {
             if (config.structures.houses && config.structures.houses.enabled) {
                 this.generateHouses(worldWidth, worldHeight, config.structures.houses.count);
             }
             if (config.structures.woodClusters && config.structures.woodClusters.enabled) {
                 this.generateWoodClusters(
-                    worldWidth, 
-                    worldHeight, 
-                    config.structures.woodClusters.count,
+                    worldWidth, worldHeight, config.structures.woodClusters.count,
                     config.structures.woodClusters.treesPerCluster
                 );
             }
@@ -919,6 +1453,15 @@ class ObstacleManager {
             }
             if (config.structures.wells && config.structures.wells.enabled) {
                 this.generateWells(worldWidth, worldHeight, config.structures.wells.count);
+            }
+            if (config.structures.ruins && config.structures.ruins.enabled) {
+                const r = config.structures.ruins;
+                if (r.rubblePiles != null) this.generateRubblePiles(worldWidth, worldHeight, r.rubblePiles);
+                if (r.pillarClusters != null) this.generatePillarClusters(worldWidth, worldHeight, r.pillarClusters);
+                if (r.ruinedWalls != null) this.generateRuinedWalls(worldWidth, worldHeight, r.ruinedWalls);
+                if (r.ruinedStructures != null) this.generateRuinedStructures(worldWidth, worldHeight, r.ruinedStructures);
+                if (r.brokenArches != null) this.generateBrokenArches(worldWidth, worldHeight, r.brokenArches);
+                if (r.statueRemnants != null) this.generateStatueRemnants(worldWidth, worldHeight, r.statueRemnants);
             }
         }
     }

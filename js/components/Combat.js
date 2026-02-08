@@ -14,8 +14,8 @@ class Combat {
             this.demonAttack = null;
             this.enemyAttack = null;
         } else if (enemyType === 'demon') {
-            // Demons use DemonAttack (player-style combos at 20% speed)
-            this.demonAttack = new DemonAttack(weapon || Weapons.sword);
+            // Demons use DemonAttack (claw: charge cone then heavy blow)
+            this.demonAttack = new DemonAttack();
             this.goblinAttack = null;
             this.skeletonAttack = null;
             this.enemyAttack = null;
@@ -169,58 +169,31 @@ class Combat {
             }
             return false;
         } else if (this.demonAttack) {
-            // Demon attack with weapon combos at 20% speed
-            // Prevent multiple simultaneous attack calls - check if already attacking
+            // Demon claw: charge up in cone, then release heavy blow
             if (this.demonAttack.isAttacking || !this.demonAttack.canAttack()) {
-                // #region agent log
-                fetch('http://127.0.0.1:7242/ingest/e535072a-96e6-4390-b673-9e50f66af7db',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'Combat.js:174',message:'Demon attack blocked',data:{isAttacking:this.demonAttack.isAttacking,canAttack:this.demonAttack.canAttack()},timestamp:Date.now(),runId:'pre-fix',hypothesisId:'A'})}).catch(()=>{});
-                // #endregion
                 return false;
             }
             const attackData = this.demonAttack.startAttack(targetX, targetY, this.entity);
-            // #region agent log
-            fetch('http://127.0.0.1:7242/ingest/e535072a-96e6-4390-b673-9e50f66af7db',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'Combat.js:177',message:'Demon attack started',data:{attackData:attackData?{duration:attackData.duration,comboStage:attackData.comboStage}:null},timestamp:Date.now(),runId:'pre-fix',hypothesisId:'B'})}).catch(()=>{});
-            // #endregion
             if (attackData) {
                 this._currentAttackKnockbackForce = attackData.knockbackForce ?? null;
-                // Update legacy properties for compatibility
                 this.attackRange = attackData.range;
                 this.attackDamage = attackData.damage;
                 this.attackArc = attackData.arc;
                 this.currentAttackIsCircular = attackData.isCircular === true;
                 this.currentAttackAnimationKey = attackData.animationKey || null;
-                
-                // Set timeout to end attack (duration is already adjusted for speed)
-                // Note: endAttack() will also be called naturally in update() when timer exceeds duration
-                // This setTimeout is a backup in case update() isn't called, but we check if already ended
-                // #region agent log
-                const setTimeoutDuration = attackData.duration;
-                fetch('http://127.0.0.1:7242/ingest/e535072a-96e6-4390-b673-9e50f66af7db',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'Combat.js:190',message:'Setting setTimeout for demon attack',data:{duration:setTimeoutDuration,isNaN:isNaN(setTimeoutDuration),isFinite:isFinite(setTimeoutDuration)},timestamp:Date.now(),runId:'pre-fix',hypothesisId:'C'})}).catch(()=>{});
-                // #endregion
+                const durationMs = attackData.duration;
                 setTimeout(() => {
-                    // #region agent log
-                    fetch('http://127.0.0.1:7242/ingest/e535072a-96e6-4390-b673-9e50f66af7db',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'Combat.js:191',message:'setTimeout callback fired',data:{hasDemonAttack:!!this.demonAttack,isAttacking:this.demonAttack?.isAttacking},timestamp:Date.now(),runId:'pre-fix',hypothesisId:'D'})}).catch(()=>{});
-                    // #endregion
-                    // Only clean up if attack is still active (may have been ended naturally)
                     if (this.demonAttack && this.demonAttack.isAttacking) {
-                        // #region agent log
-                        fetch('http://127.0.0.1:7242/ingest/e535072a-96e6-4390-b673-9e50f66af7db',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'Combat.js:193',message:'Ending demon attack from setTimeout',data:{},timestamp:Date.now(),runId:'pre-fix',hypothesisId:'D'})}).catch(()=>{});
-                        // #endregion
                         this.currentAttackIsCircular = false;
                         this.currentAttackAnimationKey = null;
                         this._currentAttackKnockbackForce = null;
                         this.demonAttack.endAttack();
                     } else {
-                        // Attack already ended naturally, just clean up Combat state
-                        // #region agent log
-                        fetch('http://127.0.0.1:7242/ingest/e535072a-96e6-4390-b673-9e50f66af7db',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'Combat.js:198',message:'Attack already ended, cleaning up state',data:{},timestamp:Date.now(),runId:'pre-fix',hypothesisId:'D'})}).catch(()=>{});
-                        // #endregion
                         this.currentAttackIsCircular = false;
                         this.currentAttackAnimationKey = null;
                         this._currentAttackKnockbackForce = null;
                     }
-                }, attackData.duration);
-                
+                }, durationMs);
                 return attackData;
             }
             return false;

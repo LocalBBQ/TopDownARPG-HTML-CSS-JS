@@ -47,18 +47,25 @@ class ProjectileManager {
                         if (projectile.checkCollision(enemy)) {
                             // Hit enemy
                             const enemyHealth = enemy.getComponent(Health);
+                            const enemyTransform = enemy.getComponent(Transform);
                             if (enemyHealth) {
-                                enemyHealth.takeDamage(projectile.damage);
+                                const died = enemyHealth.takeDamage(projectile.damage);
+                                if (died && systems) {
+                                    const dropChance = GameConfig.player.healthOrbDropChance ?? 0.25;
+                                    if (Math.random() < dropChance && enemyTransform) {
+                                        const healthOrbManager = systems.get('healthOrbs');
+                                        if (healthOrbManager) {
+                                            healthOrbManager.createOrb(enemyTransform.x, enemyTransform.y);
+                                        }
+                                    }
+                                }
                                 
                                 // Apply knockback
                                 const enemyMovement = enemy.getComponent(Movement);
-                                if (enemyMovement) {
-                                    const enemyTransform = enemy.getComponent(Transform);
-                                    if (enemyTransform) {
-                                        const dx = enemyTransform.x - projectile.x;
-                                        const dy = enemyTransform.y - projectile.y;
-                                        enemyMovement.applyKnockback(dx, dy, GameConfig.player.knockback.force);
-                                    }
+                                if (enemyMovement && enemyTransform) {
+                                    const dx = enemyTransform.x - projectile.x;
+                                    const dy = enemyTransform.y - projectile.y;
+                                    enemyMovement.applyKnockback(dx, dy, GameConfig.player.knockback.force);
                                 }
                             }
                             
@@ -102,13 +109,14 @@ class ProjectileManager {
                             
                             playerHealth.takeDamage(finalDamage, blocked);
                             
-                            // Apply knockback if not blocked
-                            if (!blocked && playerMovement && playerTransform) {
+                            // Apply knockback: full when not blocked, half when blocked
+                            if (playerMovement && playerTransform) {
                                 const dx = playerTransform.x - projectile.x;
                                 const dy = playerTransform.y - projectile.y;
                                 const enemyConfig = GameConfig.enemy.types.skeleton || GameConfig.enemy.types.goblin;
                                 const knockbackConfig = enemyConfig.knockback || { force: 160, decay: 0.88 };
-                                const finalKnockbackForce = knockbackConfig.force * GameConfig.player.knockback.receivedMultiplier;
+                                const baseForce = knockbackConfig.force * GameConfig.player.knockback.receivedMultiplier;
+                                const finalKnockbackForce = blocked ? baseForce * 0.5 : baseForce;
                                 playerMovement.applyKnockback(dx, dy, finalKnockbackForce);
                             }
                         }

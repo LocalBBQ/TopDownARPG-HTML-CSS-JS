@@ -14,84 +14,196 @@ class RenderSystem {
         this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
     }
 
-    renderWorld(camera, obstacleManager) {
+    renderWorld(camera, obstacleManager, currentLevel = 1) {
         const tileSize = GameConfig.world.tileSize;
         const effectiveWidth = this.canvas.width / camera.zoom;
         const effectiveHeight = this.canvas.height / camera.zoom;
         const startX = Math.floor(camera.x / tileSize) * tileSize;
         const startY = Math.floor(camera.y / tileSize) * tileSize;
 
-        // Draw grass tiles with variation
+        const levelConfig = GameConfig.levels && GameConfig.levels[currentLevel];
+        const theme = levelConfig && levelConfig.theme ? levelConfig.theme : null;
+        const ground = theme && theme.ground ? theme.ground : { r: 30, g: 50, b: 30, variation: 18 };
+
         for (let x = startX; x < camera.x + effectiveWidth + tileSize; x += tileSize) {
             for (let y = startY; y < camera.y + effectiveHeight + tileSize; y += tileSize) {
                 const screenX = camera.toScreenX(x);
                 const screenY = camera.toScreenY(y);
-                
-                const grassShade = 30 + Math.floor((x + y) % 3) * 5;
-                this.ctx.fillStyle = `rgb(${grassShade}, ${grassShade + 20}, ${grassShade})`;
+                const v = Math.floor((x + y) % 3) * (ground.variation || 15);
+                const r = Math.max(0, Math.min(255, ground.r + v));
+                const gVal = Math.max(0, Math.min(255, ground.g + v));
+                const b = Math.max(0, Math.min(255, ground.b + v));
+                this.ctx.fillStyle = `rgb(${r}, ${gVal}, ${b})`;
                 this.ctx.fillRect(screenX, screenY, tileSize * camera.zoom, tileSize * camera.zoom);
             }
         }
 
-        // Draw obstacles
         if (obstacleManager) {
-            this.renderObstacles(obstacleManager, camera);
+            this.renderObstacles(obstacleManager, camera, currentLevel);
         }
     }
 
-    renderObstacles(obstacleManager, camera) {
+    renderObstacles(obstacleManager, camera, currentLevel = 1) {
+        const zoom = camera.zoom;
         for (const obstacle of obstacleManager.obstacles) {
             const screenX = camera.toScreenX(obstacle.x);
             const screenY = camera.toScreenY(obstacle.y);
-            
-            if (screenX > -obstacle.width * camera.zoom && 
-                screenX < this.canvas.width + obstacle.width * camera.zoom &&
-                screenY > -obstacle.height * camera.zoom && 
-                screenY < this.canvas.height + obstacle.height * camera.zoom) {
-                
+            const w = obstacle.width * zoom;
+            const h = obstacle.height * zoom;
+
+            if (screenX > -w && screenX < this.canvas.width + w && screenY > -h && screenY < this.canvas.height + h) {
                 if (obstacle.spritePath && obstacleManager.loadedSprites.has(obstacle.spritePath)) {
                     const sprite = obstacleManager.loadedSprites.get(obstacle.spritePath);
                     if (sprite.complete && sprite.naturalWidth > 0) {
-                        this.ctx.drawImage(
-                            sprite,
-                            screenX,
-                            screenY,
-                            obstacle.width * camera.zoom,
-                            obstacle.height * camera.zoom
-                        );
+                        this.ctx.drawImage(sprite, screenX, screenY, w, h);
                         continue;
                     }
                 }
-                
+
+                const cx = screenX + w / 2;
+                const cy = screenY + h / 2;
+                const color = obstacle.color || '#555';
+
                 if (obstacle.type === 'tree') {
                     this.ctx.fillStyle = '#4a2c1a';
-                    this.ctx.fillRect(
-                        screenX + obstacle.width * camera.zoom * 0.4,
-                        screenY + obstacle.height * camera.zoom * 0.6,
-                        obstacle.width * camera.zoom * 0.2,
-                        obstacle.height * camera.zoom * 0.4
-                    );
-                    
+                    this.ctx.fillRect(screenX + w * 0.4, screenY + h * 0.6, w * 0.2, h * 0.4);
                     this.ctx.fillStyle = '#2d5016';
                     this.ctx.beginPath();
-                    this.ctx.arc(
-                        screenX + obstacle.width * camera.zoom * 0.5,
-                        screenY + obstacle.height * camera.zoom * 0.4,
-                        obstacle.width * camera.zoom * 0.4,
-                        0, Math.PI * 2
-                    );
+                    this.ctx.arc(cx, screenY + h * 0.4, w * 0.4, 0, Math.PI * 2);
                     this.ctx.fill();
+                } else if (obstacle.type === 'mushroom') {
+                    this.ctx.fillStyle = '#2a221c';
+                    if (obstacle.leafless) {
+                        this.ctx.fillRect(screenX + w * 0.41, screenY + h * 0.3, w * 0.18, h * 0.7);
+                    } else {
+                        this.ctx.fillRect(screenX + w * 0.35, screenY + h * 0.3, w * 0.3, h * 0.7);
+                    }
+                    if (obstacle.leafless) {
+                        this.ctx.strokeStyle = '#2a221c';
+                        this.ctx.lineWidth = Math.max(2, 5 / zoom);
+                        this.ctx.lineCap = 'round';
+                        const topX = cx;
+                        const topY = screenY + h * 0.32;
+                        const v = (obstacle.leaflessVariant ?? 0) % 3;
+                        this.ctx.beginPath();
+                        if (v === 0) {
+                            this.ctx.moveTo(topX, topY);
+                            this.ctx.lineTo(topX - w * 0.38, topY - h * 0.22);
+                            this.ctx.moveTo(topX, topY);
+                            this.ctx.lineTo(topX + w * 0.35, topY - h * 0.18);
+                            this.ctx.moveTo(topX, topY);
+                            this.ctx.lineTo(topX - w * 0.15, topY - h * 0.38);
+                            this.ctx.moveTo(topX, topY);
+                            this.ctx.lineTo(topX + w * 0.4, topY - h * 0.12);
+                        } else if (v === 1) {
+                            this.ctx.moveTo(topX, topY);
+                            this.ctx.lineTo(topX - w * 0.42, topY - h * 0.08);
+                            this.ctx.moveTo(topX, topY);
+                            this.ctx.lineTo(topX + w * 0.28, topY - h * 0.28);
+                            this.ctx.moveTo(topX, topY);
+                            this.ctx.lineTo(topX - w * 0.08, topY - h * 0.4);
+                            this.ctx.moveTo(topX, topY);
+                            this.ctx.lineTo(topX + w * 0.38, topY - h * 0.15);
+                            this.ctx.moveTo(topX, topY);
+                            this.ctx.lineTo(topX + w * 0.12, topY - h * 0.35);
+                        } else {
+                            this.ctx.moveTo(topX, topY);
+                            this.ctx.lineTo(topX - w * 0.35, topY - h * 0.32);
+                            this.ctx.moveTo(topX, topY);
+                            this.ctx.lineTo(topX + w * 0.4, topY - h * 0.25);
+                            this.ctx.moveTo(topX, topY);
+                            this.ctx.lineTo(topX - w * 0.22, topY - h * 0.12);
+                            this.ctx.moveTo(topX, topY);
+                            this.ctx.lineTo(topX + w * 0.18, topY - h * 0.38);
+                        }
+                        this.ctx.stroke();
+                    } else {
+                        this.ctx.fillStyle = '#3d3028';
+                        this.ctx.beginPath();
+                        this.ctx.ellipse(cx, screenY + h * 0.35, w * 0.42, h * 0.3, 0, 0, Math.PI * 2);
+                        this.ctx.fill();
+                        this.ctx.strokeStyle = '#2a221c';
+                        this.ctx.lineWidth = 2 / zoom;
+                        this.ctx.stroke();
+                    }
+                } else if (obstacle.type === 'grave') {
+                    this.ctx.fillStyle = '#3a3835';
+                    this.ctx.fillRect(screenX, screenY + h * 0.2, w, h * 0.6);
+                    this.ctx.fillStyle = '#4a4845';
+                    this.ctx.fillRect(screenX + w * 0.15, screenY, w * 0.2, h * 0.85);
+                    this.ctx.fillRect(screenX + w * 0.4, screenY + h * 0.4, w * 0.2, h * 0.45);
+                } else if (obstacle.type === 'swampPool') {
+                    const grad = this.ctx.createRadialGradient(cx, cy, 0, cx, cy, Math.max(w, h) / 2);
+                    grad.addColorStop(0, 'rgba(25, 55, 50, 0.85)');
+                    grad.addColorStop(0.7, 'rgba(20, 45, 42, 0.75)');
+                    grad.addColorStop(1, 'rgba(15, 35, 32, 0.6)');
+                    this.ctx.fillStyle = grad;
+                    this.ctx.beginPath();
+                    this.ctx.ellipse(cx, cy, w / 2, h / 2, 0, 0, Math.PI * 2);
+                    this.ctx.fill();
+                    this.ctx.strokeStyle = 'rgba(30, 60, 55, 0.9)';
+                    this.ctx.lineWidth = 2 / zoom;
+                    this.ctx.stroke();
+                } else if (obstacle.type === 'demonPillar') {
+                    this.ctx.fillStyle = '#1a0e10';
+                    this.ctx.fillRect(screenX + w * 0.2, screenY, w * 0.6, h);
+                    this.ctx.fillStyle = '#2a1518';
+                    this.ctx.fillRect(screenX, screenY + h * 0.7, w, h * 0.3);
+                    this.ctx.fillStyle = 'rgba(80, 20, 25, 0.6)';
+                    this.ctx.fillRect(screenX + w * 0.25, screenY, w * 0.5, h * 0.15);
+                } else if (obstacle.type === 'brazier') {
+                    this.ctx.fillStyle = '#3d2518';
+                    this.ctx.fillRect(screenX + w * 0.2, screenY + h * 0.5, w * 0.6, h * 0.5);
+                    this.ctx.fillStyle = '#5c3020';
+                    this.ctx.beginPath();
+                    this.ctx.ellipse(cx, screenY + h * 0.35, w * 0.35, h * 0.25, 0, 0, Math.PI * 2);
+                    this.ctx.fill();
+                    const t = performance.now() * 0.003;
+                    const glow = 0.7 + 0.3 * Math.sin(t);
+                    this.ctx.fillStyle = `rgba(255, 120, 40, ${0.4 * glow})`;
+                    this.ctx.beginPath();
+                    this.ctx.ellipse(cx, screenY + h * 0.3, w * 0.25, h * 0.2, 0, 0, Math.PI * 2);
+                    this.ctx.fill();
+                    this.ctx.fillStyle = `rgba(255, 180, 80, ${0.6 * glow})`;
+                    this.ctx.beginPath();
+                    this.ctx.ellipse(cx, screenY + h * 0.28, w * 0.12, h * 0.1, 0, 0, Math.PI * 2);
+                    this.ctx.fill();
+                } else if (obstacle.type === 'lavaRock') {
+                    this.ctx.fillStyle = obstacle.color || '#4a2520';
+                    this.ctx.fillRect(screenX, screenY, w, h);
+                    this.ctx.fillStyle = 'rgba(180, 60, 30, 0.35)';
+                    this.ctx.fillRect(screenX + w * 0.1, screenY + h * 0.1, w * 0.5, h * 0.4);
                 } else {
-                    this.ctx.fillStyle = obstacle.color || '#555';
-                    this.ctx.fillRect(
-                        screenX, 
-                        screenY, 
-                        obstacle.width * camera.zoom, 
-                        obstacle.height * camera.zoom
-                    );
+                    this.ctx.fillStyle = color;
+                    this.ctx.fillRect(screenX, screenY, w, h);
                 }
             }
         }
+    }
+
+    renderPortal(portal, camera) {
+        if (!portal || !portal.spawned) return;
+        const screenX = camera.toScreenX(portal.x);
+        const screenY = camera.toScreenY(portal.y);
+        const w = portal.width * camera.zoom;
+        const h = portal.height * camera.zoom;
+        if (screenX + w < 0 || screenX > this.canvas.width || screenY + h < 0 || screenY > this.canvas.height) return;
+        const cx = screenX + w / 2;
+        const cy = screenY + h / 2;
+        const time = performance.now() * 0.002;
+        const pulse = 0.85 + 0.15 * Math.sin(time);
+        const r = Math.min(w, h) * 0.45 * pulse;
+        const gradient = this.ctx.createRadialGradient(cx, cy, 0, cx, cy, r);
+        gradient.addColorStop(0, 'rgba(120, 80, 255, 0.9)');
+        gradient.addColorStop(0.5, 'rgba(80, 40, 200, 0.6)');
+        gradient.addColorStop(1, 'rgba(40, 20, 120, 0)');
+        this.ctx.fillStyle = gradient;
+        this.ctx.beginPath();
+        this.ctx.ellipse(cx, cy, r, r * 1.2, 0, 0, Math.PI * 2);
+        this.ctx.fill();
+        this.ctx.strokeStyle = 'rgba(180, 140, 255, 0.8)';
+        this.ctx.lineWidth = 3 / camera.zoom;
+        this.ctx.stroke();
     }
 
     renderEntities(entities, camera) {
@@ -396,37 +508,116 @@ class RenderSystem {
         }
 
         // Draw shadow
-        this.ctx.fillStyle = 'rgba(0, 0, 0, 0.3)';
+        this.ctx.fillStyle = 'rgba(0, 0, 0, 0.35)';
         this.ctx.beginPath();
         this.ctx.ellipse(
-            screenX, 
-            screenY + (transform.height / 2 + 5) * camera.zoom,
-            (transform.width / 2) * camera.zoom,
-            (transform.height / 4) * camera.zoom,
+            screenX,
+            screenY + (transform.height / 2 + 6) * camera.zoom,
+            (transform.width * 0.65) * camera.zoom,
+            (transform.height / 3.5) * camera.zoom,
             0, 0, Math.PI * 2
         );
         this.ctx.fill();
 
-        // Draw body
         const isDodging = movement && movement.isDodging;
-        
-        // Grey out player during dodge
-        if (isDodging) {
-            this.ctx.globalAlpha = 0.5;
-            this.ctx.fillStyle = '#888888';
-        } else {
-            this.ctx.fillStyle = combat && combat.isAttacking ? '#ff4444' : renderable.color;
-        }
-        
-        this.ctx.strokeStyle = '#ffffff';
-        this.ctx.lineWidth = 2 / camera.zoom;
-        
+        const w = transform.width * camera.zoom;
+        const h = transform.height * camera.zoom;
+        const halfW = w / 2;
+        const halfH = h / 2;
+
+        if (isDodging) this.ctx.globalAlpha = 0.6;
+
+        const lw = Math.max(1, 2 / camera.zoom);
+        this.ctx.lineWidth = lw;
+        const steel = isDodging ? '#707080' : (combat && combat.isAttacking ? '#9a8b8b' : '#8b8b9a');
+        const steelDark = '#5a5a68';
+        const steelDarker = '#4a4a58';
+
+        // Knight drawn in fixed perspective; only sword and shield rotate with cursor
+        // Boots (base of figure)
+        const footY = screenY + halfH * 0.92;
+        const footW = w * 0.22;
+        const footH = h * 0.18;
+        this.ctx.fillStyle = '#2a2a30';
+        this.ctx.strokeStyle = '#1a1a20';
         this.ctx.beginPath();
-        this.ctx.arc(screenX, screenY, (transform.width / 2) * camera.zoom, 0, Math.PI * 2);
+        this.ctx.ellipse(screenX - w * 0.2, footY, footW / 2, footH / 2, 0, 0, Math.PI * 2);
+        this.ctx.ellipse(screenX + w * 0.2, footY, footW / 2, footH / 2, 0, 0, Math.PI * 2);
         this.ctx.fill();
         this.ctx.stroke();
-        
-        // Reset alpha
+
+        // Torso (breastplate) – tapered: wider at shoulders, narrower at waist
+        const bodyTop = screenY - halfH * 0.82;
+        const bodyBottom = screenY + halfH * 0.78;
+        const bodyH = bodyBottom - bodyTop;
+        const shoulderW = w * 0.88;
+        const waistW = w * 0.58;
+        const topRound = bodyH * 0.15;
+        const bottomRound = bodyH * 0.08;
+        const leftShoulder = screenX - shoulderW / 2;
+        const rightShoulder = screenX + shoulderW / 2;
+        const leftWaist = screenX - waistW / 2;
+        const rightWaist = screenX + waistW / 2;
+        this.ctx.fillStyle = steel;
+        this.ctx.strokeStyle = steelDark;
+        this.ctx.beginPath();
+        this.ctx.moveTo(leftShoulder + topRound, bodyTop);
+        this.ctx.lineTo(rightShoulder - topRound, bodyTop);
+        this.ctx.quadraticCurveTo(rightShoulder, bodyTop, rightShoulder, bodyTop + topRound);
+        this.ctx.lineTo(rightWaist, bodyBottom - bottomRound);
+        this.ctx.quadraticCurveTo(rightWaist, bodyBottom, rightWaist - bottomRound, bodyBottom);
+        this.ctx.lineTo(leftWaist + bottomRound, bodyBottom);
+        this.ctx.quadraticCurveTo(leftWaist, bodyBottom, leftWaist, bodyBottom - bottomRound);
+        this.ctx.lineTo(leftShoulder, bodyTop + topRound);
+        this.ctx.quadraticCurveTo(leftShoulder, bodyTop, leftShoulder + topRound, bodyTop);
+        this.ctx.closePath();
+        this.ctx.fill();
+        this.ctx.stroke();
+        // Center ridge (breastplate)
+        this.ctx.strokeStyle = 'rgba(255, 255, 255, 0.14)';
+        this.ctx.lineWidth = lw * 0.6;
+        this.ctx.beginPath();
+        this.ctx.moveTo(screenX, bodyTop + bodyH * 0.22);
+        this.ctx.lineTo(screenX, bodyBottom - bodyH * 0.12);
+        this.ctx.stroke();
+        this.ctx.lineWidth = lw;
+
+        // Pauldrons (shoulders)
+        const paulY = bodyTop + bodyH * 0.12;
+        const paulR = w * 0.26;
+        this.ctx.fillStyle = steelDark;
+        this.ctx.strokeStyle = steelDarker;
+        this.ctx.beginPath();
+        this.ctx.ellipse(screenX - shoulderW / 2 - paulR * 0.15, paulY, paulR, paulR * 0.7, 0, 0, Math.PI * 2);
+        this.ctx.ellipse(screenX + shoulderW / 2 + paulR * 0.15, paulY, paulR, paulR * 0.7, 0, 0, Math.PI * 2);
+        this.ctx.fill();
+        this.ctx.stroke();
+
+        // Gorget (neck band)
+        const gorgetY = bodyTop - h * 0.04;
+        const gorgetW = shoulderW * 0.9;
+        const gorgetH = h * 0.1;
+        this.ctx.fillStyle = steelDark;
+        this.ctx.strokeStyle = steelDarker;
+        this.ctx.fillRect(screenX - gorgetW / 2, gorgetY - gorgetH / 2, gorgetW, gorgetH);
+        this.ctx.strokeRect(screenX - gorgetW / 2, gorgetY - gorgetH / 2, gorgetW, gorgetH);
+
+        // Helmet (dome with visor)
+        const helmetY = gorgetY - h * 0.18;
+        const helmetW = w * 0.68;
+        const helmetH = h * 0.5;
+        this.ctx.fillStyle = isDodging ? '#505060' : steelDark;
+        this.ctx.strokeStyle = steelDarker;
+        this.ctx.beginPath();
+        this.ctx.ellipse(screenX, helmetY, helmetW / 2, helmetH / 2, 0, 0, Math.PI * 2);
+        this.ctx.fill();
+        this.ctx.stroke();
+        // Visor (dark band + slit)
+        this.ctx.fillStyle = 'rgba(0, 0, 0, 0.75)';
+        this.ctx.fillRect(screenX - helmetW * 0.38, helmetY + helmetH * 0.05, helmetW * 0.76, helmetH * 0.28);
+        this.ctx.fillStyle = 'rgba(80, 80, 90, 0.5)';
+        this.ctx.fillRect(screenX - helmetW * 0.22, helmetY + helmetH * 0.14, helmetW * 0.44, helmetH * 0.06);
+
         this.ctx.globalAlpha = 1.0;
 
         PlayerCombatRenderer.drawSword(this.ctx, screenX, screenY, transform, movement, combat, camera, {});
@@ -503,10 +694,63 @@ class RenderSystem {
 
     renderEnemy(entity, camera, screenX, screenY) {
         const transform = entity.getComponent(Transform);
+        const movement = entity.getComponent(Movement);
         const combat = entity.getComponent(Combat);
         const health = entity.getComponent(Health);
         const renderable = entity.getComponent(Renderable);
         const ai = entity.getComponent(AI);
+
+        // Draw pillar-of-flame telegraph (circle at player position while demon is casting)
+        if (ai && ai.isCastingPillar) {
+            const player = this.systems && this.systems.get('entities') ? this.systems.get('entities').get('player') : null;
+            const playerTransform = player ? player.getComponent(Transform) : null;
+            if (playerTransform) {
+                const pillarConfig = GameConfig.enemy.types.demon && GameConfig.enemy.types.demon.pillarFlame;
+                const radius = (pillarConfig && pillarConfig.radius ? pillarConfig.radius : 45) * camera.zoom;
+                const telegraphX = camera.toScreenX(playerTransform.x);
+                const telegraphY = camera.toScreenY(playerTransform.y);
+                const progress = pillarConfig && pillarConfig.castDelay ? 1 - (ai.pillarCastTimer / pillarConfig.castDelay) : 0;
+                this.ctx.strokeStyle = 'rgba(255, 120, 40, 0.6)';
+                this.ctx.lineWidth = 2 / camera.zoom;
+                this.ctx.setLineDash([4 / camera.zoom, 4 / camera.zoom]);
+                this.ctx.beginPath();
+                this.ctx.arc(telegraphX, telegraphY, radius, 0, Math.PI * 2);
+                this.ctx.stroke();
+                this.ctx.setLineDash([]);
+                this.ctx.fillStyle = 'rgba(200, 80, 30, 0.15)';
+                this.ctx.fill();
+                this.ctx.beginPath();
+                this.ctx.arc(telegraphX, telegraphY, radius, -Math.PI / 2, -Math.PI / 2 + progress * Math.PI * 2);
+                this.ctx.lineTo(telegraphX, telegraphY);
+                this.ctx.closePath();
+                this.ctx.fillStyle = 'rgba(255, 100, 40, 0.25)';
+                this.ctx.fill();
+            }
+        }
+
+        // Draw demon claw cone (arc in front of demon) – infernal iron
+        if (combat && combat.demonAttack && combat.isAttacking) {
+            const range = (combat.attackRange || 70) * camera.zoom;
+            const arc = combat.attackArc != null ? combat.attackArc : Utils.degToRad(100);
+            const facingAngle = movement ? movement.facingAngle : 0;
+            const halfArc = arc / 2;
+            const startAngle = facingAngle - halfArc;
+            const endAngle = facingAngle + halfArc;
+            this.ctx.fillStyle = 'rgba(60, 20, 20, 0.28)';
+            this.ctx.beginPath();
+            this.ctx.arc(screenX, screenY, range, startAngle, endAngle);
+            this.ctx.lineTo(screenX, screenY);
+            this.ctx.closePath();
+            this.ctx.fill();
+            this.ctx.strokeStyle = '#4a2020';
+            this.ctx.lineWidth = 3 / camera.zoom;
+            this.ctx.stroke();
+            this.ctx.strokeStyle = 'rgba(140, 50, 50, 0.7)';
+            this.ctx.lineWidth = Math.max(1, 1.5 / camera.zoom);
+            this.ctx.beginPath();
+            this.ctx.arc(screenX, screenY, range - 3 / camera.zoom, startAngle, endAngle);
+            this.ctx.stroke();
+        }
 
         // Draw lunge charge indicator
         if (ai && ai.isChargingLunge) {
@@ -519,16 +763,13 @@ class RenderSystem {
                 const chargeProgress = 1 - (remainingTime / maxChargeTime);
                 const pulseSize = (transform.width / 2 + 10) * camera.zoom * (1 + chargeProgress * 0.5);
                 const alpha = 0.8 - chargeProgress * 0.4;
-                
-                // Pulsing red circle during lunge charge
-                this.ctx.strokeStyle = `rgba(255, 0, 0, ${alpha})`;
+                // Medieval menace: deep crimson / iron
+                this.ctx.strokeStyle = `rgba(120, 40, 35, ${alpha})`;
                 this.ctx.lineWidth = 4 / camera.zoom;
                 this.ctx.beginPath();
                 this.ctx.arc(screenX, screenY, pulseSize, 0, Math.PI * 2);
                 this.ctx.stroke();
-                
-                // Draw charge-up ring
-                this.ctx.strokeStyle = `rgba(255, 150, 0, ${0.6 + chargeProgress * 0.4})`;
+                this.ctx.strokeStyle = `rgba(160, 80, 40, ${0.5 + chargeProgress * 0.4})`;
                 this.ctx.lineWidth = 3 / camera.zoom;
                 this.ctx.beginPath();
                 this.ctx.arc(screenX, screenY, (transform.width / 2 + 5) * camera.zoom, 0, Math.PI * 2 * chargeProgress);
@@ -536,33 +777,58 @@ class RenderSystem {
             }
         }
 
-        // Draw wind-up indicator
+        // Draw wind-up indicator (goblin etc. – arc in front)
         if (combat && combat.isWindingUp) {
             const windUpProgress = combat.windUpProgress;
             const pulseSize = (transform.width / 2 + 5) * camera.zoom * (1 + windUpProgress * 0.3);
             const alpha = 0.6 - windUpProgress * 0.4;
-            
-            // Pulsing circle during wind-up
-            this.ctx.strokeStyle = `rgba(255, 200, 0, ${alpha})`;
+            const facingAngle = movement ? movement.facingAngle : 0;
+            const arc = combat.attackArc != null ? combat.attackArc : Utils.degToRad(90);
+            const halfArc = arc / 2;
+
+            // Pulsing circle during wind-up – amber/bronze
+            this.ctx.strokeStyle = `rgba(140, 100, 50, ${alpha})`;
             this.ctx.lineWidth = 3 / camera.zoom;
             this.ctx.beginPath();
             this.ctx.arc(screenX, screenY, pulseSize, 0, Math.PI * 2);
             this.ctx.stroke();
-            
-            // Attack range indicator (fades in during wind-up)
-            this.ctx.strokeStyle = `rgba(255, 100, 100, ${windUpProgress * 0.6})`;
-            this.ctx.lineWidth = 2 / camera.zoom;
+
+            // Attack range indicator – cone in front (fades in during wind-up), wrought-iron look
+            const range = combat.attackRange * camera.zoom;
+            const startAngle = facingAngle - halfArc;
+            const endAngle = facingAngle + halfArc;
+            this.ctx.fillStyle = `rgba(35, 30, 28, ${windUpProgress * 0.2})`;
             this.ctx.beginPath();
-            this.ctx.arc(screenX, screenY, combat.attackRange * camera.zoom, 0, Math.PI * 2);
+            this.ctx.arc(screenX, screenY, range, startAngle, endAngle);
+            this.ctx.lineTo(screenX, screenY);
+            this.ctx.closePath();
+            this.ctx.fill();
+            this.ctx.strokeStyle = `rgba(80, 70, 60, ${windUpProgress * 0.7})`;
+            this.ctx.lineWidth = 2 / camera.zoom;
             this.ctx.stroke();
         }
 
-        // Draw attack indicator (when attack actually happens)
-        if (combat && combat.isAttacking && !combat.isWindingUp) {
-            this.ctx.strokeStyle = 'rgba(255, 100, 100, 0.8)';
-            this.ctx.lineWidth = 3 / camera.zoom;
+        // Draw attack indicator (when attack actually happens) – arc in front; skip demon (drawn above); medieval steel
+        if (combat && combat.isAttacking && !combat.isWindingUp && !combat.demonAttack) {
+            const facingAngle = movement ? movement.facingAngle : 0;
+            const arc = combat.attackArc != null ? combat.attackArc : Utils.degToRad(90);
+            const halfArc = arc / 2;
+            const range = combat.attackRange * camera.zoom;
+            const startAngle = facingAngle - halfArc;
+            const endAngle = facingAngle + halfArc;
+            this.ctx.fillStyle = 'rgba(40, 35, 30, 0.24)';
             this.ctx.beginPath();
-            this.ctx.arc(screenX, screenY, combat.attackRange * camera.zoom, 0, Math.PI * 2);
+            this.ctx.arc(screenX, screenY, range, startAngle, endAngle);
+            this.ctx.lineTo(screenX, screenY);
+            this.ctx.closePath();
+            this.ctx.fill();
+            this.ctx.strokeStyle = '#4a4a52';
+            this.ctx.lineWidth = 3 / camera.zoom;
+            this.ctx.stroke();
+            this.ctx.strokeStyle = 'rgba(140, 130, 120, 0.65)';
+            this.ctx.lineWidth = Math.max(1, 1.5 / camera.zoom);
+            this.ctx.beginPath();
+            this.ctx.arc(screenX, screenY, range - 3 / camera.zoom, startAngle, endAngle);
             this.ctx.stroke();
         }
 
@@ -578,10 +844,9 @@ class RenderSystem {
         );
         this.ctx.fill();
 
-        // Draw body - change color during wind-up or lunge charge
+        // Body color – tint during wind-up or lunge
         let bodyColor = renderable.color;
         if (ai && ai.isChargingLunge) {
-            // Make goblin red/orange during lunge charge
             const enemyConfig = ai.enemyType ? GameConfig.enemy.types[ai.enemyType] : null;
             const lungeConfig = enemyConfig && enemyConfig.lunge ? enemyConfig.lunge : null;
             if (lungeConfig) {
@@ -591,34 +856,126 @@ class RenderSystem {
                 bodyColor = `rgba(255, ${Math.floor(100 + (1 - chargeProgress) * 100)}, ${Math.floor(50 + (1 - chargeProgress) * 50)}, 1)`;
             }
         } else if (combat && combat.isWindingUp) {
-            // Make enemy slightly red/orange during wind-up
             const intensity = combat.windUpProgress;
             bodyColor = `rgba(255, ${Math.floor(100 + (1 - intensity) * 100)}, ${Math.floor(50 + (1 - intensity) * 50)}, 1)`;
         } else if (combat && combat.isLunging) {
-            // Make goblin bright red during lunge
             bodyColor = '#ff0000';
         }
-        
-        this.ctx.fillStyle = bodyColor;
-        this.ctx.strokeStyle = (combat && (combat.isWindingUp || combat.isAttacking)) ? '#ff0000' : 
-                               (ai && ai.state === 'attack') ? '#ff0000' : '#000000';
-        this.ctx.lineWidth = 2 / camera.zoom;
-        
-        // Slightly larger during wind-up
-        const sizeMultiplier = combat && combat.isWindingUp ? (1 + combat.windUpProgress * 0.1) : 1;
-        this.ctx.beginPath();
-        this.ctx.arc(screenX, screenY, (transform.width / 2) * camera.zoom * sizeMultiplier, 0, Math.PI * 2);
-        this.ctx.fill();
-        this.ctx.stroke();
 
-        // Draw eyes
-        const eyeSize = 2 / camera.zoom;
-        const eyeOffset = 5 * camera.zoom;
-        this.ctx.fillStyle = ai && ai.state === 'chase' ? '#ff0000' : '#ffffff';
-        this.ctx.beginPath();
-        this.ctx.arc(screenX - eyeOffset, screenY - eyeOffset, eyeSize, 0, Math.PI * 2);
-        this.ctx.arc(screenX + eyeOffset, screenY - eyeOffset, eyeSize, 0, Math.PI * 2);
-        this.ctx.fill();
+        const sizeMultiplier = combat && combat.isWindingUp ? (1 + combat.windUpProgress * 0.1) : 1;
+        const r = (transform.width / 2) * camera.zoom * sizeMultiplier;
+        const h = (transform.height / 2) * camera.zoom * sizeMultiplier;
+        const enemyType = ai && ai.enemyType ? ai.enemyType : 'goblin';
+        const strokeColor = (combat && (combat.isWindingUp || combat.isAttacking)) ? '#ff0000' : (ai && ai.state === 'attack') ? '#ff0000' : '#000000';
+        this.ctx.strokeStyle = strokeColor;
+        this.ctx.lineWidth = 2 / camera.zoom;
+
+        if (enemyType === 'goblin') {
+            // Goblin: hunched oval body, pointy ears, small eyes
+            this.ctx.fillStyle = bodyColor;
+            this.ctx.beginPath();
+            this.ctx.ellipse(screenX, screenY + h * 0.15, r * 0.95, h * 1.0, 0, 0, Math.PI * 2);
+            this.ctx.fill();
+            this.ctx.stroke();
+            this.ctx.fillStyle = bodyColor;
+            this.ctx.strokeStyle = strokeColor;
+            this.ctx.beginPath();
+            this.ctx.moveTo(screenX - r * 0.6, screenY - h * 0.6);
+            this.ctx.lineTo(screenX - r * 0.95, screenY - h * 1.15);
+            this.ctx.lineTo(screenX - r * 0.35, screenY - h * 0.5);
+            this.ctx.closePath();
+            this.ctx.fill();
+            this.ctx.stroke();
+            this.ctx.beginPath();
+            this.ctx.moveTo(screenX + r * 0.6, screenY - h * 0.6);
+            this.ctx.lineTo(screenX + r * 0.95, screenY - h * 1.15);
+            this.ctx.lineTo(screenX + r * 0.35, screenY - h * 0.5);
+            this.ctx.closePath();
+            this.ctx.fill();
+            this.ctx.stroke();
+            const eyeSize = 2.5 / camera.zoom;
+            this.ctx.fillStyle = ai && ai.state === 'chase' ? '#ff3300' : '#1a1a0a';
+            this.ctx.beginPath();
+            this.ctx.arc(screenX - r * 0.35, screenY - h * 0.2, eyeSize, 0, Math.PI * 2);
+            this.ctx.arc(screenX + r * 0.35, screenY - h * 0.2, eyeSize, 0, Math.PI * 2);
+            this.ctx.fill();
+        } else if (enemyType === 'skeleton') {
+            // Skeleton: skull shape, dark sockets, bony
+            this.ctx.fillStyle = bodyColor;
+            this.ctx.beginPath();
+            this.ctx.ellipse(screenX, screenY, r * 0.9, h * 0.95, 0, 0, Math.PI * 2);
+            this.ctx.fill();
+            this.ctx.stroke();
+            this.ctx.fillStyle = '#2a2520';
+            this.ctx.beginPath();
+            this.ctx.ellipse(screenX - r * 0.28, screenY - h * 0.15, r * 0.2, h * 0.25, 0, 0, Math.PI * 2);
+            this.ctx.ellipse(screenX + r * 0.28, screenY - h * 0.15, r * 0.2, h * 0.25, 0, 0, Math.PI * 2);
+            this.ctx.fill();
+            this.ctx.strokeStyle = '#1a1510';
+            this.ctx.lineWidth = 1 / camera.zoom;
+            this.ctx.stroke();
+            this.ctx.lineWidth = 2 / camera.zoom;
+            this.ctx.strokeStyle = strokeColor;
+            this.ctx.beginPath();
+            this.ctx.moveTo(screenX - r * 0.25, screenY + h * 0.4);
+            this.ctx.lineTo(screenX, screenY + h * 0.75);
+            this.ctx.lineTo(screenX + r * 0.25, screenY + h * 0.4);
+            this.ctx.stroke();
+        } else if (enemyType === 'demon') {
+            // Demon: broad muscular torso, swept horns, shoulder mass, glowing eyes, tail
+            const dr = r * 1.0;
+            const dh = h * 1.05;
+            this.ctx.fillStyle = bodyColor;
+            this.ctx.beginPath();
+            this.ctx.ellipse(screenX, screenY, dr * 1.15, dh * 1.0, 0, 0, Math.PI * 2);
+            this.ctx.fill();
+            this.ctx.stroke();
+            this.ctx.fillStyle = '#2a0a12';
+            this.ctx.strokeStyle = strokeColor;
+            this.ctx.lineWidth = 2 / camera.zoom;
+            this.ctx.beginPath();
+            this.ctx.moveTo(screenX - dr * 0.4, screenY - dh * 0.5);
+            this.ctx.quadraticCurveTo(screenX - dr * 0.9, screenY - dh * 1.2, screenX - dr * 0.55, screenY - dh * 0.35);
+            this.ctx.closePath();
+            this.ctx.fill();
+            this.ctx.stroke();
+            this.ctx.beginPath();
+            this.ctx.moveTo(screenX + dr * 0.4, screenY - dh * 0.5);
+            this.ctx.quadraticCurveTo(screenX + dr * 0.9, screenY - dh * 1.2, screenX + dr * 0.55, screenY - dh * 0.35);
+            this.ctx.closePath();
+            this.ctx.fill();
+            this.ctx.stroke();
+            this.ctx.fillStyle = '#1a0508';
+            this.ctx.beginPath();
+            this.ctx.moveTo(screenX, screenY + dh * 0.6);
+            this.ctx.lineTo(screenX + 4 / camera.zoom, screenY + dh * 1.15);
+            this.ctx.lineTo(screenX - 4 / camera.zoom, screenY + dh * 1.15);
+            this.ctx.closePath();
+            this.ctx.fill();
+            this.ctx.stroke();
+            const eyeSize = 4 / camera.zoom;
+            this.ctx.fillStyle = ai && ai.state === 'chase' ? '#ff2222' : '#ff5533';
+            this.ctx.shadowColor = ai && ai.state === 'chase' ? '#ff4444' : 'rgba(255, 80, 50, 0.8)';
+            this.ctx.shadowBlur = 6 / camera.zoom;
+            this.ctx.beginPath();
+            this.ctx.arc(screenX - dr * 0.3, screenY - dh * 0.12, eyeSize, 0, Math.PI * 2);
+            this.ctx.arc(screenX + dr * 0.3, screenY - dh * 0.12, eyeSize, 0, Math.PI * 2);
+            this.ctx.fill();
+            this.ctx.shadowBlur = 0;
+        } else {
+            this.ctx.fillStyle = bodyColor;
+            this.ctx.beginPath();
+            this.ctx.arc(screenX, screenY, r, 0, Math.PI * 2);
+            this.ctx.fill();
+            this.ctx.stroke();
+            const eyeSize = 2 / camera.zoom;
+            const eyeOffset = 5 * camera.zoom;
+            this.ctx.fillStyle = ai && ai.state === 'chase' ? '#ff0000' : '#ffffff';
+            this.ctx.beginPath();
+            this.ctx.arc(screenX - eyeOffset, screenY - eyeOffset, eyeSize, 0, Math.PI * 2);
+            this.ctx.arc(screenX + eyeOffset, screenY - eyeOffset, eyeSize, 0, Math.PI * 2);
+            this.ctx.fill();
+        }
 
         // Draw health bar
         if (health && health.percent < 1) {
@@ -641,45 +998,74 @@ class RenderSystem {
         }
     }
 
-    renderMinimap(camera, entityManager, worldWidth, worldHeight) {
-        const minimapSize = 200;
-        const minimapPadding = 10;
+    renderMinimap(camera, entityManager, worldWidth, worldHeight, portal = null, currentLevel = 1) {
+        const minimapSize = 220;
+        const minimapPadding = 16;
         const minimapX = this.canvas.width - minimapSize - minimapPadding;
         const minimapY = minimapPadding;
-        
-        const scaleX = minimapSize / worldWidth;
-        const scaleY = minimapSize / worldHeight;
+        const panelPadding = 14;
+        const labelHeight = 22;
+        const innerSize = minimapSize - panelPadding * 2;
+        const mapAreaHeight = innerSize - labelHeight;
+        const innerX = minimapX + panelPadding;
+        const innerY = minimapY + panelPadding;
+
+        const scaleX = innerSize / worldWidth;
+        const scaleY = mapAreaHeight / worldHeight;
         const scale = Math.min(scaleX, scaleY);
-        
         const minimapWidth = worldWidth * scale;
         const minimapHeight = worldHeight * scale;
-        
-        this.ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+
+        // Panel: wooden frame, gold trim
+        this.ctx.fillStyle = '#1a1008';
         this.ctx.fillRect(minimapX, minimapY, minimapSize, minimapSize);
-        
-        this.ctx.strokeStyle = '#8b0000';
+        this.ctx.fillStyle = '#2c1810';
+        this.ctx.fillRect(minimapX + 2, minimapY + 2, minimapSize - 4, minimapSize - 4);
+        this.ctx.strokeStyle = '#4a3020';
         this.ctx.lineWidth = 2;
         this.ctx.strokeRect(minimapX, minimapY, minimapSize, minimapSize);
-        
+        this.ctx.strokeStyle = 'rgba(201, 162, 39, 0.5)';
+        this.ctx.lineWidth = 1;
+        this.ctx.strokeRect(minimapX + 3, minimapY + 3, minimapSize - 6, minimapSize - 6);
+
+        // Label: current level name (inside panel with clear gap from border)
+        const levelConfigLabel = GameConfig.levels && GameConfig.levels[currentLevel];
+        const mapLabel = (levelConfigLabel && levelConfigLabel.name) ? levelConfigLabel.name : 'Map';
+        this.ctx.fillStyle = '#c9a227';
+        this.ctx.font = '600 12px Cinzel, Georgia, serif';
+        this.ctx.textAlign = 'left';
+        this.ctx.textBaseline = 'middle';
+        this.ctx.fillText(mapLabel, innerX + 2, innerY + labelHeight / 2);
+        this.ctx.textBaseline = 'alphabetic';
+
         this.ctx.save();
-        this.ctx.translate(minimapX + (minimapSize - minimapWidth) / 2, minimapY + (minimapSize - minimapHeight) / 2);
+        this.ctx.translate(
+            innerX + (innerSize - minimapWidth) / 2,
+            innerY + labelHeight + (mapAreaHeight - minimapHeight) / 2
+        );
         this.ctx.scale(scale, scale);
         
-        // Draw world background
+        // Draw world background (level theme)
         const tileSize = GameConfig.world.tileSize;
+        const levelConfig = GameConfig.levels && GameConfig.levels[currentLevel];
+        const theme = levelConfig && levelConfig.theme ? levelConfig.theme : null;
+        const ground = theme && theme.ground ? theme.ground : { r: 30, g: 50, b: 30, variation: 18 };
         for (let x = 0; x < worldWidth; x += tileSize) {
             for (let y = 0; y < worldHeight; y += tileSize) {
-                const grassShade = 30 + Math.floor((x + y) % 3) * 5;
-                this.ctx.fillStyle = `rgb(${grassShade}, ${grassShade + 20}, ${grassShade})`;
+                const v = Math.floor((x + y) % 3) * (ground.variation || 15);
+                const r = Math.max(0, Math.min(255, ground.r + v));
+                const gVal = Math.max(0, Math.min(255, ground.g + v));
+                const b = Math.max(0, Math.min(255, ground.b + v));
+                this.ctx.fillStyle = `rgb(${r}, ${gVal}, ${b})`;
                 this.ctx.fillRect(x, y, tileSize, tileSize);
             }
         }
         
-        // Draw obstacles
+        // Draw obstacles (use obstacle color for level-themed obstacles)
         const obstacleManager = this.systems.get('obstacles');
         if (obstacleManager) {
-            this.ctx.fillStyle = '#2d5016';
             for (const obstacle of obstacleManager.obstacles) {
+                this.ctx.fillStyle = obstacle.color || '#2d5016';
                 this.ctx.fillRect(obstacle.x, obstacle.y, obstacle.width, obstacle.height);
             }
         }
@@ -698,20 +1084,45 @@ class RenderSystem {
             this.ctx.arc(transform.x, transform.y, 3 / scale, 0, Math.PI * 2);
             this.ctx.fill();
         }
+
+        // Draw portal when spawned (centered on portal rect)
+        if (portal && portal.spawned) {
+            const px = portal.x + portal.width / 2;
+            const py = portal.y + portal.height / 2;
+            const r = Math.max(6 / scale, (portal.width + portal.height) / 4);
+            this.ctx.fillStyle = 'rgba(120, 80, 255, 0.9)';
+            this.ctx.beginPath();
+            this.ctx.arc(px, py, r, 0, Math.PI * 2);
+            this.ctx.fill();
+            this.ctx.strokeStyle = 'rgba(180, 140, 255, 1)';
+            this.ctx.lineWidth = 2 / scale;
+            this.ctx.stroke();
+        }
         
-        // Draw camera viewport
+        // Camera viewport: gold tint
         const effectiveWidth = this.canvas.width / camera.zoom;
         const effectiveHeight = this.canvas.height / camera.zoom;
-        this.ctx.strokeStyle = 'rgba(255, 255, 0, 0.6)';
+        this.ctx.strokeStyle = 'rgba(201, 162, 39, 0.4)';
         this.ctx.lineWidth = 2 / scale;
         this.ctx.strokeRect(camera.x, camera.y, effectiveWidth, effectiveHeight);
-        
+
         this.ctx.restore();
-        
-        this.ctx.fillStyle = '#ffd700';
-        this.ctx.font = '12px Arial';
-        this.ctx.textAlign = 'left';
-        this.ctx.fillText('Mini-Map', minimapX + 5, minimapY + 15);
+
+        // Objective underneath minimap
+        const enemyManager = this.systems ? this.systems.get('enemies') : null;
+        const kills = enemyManager ? enemyManager.getEnemiesKilledThisLevel() : 0;
+        const levelCfg = GameConfig.levels && GameConfig.levels[currentLevel];
+        const required = (levelCfg && levelCfg.killsToUnlockPortal != null) ? levelCfg.killsToUnlockPortal : 0;
+        const hasPortalGoal = required > 0 && (GameConfig.levels[currentLevel + 1]);
+        const objectiveText = hasPortalGoal
+            ? `Slay ${required} foes to open the portal (${kills}/${required})`
+            : (required > 0 ? `Foes felled: ${kills}` : '');
+        if (objectiveText) {
+            this.ctx.fillStyle = '#c4a574';
+            this.ctx.font = '600 13px Cinzel, Georgia, serif';
+            this.ctx.textAlign = 'left';
+            this.ctx.fillText(objectiveText, minimapX + panelPadding, minimapY + minimapSize + 14);
+        }
     }
 }
 

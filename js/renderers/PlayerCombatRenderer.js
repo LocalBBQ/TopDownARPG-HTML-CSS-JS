@@ -15,47 +15,65 @@ const PlayerCombatRenderer = {
         const range = combat.attackRange * camera.zoom;
         const sweepProgress = this.getSweepProgress(combat);
         const useComboColors = options && options.comboColors;
-        let attackColor = 'rgba(255, 100, 100, 0.8)';
-        let fillAlpha = '0.2';
+        const lw = 3 / camera.zoom;
+        const lwCombo = 4 / camera.zoom;
+        // Medieval palette: steel edge, shadow/vellum fill; combo = bronze/gold
+        let edgeColor = '#5a5a62';
+        let edgeHighlight = 'rgba(180, 175, 165, 0.9)';
+        let fillStyle = 'rgba(40, 35, 30, 0.22)';
         if (useComboColors) {
             const animKey = combat.currentAttackAnimationKey || 'melee';
             if (animKey === 'meleeSpin') {
-                attackColor = 'rgba(255, 255, 100, 0.9)';
-                fillAlpha = '0.3';
+                edgeColor = '#8b7340';
+                edgeHighlight = 'rgba(220, 200, 120, 0.85)';
+                fillStyle = 'rgba(80, 60, 30, 0.28)';
             } else if (animKey === 'melee2') {
-                attackColor = 'rgba(255, 200, 100, 0.8)';
+                edgeColor = '#6b5b4a';
+                edgeHighlight = 'rgba(200, 160, 100, 0.85)';
+                fillStyle = 'rgba(60, 45, 30, 0.24)';
             }
         }
         const facingAngle = movement ? movement.facingAngle : 0;
         if (combat.currentAttackIsCircular) {
             const currentRadius = range * sweepProgress;
-            ctx.strokeStyle = attackColor;
-            ctx.lineWidth = useComboColors ? 4 / camera.zoom : 3 / camera.zoom;
+            ctx.lineWidth = useComboColors ? lwCombo : lw;
+            ctx.fillStyle = fillStyle;
             ctx.beginPath();
             ctx.arc(screenX, screenY, currentRadius, 0, Math.PI * 2);
-            ctx.stroke();
-            ctx.fillStyle = attackColor.replace('0.9', fillAlpha);
             ctx.fill();
+            ctx.strokeStyle = edgeColor;
+            ctx.stroke();
+            ctx.strokeStyle = edgeHighlight;
+            ctx.lineWidth = Math.max(1, (useComboColors ? lwCombo : lw) * 0.45);
+            ctx.beginPath();
+            ctx.arc(screenX, screenY, currentRadius - 2 / camera.zoom, 0, Math.PI * 2);
+            ctx.stroke();
         } else {
             const halfArc = combat.attackArc / 2;
             const baseAngle = facingAngle - halfArc;
             const sweepEndAngle = baseAngle + sweepProgress * combat.attackArc;
-            ctx.strokeStyle = attackColor;
-            ctx.lineWidth = useComboColors ? 4 / camera.zoom : 3 / camera.zoom;
+            ctx.lineWidth = useComboColors ? lwCombo : lw;
+            ctx.fillStyle = fillStyle;
             ctx.beginPath();
             ctx.arc(screenX, screenY, range, baseAngle, sweepEndAngle);
             ctx.lineTo(screenX, screenY);
             ctx.closePath();
-            ctx.stroke();
-            ctx.fillStyle = attackColor.replace('0.8', fillAlpha);
             ctx.fill();
+            ctx.strokeStyle = edgeColor;
+            ctx.stroke();
+            // Inner blade-edge highlight along the sweeping arc
+            ctx.strokeStyle = edgeHighlight;
+            ctx.lineWidth = Math.max(1, (useComboColors ? lwCombo : lw) * 0.5);
+            ctx.beginPath();
+            ctx.arc(screenX, screenY, range - 3 / camera.zoom, baseAngle, sweepEndAngle);
+            ctx.stroke();
         }
     },
 
     drawSword(ctx, screenX, screenY, transform, movement, combat, camera) {
         if (!movement || !combat || !transform) return;
-        const swordLength = (combat.attackRange || 100) * 0.32 * camera.zoom;
-        const bladeWidth = Math.max(2, 4 / camera.zoom);
+        const swordLength = (combat.attackRange || 100) * 0.48 * camera.zoom;
+        const bladeWidthAtGuard = Math.max(3.5, 7 / camera.zoom);
         const sideOffset = (transform.width / 2 + 4) * camera.zoom;
         const gripX = screenX + Math.cos(movement.facingAngle + Math.PI / 2) * sideOffset;
         const gripY = screenY + Math.sin(movement.facingAngle + Math.PI / 2) * sideOffset;
@@ -72,25 +90,62 @@ const PlayerCombatRenderer = {
         ctx.save();
         ctx.translate(gripX, gripY);
         ctx.rotate(swordAngle);
+        const lw = Math.max(1, 1 / camera.zoom);
+        ctx.lineWidth = lw;
+
+        // Pommel (back of grip) – dark metal
+        const pommelX = -14 / camera.zoom - 2 / camera.zoom;
+        const pommelR = 3 / camera.zoom;
+        ctx.fillStyle = '#4a4a52';
+        ctx.strokeStyle = '#3a3a42';
+        ctx.beginPath();
+        ctx.arc(pommelX, 0, pommelR, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+
+        // Grip (leather wrap)
         const hiltHalfLen = 14 / camera.zoom;
         const hiltThickness = 6 / camera.zoom;
-        ctx.lineWidth = 1 / camera.zoom;
         ctx.fillStyle = '#8b4513';
         ctx.strokeStyle = '#5d2e0c';
         ctx.fillRect(-hiltHalfLen, -hiltThickness / 2, hiltHalfLen * 2, hiltThickness);
         ctx.strokeRect(-hiltHalfLen, -hiltThickness / 2, hiltHalfLen * 2, hiltThickness);
-        ctx.fillStyle = '#c0c0c0';
-        ctx.strokeStyle = '#606060';
-        ctx.fillRect(0, -bladeWidth / 2, swordLength, bladeWidth);
-        ctx.strokeRect(0, -bladeWidth / 2, swordLength, bladeWidth);
+
+        // Cross-guard (quillon) at base of blade
+        const guardHalfW = 6 / camera.zoom;
+        const guardThick = 2 / camera.zoom;
+        ctx.fillStyle = '#6b6b75';
+        ctx.strokeStyle = '#4a4a52';
+        ctx.fillRect(-guardThick / 2, -guardHalfW, guardThick, guardHalfW * 2);
+        ctx.strokeRect(-guardThick / 2, -guardHalfW, guardThick, guardHalfW * 2);
+
+        // Blade – tapered to a point (long rhombus), medieval steel
+        const hw = bladeWidthAtGuard / 2;
+        ctx.fillStyle = '#a8a8b0';
+        ctx.strokeStyle = '#3d3d42';
+        ctx.beginPath();
+        ctx.moveTo(0, -hw);
+        ctx.lineTo(0, hw);
+        ctx.lineTo(swordLength, 0);
+        ctx.closePath();
+        ctx.fill();
+        ctx.stroke();
+        // Fuller (center line) for a bit of depth
+        ctx.strokeStyle = 'rgba(120, 118, 110, 0.55)';
+        ctx.lineWidth = lw * 0.6;
+        ctx.beginPath();
+        ctx.moveTo(hw * 0.5, 0);
+        ctx.lineTo(swordLength - hw, 0);
+        ctx.stroke();
+
         ctx.restore();
     },
 
     drawShield(ctx, screenX, screenY, transform, movement, combat, camera) {
         if (!movement || !combat || !transform) return;
         const shieldDist = (transform.width / 2 + 8) * camera.zoom;
-        const shieldW = 22 * camera.zoom;
-        const shieldH = 8 * camera.zoom;
+        const shieldW = 26 * camera.zoom;
+        const shieldH = 5 * camera.zoom;
         if (combat.isBlocking) {
             const shieldX = screenX + Math.cos(movement.facingAngle) * shieldDist;
             const shieldY = screenY + Math.sin(movement.facingAngle) * shieldDist;

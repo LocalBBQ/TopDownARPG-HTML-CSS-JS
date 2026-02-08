@@ -5,106 +5,123 @@
 }
 
 body {
-    font-family: 'Arial', sans-serif;
-    background: #000;
+    font-family: 'Cinzel', Georgia, serif;
+    background: #0f0b08;
     overflow: hidden;
-    color: #fff;
+    color: #e8dcc8;
+    -webkit-font-smoothing: antialiased;
 }
 
 #game-container {
     position: relative;
     width: 100vw;
     height: 100vh;
-    display: flex;
-    justify-content: center;
-    align-items: center;
+    overflow: hidden;
 }
 
 #gameCanvas {
-    background: #1a1a1a;
-    border: 2px solid #8b0000;
-    box-shadow: 0 0 20px rgba(139, 0, 0, 0.5);
+    display: block;
+    width: 100%;
+    height: 100%;
+    background: #0d0a08;
     cursor: crosshair;
 }
 
 #ui-overlay {
     position: absolute;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
+    inset: 0;
     pointer-events: none;
-    padding: 20px;
+    padding: 16px;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
 }
 
+/* Stats panel - wooden frame, parchment interior */
 #stats {
-    background: rgba(0, 0, 0, 0.8);
-    border: 2px solid #8b0000;
-    padding: 15px;
-    width: 250px;
-    border-radius: 5px;
+    align-self: flex-start;
+    width: 300px;
+    padding: 16px 20px;
+    background: linear-gradient(180deg, #2c1810 0%, #1a1008 100%);
+    border: 3px solid #4a3020;
+    border-radius: 4px;
+    box-shadow:
+        inset 0 1px 0 rgba(201, 162, 39, 0.15),
+        0 2px 8px rgba(0, 0, 0, 0.5);
 }
 
 .stat-bar {
-    margin-bottom: 10px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 14px;
+}
+
+.stat-bar:last-child {
+    margin-bottom: 0;
 }
 
 .stat-bar label {
-    display: inline-block;
-    width: 60px;
-    font-weight: bold;
-    color: #ffd700;
-    text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.8);
+    font-size: 13px;
+    font-weight: 700;
+    color: #c9a227;
+    width: 52px;
+    flex-shrink: 0;
+    letter-spacing: 0.05em;
 }
 
 .bar-container {
-    display: inline-block;
-    width: 120px;
+    flex: 1;
     height: 20px;
-    background: #333;
-    border: 1px solid #666;
-    position: relative;
+    background: #0f0a06;
+    border: 2px solid #3d2817;
+    border-radius: 2px;
     overflow: hidden;
+    box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.6);
 }
 
 .bar {
     height: 100%;
-    transition: width 0.3s ease;
+    border-radius: 0;
+    transition: width 0.25s ease;
 }
 
 .bar.health {
-    background: linear-gradient(to bottom, #ff4444, #cc0000);
-    box-shadow: 0 0 10px rgba(255, 68, 68, 0.5);
+    background: linear-gradient(180deg, #8b2020 0%, #5c1010 50%, #4a0c0c 100%);
+    box-shadow: inset 0 1px 0 rgba(255, 180, 180, 0.2);
 }
 
 .bar.stamina {
-    background: linear-gradient(to bottom, #4444ff, #0000cc);
-    box-shadow: 0 0 10px rgba(68, 68, 255, 0.5);
+    background: linear-gradient(180deg, #2a5070 0%, #1a3048 50%, #0f2035 100%);
+    box-shadow: inset 0 1px 0 rgba(180, 220, 255, 0.15);
 }
 
 .stat-bar span {
-    display: inline-block;
-    margin-left: 10px;
-    font-size: 12px;
-    color: #fff;
+    font-size: 13px;
+    font-weight: 600;
+    color: #b89870;
+    font-variant-numeric: tabular-nums;
+    min-width: 48px;
+    text-align: right;
 }
 
+/* Controls - bottom left */
 #controls {
     position: absolute;
-    bottom: 20px;
-    left: 20px;
-    background: rgba(0, 0, 0, 0.8);
-    border: 2px solid #8b0000;
-    padding: 15px;
-    border-radius: 5px;
+    bottom: 16px;
+    left: 16px;
     font-size: 14px;
+    color: #a08060;
+    font-weight: 500;
+    letter-spacing: 0.04em;
+    line-height: 1.7;
 }
 
 #controls p {
-    margin: 5px 0;
+    margin: 0;
 }
 
 #controls strong {
-    color: #ffd700;
+    color: #c9a227;
+    font-weight: 600;
 }
-

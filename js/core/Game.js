@@ -18,6 +18,9 @@ class Game {
             
             // Initialize player projectile cooldown
             this.playerProjectileCooldown = 0;
+            // Portal state (spawns after enough kills; enter with E)
+            this.portal = null;
+            this.portalUseCooldown = 0;
             
             // Initialize screen manager
             this.screenManager = null; // Will be initialized after canvas setup
@@ -41,11 +44,18 @@ class Game {
                 const inputSystem = this.systems.get('input');
                 if (inputSystem && this.systems.eventBus) {
                     this.systems.eventBus.on('input:keydown', (key) => {
-                        if (key === ' ') {
+                        const isStartKey = key === ' ' || key === 'enter';
+                        if (isStartKey) {
                             if (this.screenManager.isScreen('title')) {
                                 this.startGame();
                             } else if (this.screenManager.isScreen('death')) {
                                 this.restartGame();
+                            }
+                        } else if (key === 'escape') {
+                            if (this.screenManager.isScreen('playing')) {
+                                this.screenManager.setScreen('pause');
+                            } else if (this.screenManager.isScreen('pause')) {
+                                this.screenManager.setScreen('playing');
                             }
                         }
                     });
@@ -90,7 +100,15 @@ class Game {
         
         // Generate world before pathfinding
         const obstacleManager = this.systems.get('obstacles');
-        obstacleManager.generateWorld(worldConfig.width, worldConfig.height, GameConfig.obstacles);
+        const level1Config = GameConfig.levels && GameConfig.levels[1] && GameConfig.levels[1].obstacles
+            ? GameConfig.levels[1].obstacles
+            : GameConfig.obstacles;
+        const portalConfig = GameConfig.portal || { x: 2400, y: 1400, width: 80, height: 80 };
+        obstacleManager.generateWorld(worldConfig.width, worldConfig.height, level1Config, {
+            x: portalConfig.x + portalConfig.width / 2,
+            y: portalConfig.y + portalConfig.height / 2,
+            radius: 120
+        });
         
         // Now register pathfinding (needs obstacles)
         this.systems
@@ -221,12 +239,27 @@ class Game {
             );
         });
         
-        // Spawn enemies based on level
+        // Spawn enemies based on level (set by startGame when starting from title)
         const enemyManager = this.systems.get('enemies');
         const obstacleManager = this.systems.get('obstacles');
-        const initialLevel = 1; // Start at level 1
-        
-        enemyManager.spawnLevelEnemies(initialLevel, this.entities, obstacleManager);
+        const initialLevel = enemyManager ? enemyManager.getCurrentLevel() : 1;
+
+        if (enemyManager && obstacleManager) {
+            enemyManager.spawnLevelEnemies(initialLevel, this.entities, obstacleManager);
+        }
+
+        // Portal: same position every level; spawns when kills >= level's killsToUnlockPortal
+        const portalConfig = GameConfig.portal || { x: 2400, y: 1400, width: 80, height: 80 };
+        const currentLevel = enemyManager ? enemyManager.getCurrentLevel() : 1;
+        const maxLevel = GameConfig.levels ? Math.max(...Object.keys(GameConfig.levels).map(Number)) : 3;
+        this.portal = {
+            x: portalConfig.x,
+            y: portalConfig.y,
+            width: portalConfig.width,
+            height: portalConfig.height,
+            spawned: false,
+            targetLevel: Math.min(currentLevel + 1, maxLevel)
+        };
     }
 
     createPlayer() {
@@ -515,7 +548,8 @@ class Game {
                 
                 if (transform && movement && stamina && projectileManager) {
                     const projectileConfig = GameConfig.player.projectile;
-                    
+                    if (!projectileConfig || !projectileConfig.enabled) return;
+
                     // Check cooldown and stamina
                     if (this.playerProjectileCooldown <= 0 && stamina.currentStamina >= projectileConfig.staminaCost) {
                         // Get target direction (cursor position)
@@ -669,70 +703,143 @@ class Game {
             this.canvas.height = window.innerHeight;
         });
         
-        // Handle screen button clicks
+        // Handle screen button clicks (scale to canvas buffer coords for correct hit-testing)
         this.canvas.addEventListener('click', (e) => {
             const rect = this.canvas.getBoundingClientRect();
-            const x = e.clientX - rect.left;
-            const y = e.clientY - rect.top;
-            
+            const scaleX = this.canvas.width / rect.width;
+            const scaleY = this.canvas.height / rect.height;
+            const x = (e.clientX - rect.left) * scaleX;
+            const y = (e.clientY - rect.top) * scaleY;
+
             if (this.screenManager.isScreen('title')) {
-                if (this.screenManager.checkButtonClick(x, y, 'title')) {
+                const levelAt = this.screenManager.getLevelSelectAt(x, y);
+                if (levelAt !== null) {
+                    this.screenManager.selectedStartLevel = levelAt;
+                } else if (this.screenManager.checkButtonClick(x, y, 'title')) {
                     this.startGame();
                 }
             } else if (this.screenManager.isScreen('death')) {
                 if (this.screenManager.checkButtonClick(x, y, 'death')) {
                     this.restartGame();
                 }
+            } else if (this.screenManager.isScreen('pause')) {
+                const pauseBtn = this.screenManager.getPauseButtonAt(x, y);
+                if (pauseBtn === 'resume') {
+                    this.screenManager.setScreen('playing');
+                } else if (pauseBtn === 'quit') {
+                    this.quitToMainMenu();
+                }
             }
         });
     }
+
+    quitToMainMenu() {
+        const allEntities = this.entities.getAll();
+        for (const entity of allEntities) {
+            this.entities.remove(entity.id);
+        }
+        const projectileManager = this.systems.get('projectiles');
+        if (projectileManager) projectileManager.projectiles = [];
+        const enemyManager = this.systems.get('enemies');
+        if (enemyManager && enemyManager.clearFlamePillars) enemyManager.clearFlamePillars();
+        const damageNumberManager = this.systems.get('damageNumbers');
+        if (damageNumberManager) damageNumberManager.numbers = [];
+        const healthOrbManager = this.systems.get('healthOrbs');
+        if (healthOrbManager) healthOrbManager.clear();
+        this.screenManager.setScreen('title');
+        this.updateUIVisibility(false);
+    }
     
     startGame() {
-        // Initialize entities and start playing
+        const selectedLevel = this.screenManager.selectedStartLevel;
+        const worldConfig = GameConfig.world;
+        const obstacleManager = this.systems.get('obstacles');
+        const enemyManager = this.systems.get('enemies');
+
+        obstacleManager.clearWorld();
+        const levelConfig = GameConfig.levels && GameConfig.levels[selectedLevel] && GameConfig.levels[selectedLevel].obstacles
+            ? GameConfig.levels[selectedLevel].obstacles
+            : GameConfig.obstacles;
+        const portalConfig = GameConfig.portal || { x: 2400, y: 1400, width: 80, height: 80 };
+        obstacleManager.generateWorld(worldConfig.width, worldConfig.height, levelConfig, {
+            x: portalConfig.x + portalConfig.width / 2,
+            y: portalConfig.y + portalConfig.height / 2,
+            radius: 120
+        });
+
+        if (enemyManager) {
+            enemyManager.enemies = [];
+            enemyManager.enemiesSpawned = false;
+            enemyManager.currentLevel = selectedLevel;
+            enemyManager.enemiesKilledThisLevel = 0;
+            if (enemyManager.clearFlamePillars) enemyManager.clearFlamePillars();
+        }
+
         this.initializeEntities();
         this.screenManager.setScreen('playing');
         this.updateUIVisibility(true);
     }
     
     restartGame() {
-        // Clear all entities
+        const worldConfig = GameConfig.world;
+        const enemyManager = this.systems.get('enemies');
+        const obstacleManager = this.systems.get('obstacles');
+
+        // Reset enemy manager to level 1: kill count and level so spawns match stage
+        if (enemyManager) {
+            enemyManager.enemies = [];
+            enemyManager.enemiesSpawned = false;
+            enemyManager.currentLevel = 1;
+            enemyManager.enemiesKilledThisLevel = 0;
+        }
+
+        // Regenerate level 1 world so environment matches stage (Village Outskirts)
+        if (obstacleManager) {
+            obstacleManager.clearWorld();
+            const level1Obstacles = GameConfig.levels && GameConfig.levels[1] && GameConfig.levels[1].obstacles
+                ? GameConfig.levels[1].obstacles
+                : GameConfig.obstacles;
+            const portalConfig = GameConfig.portal || { x: 2400, y: 1400, width: 80, height: 80 };
+            obstacleManager.generateWorld(worldConfig.width, worldConfig.height, level1Obstacles, {
+                x: portalConfig.x + portalConfig.width / 2,
+                y: portalConfig.y + portalConfig.height / 2,
+                radius: 120
+            });
+        }
+
+        // Clear all entities (player will be recreated in initializeEntities)
         const allEntities = this.entities.getAll();
         for (const entity of allEntities) {
             this.entities.remove(entity.id);
         }
-        
-        // Clear enemies
-        const enemyManager = this.systems.get('enemies');
-        if (enemyManager) {
-            enemyManager.enemies = [];
-            enemyManager.enemiesSpawned = false;
-        }
-        
+
         // Clear projectiles
         const projectileManager = this.systems.get('projectiles');
         if (projectileManager) {
             projectileManager.projectiles = [];
         }
-        
+        const enemyManagerClear = this.systems.get('enemies');
+        if (enemyManagerClear && enemyManagerClear.clearFlamePillars) enemyManagerClear.clearFlamePillars();
+
         // Clear damage numbers
         const damageNumberManager = this.systems.get('damageNumbers');
         if (damageNumberManager) {
             damageNumberManager.numbers = [];
         }
-        
+
         // Clear health orbs
         const healthOrbManager = this.systems.get('healthOrbs');
         if (healthOrbManager) {
             healthOrbManager.clear();
         }
-        
+
         // Reset camera
         const cameraSystem = this.systems.get('camera');
         if (cameraSystem) {
             cameraSystem.setZoom(1.0, this.canvas.width / 2, this.canvas.height / 2, this.canvas.width, this.canvas.height);
         }
-        
-        // Reinitialize entities
+
+        // Reinitialize entities (player + level 1 enemy spawns + portal)
         this.initializeEntities();
         this.screenManager.setScreen('playing');
         this.updateUIVisibility(true);
@@ -746,8 +853,8 @@ class Game {
     }
 
     update(deltaTime) {
-        // Only update game logic if playing
-        if (!this.screenManager.isScreen('playing')) {
+        // Only update game logic if playing (not title, death, or pause)
+        if (this.screenManager.currentScreen !== 'playing') {
             return;
         }
 
@@ -780,6 +887,11 @@ class Game {
         const projectileManager = this.systems.get('projectiles');
         if (projectileManager) {
             projectileManager.update(deltaTime, this.systems);
+        }
+
+        const enemyManagerForPillars = this.systems.get('enemies');
+        if (enemyManagerForPillars && enemyManagerForPillars.updateFlamePillars) {
+            enemyManagerForPillars.updateFlamePillars(deltaTime, this.systems);
         }
         
         // Update health orbs
@@ -818,6 +930,46 @@ class Game {
                 cameraSystem.follow(transform, this.canvas.width, this.canvas.height);
             }
         }
+
+        // Portal: update spawned state and handle E to enter
+        if (this.portal && this.portalUseCooldown > 0) {
+            this.portalUseCooldown = Math.max(0, this.portalUseCooldown - deltaTime);
+        }
+        const enemyManager = this.systems.get('enemies');
+        if (this.portal && enemyManager) {
+            const currentLevel = enemyManager.getCurrentLevel();
+            const levelConfig = GameConfig.levels[currentLevel];
+            const nextLevel = currentLevel + 1;
+            const nextLevelExists = GameConfig.levels[nextLevel];
+            const killsRequired = (levelConfig && levelConfig.killsToUnlockPortal != null) ? levelConfig.killsToUnlockPortal : 999;
+            const kills = enemyManager.getEnemiesKilledThisLevel();
+            this.portal.targetLevel = nextLevel;
+            this.portal.spawned = nextLevelExists && kills >= killsRequired;
+
+            if (this.portal.spawned && this.portalUseCooldown <= 0 && player) {
+                const transform = player.getComponent(Transform);
+                const inputSystem = this.systems.get('input');
+                if (transform && inputSystem && inputSystem.isKeyPressed('e')) {
+                    const overlap = Utils.rectCollision(
+                        transform.left, transform.top, transform.width, transform.height,
+                        this.portal.x, this.portal.y, this.portal.width, this.portal.height
+                    );
+                    if (overlap && nextLevelExists) {
+                        const obstacleManager = this.systems.get('obstacles');
+                        const worldConfig = GameConfig.world;
+                        const nextObstacles = GameConfig.levels[nextLevel].obstacles;
+                        obstacleManager.clearWorld();
+                        obstacleManager.generateWorld(worldConfig.width, worldConfig.height, nextObstacles, {
+                            x: this.portal.x + this.portal.width / 2,
+                            y: this.portal.y + this.portal.height / 2,
+                            radius: 120
+                        });
+                        enemyManager.changeLevel(nextLevel, this.entities, obstacleManager);
+                        this.portalUseCooldown = 1.5; // Prevent double-trigger
+                    }
+                }
+            }
+        }
         
         // Update UI
         this.updateUI(player);
@@ -842,17 +994,17 @@ class Game {
             document.getElementById('stamina-text').textContent = 
                 Math.floor(stamina.currentStamina) + '/' + stamina.maxStamina;
         }
+
     }
 
     render() {
         try {
-            // Render title or death screen if not playing
             if (this.screenManager.isScreen('title') || this.screenManager.isScreen('death')) {
                 this.screenManager.render();
                 return;
             }
-            
-            // Normal game rendering
+
+            // Game world and entities (draw for both 'playing' and 'pause' so pause shows over frozen frame)
             const renderSystem = this.systems.get('render');
             const cameraSystem = this.systems.get('camera');
             const obstacleManager = this.systems.get('obstacles');
@@ -864,8 +1016,11 @@ class Game {
             }
             
             renderSystem.clear();
-            renderSystem.renderWorld(cameraSystem, obstacleManager);
-            
+            const currentLevel = this.systems.get('enemies') ? this.systems.get('enemies').getCurrentLevel() : 1;
+            renderSystem.renderWorld(cameraSystem, obstacleManager, currentLevel);
+            if (this.portal) {
+                renderSystem.renderPortal(this.portal, cameraSystem);
+            }
             const entities = this.entities.getAll();
             if (entities.length === 0) {
                 console.warn('No entities to render');
@@ -876,6 +1031,10 @@ class Game {
             const projectileManager = this.systems.get('projectiles');
             if (projectileManager) {
                 projectileManager.render(this.ctx, cameraSystem);
+            }
+            const enemyManagerRender = this.systems.get('enemies');
+            if (enemyManagerRender && enemyManagerRender.renderFlamePillars) {
+                enemyManagerRender.renderFlamePillars(this.ctx, cameraSystem);
             }
             
             // Render damage numbers (after entities so they appear on top)
@@ -890,7 +1049,11 @@ class Game {
                 healthOrbManager.render(this.ctx, cameraSystem);
             }
             
-            renderSystem.renderMinimap(cameraSystem, this.entities, worldConfig.width, worldConfig.height);
+            renderSystem.renderMinimap(cameraSystem, this.entities, worldConfig.width, worldConfig.height, this.portal, currentLevel);
+
+            if (this.screenManager.isScreen('pause')) {
+                this.screenManager.render();
+            }
         } catch (error) {
             console.error('Render error:', error);
         }
