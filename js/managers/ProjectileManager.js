@@ -108,7 +108,8 @@ class ProjectileManager {
                                 const dy = playerTransform.y - projectile.y;
                                 const enemyConfig = GameConfig.enemy.types.skeleton || GameConfig.enemy.types.goblin;
                                 const knockbackConfig = enemyConfig.knockback || { force: 160, decay: 0.88 };
-                                playerMovement.applyKnockback(dx, dy, knockbackConfig.force);
+                                const finalKnockbackForce = knockbackConfig.force * GameConfig.player.knockback.receivedMultiplier;
+                                playerMovement.applyKnockback(dx, dy, finalKnockbackForce);
                             }
                         }
                         

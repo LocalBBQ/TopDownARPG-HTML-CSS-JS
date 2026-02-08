@@ -11,6 +11,8 @@ class InputSystem {
         this.rightMouseClicked = false;
         this.wheelDelta = 0;
         this.systems = null;
+        this.chargeStartTime = 0;
+        this.isCharging = false;
     }
 
     init(systems) {
@@ -42,10 +44,12 @@ class InputSystem {
 
         this.canvas.addEventListener('mousedown', (e) => {
             if (e.button === 0) {
-                // Left click
+                // Left click - start charging
                 this.mouseDown = true;
                 this.mouseClicked = true;
-                this.systems.eventBus.emit('input:click', { 
+                this.isCharging = true;
+                this.chargeStartTime = performance.now();
+                this.systems.eventBus.emit('input:mousedown', { 
                     x: this.mouseX, 
                     y: this.mouseY 
                 });
@@ -62,8 +66,15 @@ class InputSystem {
 
         this.canvas.addEventListener('mouseup', (e) => {
             if (e.button === 0) {
-                // Left mouse button
+                // Left mouse button - release charge
+                const chargeDuration = this.isCharging ? (performance.now() - this.chargeStartTime) / 1000 : 0;
                 this.mouseDown = false;
+                this.isCharging = false;
+                this.systems.eventBus.emit('input:mouseup', { 
+                    x: this.mouseX, 
+                    y: this.mouseY,
+                    chargeDuration: chargeDuration
+                });
             } else if (e.button === 2) {
                 // Right mouse button
                 this.rightMouseDown = false;
@@ -100,6 +111,13 @@ class InputSystem {
         const delta = this.wheelDelta;
         this.wheelDelta = 0;
         return delta;
+    }
+
+    getChargeDuration() {
+        if (this.isCharging) {
+            return (performance.now() - this.chargeStartTime) / 1000;
+        }
+        return 0;
     }
 }
 

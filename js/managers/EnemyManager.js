@@ -37,7 +37,7 @@ class EnemyManager {
             .addComponent(new Transform(x, y, 25, 25))
             .addComponent(new Health(config.maxHealth))
             .addComponent(new EnemyMovement(config.speed, type)) // Pass enemy type for type-specific behavior
-            .addComponent(new Combat(config.attackRange, config.attackDamage, Utils.degToRad(config.attackArcDegrees ?? 90), config.attackCooldown, config.windUpTime || 0.5, false)) // isPlayer=false
+            .addComponent(new Combat(config.attackRange, config.attackDamage, Utils.degToRad(config.attackArcDegrees ?? 90), config.attackCooldown, config.windUpTime || 0.5, false, Weapons.sword, type)) // isPlayer=false, pass enemy type for specific attack class
             .addComponent(ai)
             .addComponent(new Renderable('enemy', { color: config.color }));
         
@@ -112,81 +112,111 @@ class EnemyManager {
         return this.spawnEnemy(startX, startY, type, entityManager, patrolConfig);
     }
 
-    spawnEnemiesAroundPlayer(player, count, minDistance, maxDistance, worldWidth, worldHeight, obstacleManager, entityManager) {
-        const playerTransform = player.getComponent(Transform);
-        if (!playerTransform) return;
-
-        for (let i = 0; i < count; i++) {
-            let x, y;
-            let attempts = 0;
-            const maxAttempts = 50;
-
-            do {
+    generateEnemyPacks(worldWidth, worldHeight, packDensity = 0.008, packSize = { min: 2, max: 5 }, entityManager, obstacleManager) {
+        const tileSize = GameConfig.world.tileSize;
+        const numPacks = Math.floor(worldWidth * worldHeight * packDensity / (tileSize * tileSize));
+        
+        console.log(`Generating ${numPacks} enemy packs with density ${packDensity}`);
+        
+        const excludeArea = {
+            x: worldWidth / 2,
+            y: worldHeight / 2,
+            radius: 200 // Same exclusion zone as rocks/trees
+        };
+        
+        let packsPlaced = 0;
+        let attempts = 0;
+        const maxAttempts = numPacks * 3;
+        
+        while (packsPlaced < numPacks && attempts < maxAttempts) {
+            attempts++;
+            
+            // Random pack center position
+            const packCenterX = Utils.randomInt(0, worldWidth);
+            const packCenterY = Utils.randomInt(0, worldHeight);
+            
+            // Exclude center area (player spawn)
+            const distFromCenter = Utils.distance(packCenterX, packCenterY, excludeArea.x, excludeArea.y);
+            if (distFromCenter < excludeArea.radius) {
+                continue;
+            }
+            
+            // Determine pack size (number of enemies in this pack)
+            const enemiesInPack = Utils.randomInt(packSize.min, packSize.max);
+            const packRadius = 80; // How spread out enemies are within a pack
+            
+            let enemiesSpawnedInPack = 0;
+            const packMaxAttempts = enemiesInPack * 5;
+            let packAttempts = 0;
+            
+            // Try to spawn enemies around the pack center
+            while (enemiesSpawnedInPack < enemiesInPack && packAttempts < packMaxAttempts) {
+                packAttempts++;
+                
+                // Random position within pack radius
                 const angle = Math.random() * Math.PI * 2;
-                const distance = Utils.random(minDistance, maxDistance);
-                x = playerTransform.x + Math.cos(angle) * distance;
-                y = playerTransform.y + Math.sin(angle) * distance;
-                attempts++;
-            } while (
-                (obstacleManager && !obstacleManager.canMoveTo(x, y, 25, 25)) &&
-                attempts < maxAttempts
-            );
-
-            if (attempts < maxAttempts) {
-                x = Utils.clamp(x, 0, worldWidth);
-                y = Utils.clamp(y, 0, worldHeight);
+                const distance = Utils.random(0, packRadius);
+                const x = packCenterX + Math.cos(angle) * distance;
+                const y = packCenterY + Math.sin(angle) * distance;
                 
-                const types = ['goblin', 'goblin', 'skeleton', 'demon'];
-                const randomType = types[Utils.randomInt(0, types.length - 1)];
+                // Clamp to world bounds
+                const clampedX = Utils.clamp(x, 0, worldWidth);
+                const clampedY = Utils.clamp(y, 0, worldHeight);
                 
-                this.spawnEnemy(x, y, randomType, entityManager);
+                // Check if position is valid (not blocked by obstacles)
+                if (!obstacleManager || obstacleManager.canMoveTo(clampedX, clampedY, 25, 25)) {
+                    // Random enemy type (or use level-based distribution)
+                    const types = ['goblin', 'goblin', 'skeleton', 'demon'];
+                    const randomType = types[Utils.randomInt(0, types.length - 1)];
+                    
+                    this.spawnEnemy(clampedX, clampedY, randomType, entityManager);
+                    enemiesSpawnedInPack++;
+                }
+            }
+            
+            // If we spawned at least one enemy, count this as a successful pack
+            if (enemiesSpawnedInPack > 0) {
+                packsPlaced++;
             }
         }
+        
+        console.log(`Successfully placed ${packsPlaced} enemy packs with ${this.enemies.length} total enemies`);
     }
 
-    // Spawn enemies for a specific level
+    // Spawn enemies for a specific level using procedural pack spawning
     spawnLevelEnemies(level, entityManager, obstacleManager) {
         const levelConfig = GameConfig.levels[level];
-        if (!levelConfig || !levelConfig.spawnZones) {
-            console.warn(`No spawn zones defined for level ${level}`);
+        if (!levelConfig) {
+            console.warn(`No config defined for level ${level}`);
             return;
         }
 
         this.currentLevel = level;
         this.enemiesSpawned = true;
 
-        for (const zone of levelConfig.spawnZones) {
-            // Try to find a valid spawn position near the zone
-            let x = zone.x;
-            let y = zone.y;
-            let attempts = 0;
-            const maxAttempts = 20;
-            const searchRadius = 50;
-
-            // If the exact position is blocked, try nearby positions
-            while (obstacleManager && !obstacleManager.canMoveTo(x, y, 25, 25) && attempts < maxAttempts) {
-                const angle = Math.random() * Math.PI * 2;
-                const distance = Utils.random(10, searchRadius);
-                x = zone.x + Math.cos(angle) * distance;
-                y = zone.y + Math.sin(angle) * distance;
-                
-                // Clamp to world bounds
-                const worldConfig = GameConfig.world;
-                x = Utils.clamp(x, 0, worldConfig.width);
-                y = Utils.clamp(y, 0, worldConfig.height);
-                attempts++;
-            }
-
-            // Spawn the enemy if we found a valid position
-            if (attempts < maxAttempts || !obstacleManager) {
-                this.spawnEnemy(x, y, zone.type, entityManager);
-            }
-        }
+        const worldConfig = GameConfig.world;
+        
+        // Get pack config from level or use defaults
+        const packConfig = levelConfig.packSpawn || {
+            density: 0.008,
+            packSize: { min: 2, max: 5 }
+        };
+        
+        // Use procedural pack spawning
+        this.generateEnemyPacks(
+            worldConfig.width, 
+            worldConfig.height, 
+            packConfig.density,
+            packConfig.packSize,
+            entityManager,
+            obstacleManager
+        );
     }
 
     update(deltaTime, systems) {
         const entityManager = systems.get('entities');
         const obstacleManager = systems.get('obstacles');
+        const healthOrbManager = systems.get('healthOrbs');
         
         // Update all enemies
         for (let i = this.enemies.length - 1; i >= 0; i--) {
@@ -194,6 +224,12 @@ class EnemyManager {
             
             const health = enemy.getComponent(Health);
             if (health && health.isDead) {
+                // Spawn health orb at enemy position (20% drop rate)
+                const enemyTransform = enemy.getComponent(Transform);
+                if (enemyTransform && healthOrbManager && Math.random() < 0.2) {
+                    healthOrbManager.createOrb(enemyTransform.x, enemyTransform.y, 20);
+                }
+                
                 if (entityManager) {
                     entityManager.remove(enemy.id);
                 }
@@ -285,7 +321,12 @@ class EnemyManager {
         // Circular attacks continue checking during extended window
         if (combat.isPlayer && combat.playerAttack && !combat.currentAttackIsCircular) {
             // Player attacks handle their own processing
+        } else if (combat.goblinAttack) {
+            combat.goblinAttack.attackProcessed = true;
+        } else if (combat.skeletonAttack) {
+            combat.skeletonAttack.attackProcessed = true;
         } else if (combat.enemyAttack) {
+            // Fallback for unknown enemy types
             combat.enemyAttack.attackProcessed = true;
         }
         
@@ -313,8 +354,12 @@ class EnemyManager {
             const playerMovement = player.getComponent(Movement);
             
             // Check for lunge attack collision (continuous check during lunge)
-            // Only check lunge if enemy is actively lunging (movement-wise)
-            if (enemyMovement && enemyMovement.isLunging && enemyCombat.isLunging) {
+            // Only check lunge if enemy is actively lunging (movement-wise) and is a goblin
+            const ai = enemy.getComponent(AI);
+            const enemyType = ai ? ai.enemyType : 'goblin';
+            const isGoblin = enemyType === 'goblin';
+            
+            if (enemyMovement && enemyMovement.isLunging && enemyCombat.isLunging && isGoblin) {
                 const currentDist = Utils.distance(
                     enemyTransform.x, enemyTransform.y,
                     playerTransform.x, playerTransform.y
@@ -328,8 +373,8 @@ class EnemyManager {
                 const collisionDist = enemyRadius + playerRadius + lungeCollisionBuffer;
                 
                 if (currentDist < collisionDist && !enemyCombat.attackProcessed) {
-                    // Deal lunge damage to player
-                    const lungeDamage = enemyCombat.enemyAttack ? enemyCombat.enemyAttack.lungeDamage : enemyCombat.attackDamage;
+                    // Deal lunge damage to player (goblin-specific)
+                    const lungeDamage = enemyCombat.goblinAttack ? enemyCombat.goblinAttack.lungeDamage : enemyCombat.attackDamage;
                     
                     // Check if player is blocking and can block this attack
                     let finalDamage = lungeDamage;
@@ -361,27 +406,63 @@ class EnemyManager {
                         const enemyConfig = GameConfig.enemy.types[enemyType] || GameConfig.enemy.types.goblin;
                         const knockbackConfig = enemyConfig.knockback || { force: 160, decay: 0.88 };
                         const lungeKnockbackForce = enemyConfig.lunge?.knockback?.force ?? knockbackConfig.force;
+                        const finalKnockbackForce = lungeKnockbackForce * GameConfig.player.knockback.receivedMultiplier;
                         const dx = playerTransform.x - enemyTransform.x;
                         const dy = playerTransform.y - enemyTransform.y;
-                        playerMovement.applyKnockback(dx, dy, lungeKnockbackForce);
+                        playerMovement.applyKnockback(dx, dy, finalKnockbackForce);
                     }
                     
-                    if (enemyCombat.enemyAttack) {
-                        enemyCombat.enemyAttack.attackProcessed = true;
+                    if (enemyCombat.goblinAttack) {
+                        enemyCombat.goblinAttack.attackProcessed = true;
                     }
                 }
             }
             // Check if enemy attack has completed wind-up and is ready to hit (normal attacks)
             // Only process normal attacks if not currently lunging
-            if ((!enemyMovement || !enemyMovement.isLunging) && enemyCombat.isAttacking && !enemyCombat.attackProcessed && !enemyCombat.isLunging) {
+            // Skeletons don't have melee attacks - they only use projectiles
+            const isDemon = enemyCombat.demonAttack !== null && enemyCombat.demonAttack !== undefined;
+            const isSkeleton = enemyType === 'skeleton';
+            const isGoblinMelee = isGoblin && !enemyMovement.isLunging;
+            
+            // Skip melee attack processing for skeletons (they only use projectiles)
+            if (isSkeleton) {
+                continue;
+            }
+            
+            const attackProcessed = isDemon 
+                ? enemyCombat.demonAttack.hasHitEnemy('player')
+                : (enemyCombat.attackProcessed || false);
+            
+            if ((!enemyMovement || !enemyMovement.isLunging) && enemyCombat.isAttacking && !attackProcessed && !enemyCombat.isLunging && (isGoblinMelee || isDemon)) {
                 const currentDist = Utils.distance(
                     enemyTransform.x, enemyTransform.y,
                     playerTransform.x, playerTransform.y
                 );
                 
-                // Normal attack: check range
-                if (currentDist < enemyCombat.attackRange) {
-                    let finalDamage = enemyCombat.attackDamage;
+                // Get attack properties (from demon combo or legacy)
+                const attackRange = enemyCombat.attackRange;
+                const attackDamage = enemyCombat.attackDamage;
+                const attackArc = enemyCombat.attackArc;
+                const isCircular = enemyCombat.currentAttackIsCircular;
+                
+                // Check if player is in range
+                let inRange = false;
+                if (isCircular) {
+                    // Circular attack - check distance only
+                    inRange = currentDist < attackRange;
+                } else {
+                    // Arc-based attack - check if player is within attack arc
+                    inRange = Utils.pointInArc(
+                        playerTransform.x, playerTransform.y,
+                        enemyTransform.x, enemyTransform.y,
+                        enemyMovement.facingAngle,
+                        attackArc,
+                        attackRange
+                    );
+                }
+                
+                if (inRange) {
+                    let finalDamage = attackDamage;
                     let blocked = false;
                     
                     // Check if player is blocking and can block this attack
@@ -396,7 +477,7 @@ class EnemyManager {
                             // Check if player has enough stamina to block this attack
                             if (playerCombat.consumeBlockStamina()) {
                                 // Block successful - reduce damage
-                                finalDamage = enemyCombat.attackDamage * (1 - playerCombat.blockDamageReduction);
+                                finalDamage = attackDamage * (1 - playerCombat.blockDamageReduction);
                                 blocked = true;
                             }
                             // If not enough stamina, block fails and full damage is dealt
@@ -406,21 +487,28 @@ class EnemyManager {
                     // Deal damage to player
                     playerHealth.takeDamage(finalDamage, blocked);
                     
+                    // Mark as hit for demons using DemonAttack
+                    if (isDemon && enemyCombat.demonAttack) {
+                        enemyCombat.demonAttack.markEnemyHit('player');
+                    }
+                    
+                    // Mark as processed for goblins
+                    if (isGoblin && enemyCombat.goblinAttack) {
+                        enemyCombat.goblinAttack.attackProcessed = true;
+                    }
+                    
                     // Apply knockback to player if not blocked (normal attack: type knockback)
                     if (!blocked && playerMovement && (!playerCombat || !playerCombat.isBlocking)) {
-                        const ai = enemy.getComponent(AI);
-                        const enemyType = ai ? ai.enemyType : 'goblin';
                         const enemyConfig = GameConfig.enemy.types[enemyType] || GameConfig.enemy.types.goblin;
                         const knockbackConfig = enemyConfig.knockback || { force: 160, decay: 0.88 };
+                        const finalKnockbackForce = knockbackConfig.force * GameConfig.player.knockback.receivedMultiplier;
                         const dx = playerTransform.x - enemyTransform.x;
                         const dy = playerTransform.y - enemyTransform.y;
-                        playerMovement.applyKnockback(dx, dy, knockbackConfig.force);
+                        playerMovement.applyKnockback(dx, dy, finalKnockbackForce);
                     }
                 }
                 
-                if (enemyCombat.enemyAttack) {
-                    enemyCombat.enemyAttack.attackProcessed = true;
-                }
+                // Attack processed flag is set above for goblins and demons
             }
         }
     }

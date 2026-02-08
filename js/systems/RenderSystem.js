@@ -82,7 +82,7 @@ class RenderSystem {
                     );
                     this.ctx.fill();
                 } else {
-                    this.ctx.fillStyle = '#555';
+                    this.ctx.fillStyle = obstacle.color || '#555';
                     this.ctx.fillRect(
                         screenX, 
                         screenY, 
@@ -373,6 +373,7 @@ class RenderSystem {
         const combat = entity.getComponent(Combat);
         const health = entity.getComponent(Health);
         const renderable = entity.getComponent(Renderable);
+        const inputSystem = this.systems ? this.systems.get('input') : null;
 
         // Draw path if following one
         if (movement && movement.path.length > 0) {
@@ -452,6 +453,51 @@ class RenderSystem {
             
             // Reset text align
             this.ctx.textAlign = 'left';
+        }
+        
+        // Render charge meter if charging (vertical bar on left side of player)
+        // Only show after minimum charge time (0.5 seconds)
+        if (inputSystem && inputSystem.isCharging) {
+            const chargeDuration = inputSystem.getChargeDuration();
+            const chargedAttackConfig = GameConfig.player.chargedAttack;
+            const maxChargeTime = chargedAttackConfig.maxChargeTime;
+            const minChargeTime = chargedAttackConfig.minChargeTime;
+            
+            // Only display meter after minimum charge time
+            if (chargeDuration < minChargeTime) {
+                return;
+            }
+            
+            // Calculate charge progress (0.0 to 1.0)
+            const chargeProgress = Math.min(1.0, (chargeDuration - minChargeTime) / (maxChargeTime - minChargeTime));
+            
+            // Position meter on left side of player (vertical)
+            const meterWidth = 6 * camera.zoom;
+            const meterHeight = 40 * camera.zoom;
+            const meterX = screenX - (transform.width / 2 + 15) * camera.zoom;
+            const meterY = screenY - meterHeight / 2;
+            
+            // Draw meter background
+            this.ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
+            this.ctx.fillRect(meterX - 1, meterY - 1, meterWidth + 2, meterHeight + 2);
+            
+            // Draw meter border
+            this.ctx.strokeStyle = '#ffffff';
+            this.ctx.lineWidth = 1 / camera.zoom;
+            this.ctx.strokeRect(meterX, meterY, meterWidth, meterHeight);
+            
+            // Draw charge fill (from bottom to top)
+            const fillHeight = meterHeight * chargeProgress;
+            const fillY = meterY + meterHeight - fillHeight;
+            
+            // Gradient from yellow (bottom) to orange to red (top)
+            const gradient = this.ctx.createLinearGradient(meterX, meterY + meterHeight, meterX, meterY);
+            gradient.addColorStop(0, '#ffff00'); // Yellow (bottom)
+            gradient.addColorStop(0.5, '#ff8800'); // Orange
+            gradient.addColorStop(1, '#ff0000'); // Red (top)
+            
+            this.ctx.fillStyle = gradient;
+            this.ctx.fillRect(meterX, fillY, meterWidth, fillHeight);
         }
     }
 

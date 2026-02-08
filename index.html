@@ -30,10 +30,9 @@
                 <p><strong>Controls:</strong></p>
                 <p>WASD - Move</p>
                 <p>Hold Shift - Sprint</p>
-                <p>Tap Shift or Q - Dodge Roll</p>
+                <p>Space - Dodge Roll</p>
                 <p>Left Click - Attack at cursor</p>
                 <p>Right Click - Block (reduces damage)</p>
-                <p>Space - Attack in facing dir</p>
                 <p>R - Shoot projectile</p>
             </div>
         </div>
@@ -45,12 +44,16 @@
     <script src="js/utils/SpriteUtils.js"></script>
     <script src="js/core/EventBus.js"></script>
     <script src="js/core/SystemManager.js"></script>
+    <script src="js/core/ScreenManager.js"></script>
     <script src="js/config/GameConfig.js"></script>
     
     <!-- Weapons -->
     <script src="js/weapons/Weapon.js"></script>
     <script src="js/weapons/PlayerAttack.js"></script>
     <script src="js/weapons/EnemyAttack.js"></script>
+    <script src="js/weapons/GoblinAttack.js"></script>
+    <script src="js/weapons/SkeletonAttack.js"></script>
+    <script src="js/weapons/DemonAttack.js"></script>
     
     <!-- Components -->
     <script src="js/components/Transform.js"></script>
@@ -86,6 +89,7 @@
     <script src="js/managers/EnemyManager.js"></script>
     <script src="js/managers/DamageNumberManager.js"></script>
     <script src="js/managers/ProjectileManager.js"></script>
+    <script src="js/managers/HealthOrbManager.js"></script>
     
     <!-- Game -->
     <script src="js/core/Game.js"></script>

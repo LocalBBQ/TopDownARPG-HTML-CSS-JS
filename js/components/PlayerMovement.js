@@ -136,20 +136,12 @@ class PlayerMovement extends Movement {
                 if (combat && combat.isBlocking) {
                     this.speed = this.baseSpeed * 0.5; // 50% speed while blocking
                 }
-                // Handle sprinting and stamina consumption
+                // Handle sprinting - set speed first, then check stamina after movement is updated
                 else {
                     const stamina = this.entity.getComponent(Stamina);
                     if (this.isSprinting && stamina) {
-                        // Check if we have enough stamina to sprint
-                        const staminaNeeded = this.sprintStaminaCost * deltaTime;
-                        if (stamina.currentStamina > staminaNeeded) {
-                            stamina.currentStamina -= staminaNeeded;
-                            this.speed = this.baseSpeed * this.sprintMultiplier;
-                        } else {
-                            // Not enough stamina, stop sprinting
-                            this.isSprinting = false;
-                            this.speed = this.baseSpeed;
-                        }
+                        // Set sprint speed (will be used by updateMovement)
+                        this.speed = this.baseSpeed * this.sprintMultiplier;
                     } else if (!this.isSprinting) {
                         this.speed = this.baseSpeed;
                     }
@@ -159,6 +151,30 @@ class PlayerMovement extends Movement {
             // Now call parent for movement logic (updateMovement, applyMovement, updateFacingAngle)
             // But we've already handled speed setting above
             this.updateMovement(deltaTime, systems);
+            
+            // Check stamina drain for sprinting after movement is updated
+            // Only drain stamina if actually moving (velocity is non-zero)
+            if (!this.isDodging && !this.isAttackDashing && !this.isKnockedBack) {
+                const stamina = this.entity.getComponent(Stamina);
+                const combat = this.entity.getComponent(Combat);
+                if (this.isSprinting && stamina && (!combat || !combat.isBlocking)) {
+                    // Check if player is actually moving (has non-zero velocity)
+                    const isMoving = Math.abs(this.velocityX) > 0.1 || Math.abs(this.velocityY) > 0.1;
+                    
+                    // Only drain stamina if actually moving
+                    if (isMoving) {
+                        const staminaNeeded = this.sprintStaminaCost * deltaTime;
+                        if (stamina.currentStamina > staminaNeeded) {
+                            stamina.currentStamina -= staminaNeeded;
+                        } else {
+                            // Not enough stamina, stop sprinting
+                            this.isSprinting = false;
+                            this.speed = this.baseSpeed;
+                        }
+                    }
+                }
+            }
+            
             this.applyMovement(deltaTime, systems);
             this.updateFacingAngle(deltaTime, systems);
         }

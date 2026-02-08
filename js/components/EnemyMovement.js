@@ -19,11 +19,54 @@ class EnemyMovement extends Movement {
         this.lungeSpeed = 0;
         this.lungeDistance = 0;
         this.lungeTraveled = 0;
+        
+        // Initialize attack dash properties (for demons using combo attacks)
+        this.isAttackDashing = false;
+        this.attackDashTimer = 0;
+        this.attackDashDuration = 0;
+        this.attackDashDirectionX = 0;
+        this.attackDashDirectionY = 0;
     }
 
     update(deltaTime, systems) {
         const transform = this.entity.getComponent(Transform);
         if (!transform) return;
+
+        // Handle attack dash (for demons using combo attacks) - highest priority
+        if (this.isAttackDashing !== undefined && this.isAttackDashing) {
+            this.attackDashTimer += deltaTime;
+            
+            // Get dash speed from weapon config or use default
+            const combat = this.entity.getComponent(Combat);
+            let dashSpeed = 300; // Default dash speed for enemies
+            if (combat && combat.demonAttack) {
+                // Demons use weapon combos - get dash speed from current attack
+                const weapon = combat.demonAttack.weapon;
+                if (weapon) {
+                    const stageProps = weapon.getComboStageProperties(combat.demonAttack.comboStage);
+                    if (stageProps && stageProps.dashSpeed) {
+                        dashSpeed = stageProps.dashSpeed;
+                    }
+                }
+            }
+            
+            // Override velocity with dash movement
+            this.velocityX = this.attackDashDirectionX * dashSpeed;
+            this.velocityY = this.attackDashDirectionY * dashSpeed;
+            
+            // End dash after duration
+            if (this.attackDashTimer >= this.attackDashDuration) {
+                this.isAttackDashing = false;
+                this.attackDashTimer = 0;
+                this.velocityX = 0;
+                this.velocityY = 0;
+            }
+            
+            // Apply movement for attack dash
+            this.applyMovement(deltaTime, systems);
+            this.updateFacingAngle(deltaTime, systems);
+            return;
+        }
 
         // Handle enemy lunge - highest priority (only for types that support it)
         if (this.hasLunge && this.isLunging) {
@@ -65,8 +108,10 @@ class EnemyMovement extends Movement {
     }
 
     updateMovement(deltaTime, systems) {
-        // Skip normal movement during lunge or knockback
-        if ((this.hasLunge && this.isLunging) || this.isKnockedBack) {
+        // Skip normal movement during attack dash, lunge, or knockback
+        if ((this.isAttackDashing !== undefined && this.isAttackDashing) || 
+            (this.hasLunge && this.isLunging) || 
+            this.isKnockedBack) {
             return;
         }
         
@@ -124,10 +169,10 @@ class EnemyMovement extends Movement {
         this.velocityY = 0;
         this.lungeTraveled = 0;
         
-        // Notify combat component that lunge ended
+        // Notify combat component that lunge ended (goblin-specific)
         const combat = this.entity.getComponent(Combat);
-        if (combat && combat.enemyAttack) {
-            combat.enemyAttack.endLunge();
+        if (combat && combat.goblinAttack) {
+            combat.goblinAttack.endLunge();
         }
         
         // Notify AI component - set cooldown if we've used all lunges
@@ -139,6 +184,27 @@ class EnemyMovement extends Movement {
                 ai.lungeCount = 0; // Reset counter for next cooldown cycle
             }
         }
+    }
+    
+    // Attack dash support for demons (who use player-style combo attacks)
+    startAttackDash(directionX, directionY, duration) {
+        // Initialize attack dash properties if not already present
+        if (this.attackDashDirectionX === undefined) {
+            this.attackDashDirectionX = 0;
+            this.attackDashDirectionY = 0;
+            this.attackDashDuration = 0;
+            this.attackDashTimer = 0;
+            this.isAttackDashing = false;
+        }
+        
+        // Set dash direction
+        this.attackDashDirectionX = directionX;
+        this.attackDashDirectionY = directionY;
+        this.attackDashDuration = duration;
+        this.attackDashTimer = 0;
+        this.isAttackDashing = true;
+        
+        return true;
     }
 }
 

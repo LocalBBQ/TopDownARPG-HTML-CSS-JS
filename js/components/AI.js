@@ -25,6 +25,9 @@ class AI {
         // Projectile attack properties
         this.projectileCooldown = 0;
         
+        // Attack initiation tracking (prevents multiple attack calls in same frame)
+        this.attackInitiatedThisFrame = false;
+        
         // Patrol behavior
         this.patrolConfig = patrolConfig; // { startX, startY, endX, endY, distance }
         this.patrolTargetX = null;
@@ -41,6 +44,9 @@ class AI {
         
         if (!transform || !movement) return;
         if (health && health.isDead) return;
+        
+        // Reset attack initiation flag at start of each frame
+        this.attackInitiatedThisFrame = false;
 
         // Get player
         const entityManager = systems ? systems.get('entities') : null;
@@ -78,10 +84,11 @@ class AI {
         // Get enemy config once (used for lunge and projectile checks)
         const enemyConfig = this.enemyType ? GameConfig.enemy.types[this.enemyType] : null;
         
-        // Check for lunge attack (goblin-specific)
-        const lungeConfig = enemyConfig && enemyConfig.lunge ? enemyConfig.lunge : null;
-        // Can lunge if: lunge is enabled, not on cooldown, haven't used all lunges, and not already charging
-        const canLunge = lungeConfig && lungeConfig.enabled && combat && 
+        // Check for lunge attack (goblin-specific only)
+        const isGoblin = this.enemyType === 'goblin';
+        const lungeConfig = isGoblin && enemyConfig && enemyConfig.lunge ? enemyConfig.lunge : null;
+        // Can lunge if: goblin, lunge is enabled, not on cooldown, haven't used all lunges, and not already charging
+        const canLunge = isGoblin && lungeConfig && lungeConfig.enabled && combat && 
                         this.lungeCooldown === 0 && 
                         this.lungeCount < this.maxLunges && 
                         !this.isChargingLunge;
@@ -104,14 +111,14 @@ class AI {
                 movement.facingAngle = Math.atan2(dy, dx);
             }
             
-            // When charge completes, start lunge
-            if (this.lungeChargeTimer <= 0 && lungeConfig) {
+            // When charge completes, start lunge (goblin-specific)
+            if (this.lungeChargeTimer <= 0 && lungeConfig && this.enemyType === 'goblin') {
                 this.isChargingLunge = false;
                 // Increment lunge count
                 this.lungeCount++;
-                // Start lunge attack
-                if (combat.enemyAttack) {
-                    combat.enemyAttack.startLunge(this.lungeTargetX, this.lungeTargetY, lungeConfig);
+                // Start lunge attack (goblin-specific)
+                if (combat.goblinAttack) {
+                    combat.goblinAttack.startLunge(this.lungeTargetX, this.lungeTargetY, lungeConfig);
                 }
                 // Start lunge movement
                 movement.startLunge(this.lungeTargetX, this.lungeTargetY, lungeConfig);
@@ -157,18 +164,43 @@ class AI {
             }
         }
         // Normal attack
-        else if (distToPlayer < this.attackRange && combat && combat.cooldown === 0 && !combat.isWindingUp && !combat.isLunging) {
-            this.state = 'attack';
-            movement.stop();
-            // Pass player position for wind-up tracking
-            combat.attack(playerTransform.x, playerTransform.y);
-        } else if (combat && (combat.isWindingUp || combat.isLunging)) {
-            // During wind-up or lunge, keep stopped and facing the player
+        // Demons use combo system, goblins use swipe attacks, skeletons don't melee
+        const hasDemonAttack = combat && combat.demonAttack !== null && combat.demonAttack !== undefined;
+        const hasGoblinAttack = combat && combat.goblinAttack !== null && combat.goblinAttack !== undefined;
+        const isSkeleton = this.enemyType === 'skeleton';
+        
+        // Skeletons don't melee attack - they only use projectiles
+        if (!isSkeleton) {
+            const canAttack = combat && !this.attackInitiatedThisFrame && (
+                (hasDemonAttack && combat.demonAttack.canAttack() && !combat.isAttacking) ||
+                (hasGoblinAttack && combat.cooldown === 0 && !combat.isWindingUp && !combat.isLunging)
+            );
+            
+            if (distToPlayer < this.attackRange && canAttack && !combat.isLunging) {
+                this.state = 'attack';
+                movement.stop();
+                // Pass player position for attack
+                const attackResult = combat.attack(playerTransform.x, playerTransform.y);
+                // Mark that we've initiated an attack this frame to prevent multiple calls
+                if (attackResult) {
+                    this.attackInitiatedThisFrame = true;
+                }
+            }
+        }
+        
+        if (combat && (combat.isAttacking || combat.isWindingUp || combat.isLunging)) {
+            // During attack, wind-up, or lunge, keep stopped and facing the player
             this.state = combat.isLunging ? 'lunge' : 'attack';
             if (combat.isLunging) {
                 // Movement is handled by lunge
             } else {
                 movement.stop();
+                // Face the player during attack
+                const dx = playerTransform.x - transform.x;
+                const dy = playerTransform.y - transform.y;
+                if (dx !== 0 || dy !== 0) {
+                    movement.facingAngle = Math.atan2(dy, dx);
+                }
             }
         } else if (distToPlayer < this.detectionRange) {
             // Chase player (this includes when lunge is on cooldown)

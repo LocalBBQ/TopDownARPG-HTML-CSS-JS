@@ -42,17 +42,35 @@ class PlayerAttack {
         return this.attackBuffer <= 0;
     }
     
-    startAttack(targetX, targetY, entity) {
+    startAttack(targetX, targetY, entity, chargeDuration = 0) {
         if (!this.canAttack()) {
             return false;
         }
         
-        // Advance combo stage
-        if (this.comboStage < this.weapon.maxComboStage) {
-            this.comboStage++;
-        } else {
-            // Reset to first stage after completing full combo
+        // Check if this is a charged attack
+        const chargedAttackConfig = GameConfig.player.chargedAttack;
+        const isCharged = chargeDuration >= chargedAttackConfig.minChargeTime;
+        
+        // Calculate charge multiplier (0.0 to 1.0 based on charge time)
+        let chargeMultiplier = 0;
+        if (isCharged) {
+            const chargeProgress = Math.min(1.0, (chargeDuration - chargedAttackConfig.minChargeTime) / 
+                (chargedAttackConfig.maxChargeTime - chargedAttackConfig.minChargeTime));
+            chargeMultiplier = chargeProgress;
+        }
+        
+        // Advance combo stage (only if not charged, or reset combo for charged attacks)
+        if (isCharged) {
+            // Charged attacks reset combo to stage 1
             this.comboStage = 1;
+        } else {
+            // Normal combo progression
+            if (this.comboStage < this.weapon.maxComboStage) {
+                this.comboStage++;
+            } else {
+                // Reset to first stage after completing full combo
+                this.comboStage = 1;
+            }
         }
         
         // Reset combo window
@@ -62,6 +80,22 @@ class PlayerAttack {
         // Get combo stage properties
         const stageProps = this.weapon.getComboStageProperties(this.comboStage);
         if (!stageProps) return false;
+        
+        // Apply charge multipliers if charged
+        let finalDamage = stageProps.damage;
+        let finalRange = stageProps.range;
+        let finalStaminaCost = stageProps.staminaCost;
+        
+        if (isCharged && chargeMultiplier > 0) {
+            // Interpolate between normal and max charge values
+            const damageMultiplier = 1.0 + (chargedAttackConfig.damageMultiplier - 1.0) * chargeMultiplier;
+            const rangeMultiplier = 1.0 + (chargedAttackConfig.rangeMultiplier - 1.0) * chargeMultiplier;
+            const staminaMultiplier = 1.0 + (chargedAttackConfig.staminaCostMultiplier - 1.0) * chargeMultiplier;
+            
+            finalDamage = stageProps.damage * damageMultiplier;
+            finalRange = stageProps.range * rangeMultiplier;
+            finalStaminaCost = stageProps.staminaCost * staminaMultiplier;
+        }
         
         // Set attack duration
         this.attackDuration = stageProps.duration / 1000; // Convert to seconds
@@ -80,16 +114,18 @@ class PlayerAttack {
         }
         
         return {
-            range: stageProps.range,
-            damage: stageProps.damage,
+            range: finalRange,
+            damage: finalDamage,
             arc: stageProps.arc,
             comboStage: this.comboStage,
-            staminaCost: stageProps.staminaCost,
+            staminaCost: finalStaminaCost,
             duration: stageProps.duration,
             stageName: stageProps.stageName,
             animationKey: stageProps.animationKey,
             isCircular: stageProps.isCircular,
-            knockbackForce: stageProps.knockbackForce
+            knockbackForce: stageProps.knockbackForce,
+            isCharged: isCharged,
+            chargeMultiplier: chargeMultiplier
         };
     }
     

@@ -16,18 +16,40 @@ class Game {
             this.systems = new SystemManager();
             this.entities = new EntityManager();
             
+            // Initialize player projectile cooldown
+            this.playerProjectileCooldown = 0;
+            
+            // Initialize screen manager
+            this.screenManager = null; // Will be initialized after canvas setup
+            
             this.setupCanvas();
             // Initialize systems asynchronously (loads sprites)
             this.initializeSystems().then(() => {
-                this.initializeEntities();
+                // Don't initialize entities yet - wait for title screen
                 this.setupEventListeners();
                 
                 this.running = true;
                 this.lastTime = performance.now();
                 
                 console.log('Game initialized successfully');
-                console.log('Entities:', this.entities.getAll().length);
-                console.log('Systems:', Array.from(this.systems.systems.keys()));
+                
+                // Start with title screen
+                this.screenManager.setScreen('title');
+                this.updateUIVisibility(false);
+                
+                // Set up space key handler after input system is ready
+                const inputSystem = this.systems.get('input');
+                if (inputSystem && this.systems.eventBus) {
+                    this.systems.eventBus.on('input:keydown', (key) => {
+                        if (key === ' ') {
+                            if (this.screenManager.isScreen('title')) {
+                                this.startGame();
+                            } else if (this.screenManager.isScreen('death')) {
+                                this.restartGame();
+                            }
+                        }
+                    });
+                }
                 
                 this.start();
             }).catch((error) => {
@@ -44,6 +66,9 @@ class Game {
     setupCanvas() {
         this.canvas.width = window.innerWidth;
         this.canvas.height = window.innerHeight;
+        
+        // Initialize screen manager after canvas is set up
+        this.screenManager = new ScreenManager(this.canvas, this.ctx);
     }
 
     async initializeSystems() {
@@ -78,6 +103,7 @@ class Game {
             .register('enemies', new EnemyManager())
             .register('damageNumbers', new DamageNumberManager())
             .register('projectiles', new ProjectileManager())
+            .register('healthOrbs', new HealthOrbManager())
             .register('render', new RenderSystem(this.canvas, this.ctx));
         
         // Initialize render system with systems reference
@@ -374,8 +400,30 @@ class Game {
         const cameraSystem = this.systems.get('camera');
         const pathfindingSystem = this.systems.get('pathfinding');
         
-        // Handle left click - Attack in cursor direction
-        this.systems.eventBus.on('input:click', (data) => {
+        // Track charge state
+        let isChargingAttack = false;
+        let chargeTargetX = 0;
+        let chargeTargetY = 0;
+        
+        // Handle mouse down - Start charging attack
+        this.systems.eventBus.on('input:mousedown', (data) => {
+            const transform = player.getComponent(Transform);
+            const combat = player.getComponent(Combat);
+            const worldPos = cameraSystem.screenToWorld(data.x, data.y);
+            
+            // Can't charge while blocking or already attacking
+            if (combat && (combat.isBlocking || combat.isAttacking)) {
+                return;
+            }
+            
+            // Start charging
+            isChargingAttack = true;
+            chargeTargetX = worldPos.x;
+            chargeTargetY = worldPos.y;
+        });
+        
+        // Handle mouse up - Release attack (normal or charged)
+        this.systems.eventBus.on('input:mouseup', (data) => {
             const transform = player.getComponent(Transform);
             const movement = player.getComponent(Movement);
             const combat = player.getComponent(Combat);
@@ -384,8 +432,13 @@ class Game {
             
             // Can't attack while blocking
             if (combat && combat.isBlocking) {
+                isChargingAttack = false;
                 return;
             }
+            
+            // If we were charging, use the charge duration
+            const chargeDuration = isChargingAttack ? data.chargeDuration : 0;
+            isChargingAttack = false;
             
             // Face the cursor direction
             if (movement && transform) {
@@ -395,14 +448,26 @@ class Game {
                 );
             }
             
-            // Determine stamina cost based on next combo stage
+            // Perform attack with charge duration
             if (combat && stamina && combat.isPlayer && combat.playerAttack) {
                 const nextStage = combat.playerAttack.comboStage < combat.playerAttack.weapon.maxComboStage 
                     ? combat.playerAttack.comboStage + 1 : 1;
                 const stageProps = combat.playerAttack.weapon.getComboStageProperties(nextStage);
                 
-                if (stageProps && stamina.use(stageProps.staminaCost)) {
-                    const attackData = combat.attack(worldPos.x, worldPos.y);
+                // Calculate stamina cost (will be adjusted in startAttack if charged)
+                const baseStaminaCost = stageProps ? stageProps.staminaCost : 10;
+                const chargedAttackConfig = GameConfig.player.chargedAttack;
+                let staminaCost = baseStaminaCost;
+                
+                if (chargeDuration >= chargedAttackConfig.minChargeTime) {
+                    const chargeMultiplier = Math.min(1.0, (chargeDuration - chargedAttackConfig.minChargeTime) / 
+                        (chargedAttackConfig.maxChargeTime - chargedAttackConfig.minChargeTime));
+                    staminaCost = baseStaminaCost * (1.0 + (chargedAttackConfig.staminaCostMultiplier - 1.0) * chargeMultiplier);
+                }
+                
+                if (stageProps && stamina.currentStamina >= staminaCost) {
+                    stamina.currentStamina -= staminaCost;
+                    const attackData = combat.attack(worldPos.x, worldPos.y, chargeDuration);
                     if (attackData) {
                         // Attack started successfully
                     }
@@ -477,35 +542,9 @@ class Game {
             }
         });
         
-        // Handle attack (Space key - attacks in facing direction)
+        // Handle dodge roll (Space key)
         this.systems.eventBus.on('input:keydown', (key) => {
             if (key === ' ') {
-                const combat = player.getComponent(Combat);
-                const stamina = player.getComponent(Stamina);
-                const movement = player.getComponent(Movement);
-                const transform = player.getComponent(Transform);
-                
-                if (combat && stamina && combat.isPlayer && combat.playerAttack) {
-                    // Determine stamina cost based on next combo stage
-                    const nextStage = combat.playerAttack.comboStage < combat.playerAttack.weapon.maxComboStage 
-                        ? combat.playerAttack.comboStage + 1 : 1;
-                    const stageProps = combat.playerAttack.weapon.getComboStageProperties(nextStage);
-                    
-                    if (stageProps && stamina.use(stageProps.staminaCost)) {
-                        // Attack in current facing direction
-                        if (movement && transform) {
-                            const attackX = transform.x + Math.cos(movement.facingAngle) * 100;
-                            const attackY = transform.y + Math.sin(movement.facingAngle) * 100;
-                            combat.attack(attackX, attackY);
-                        }
-                    }
-                }
-            }
-        });
-        
-        // Handle dodge roll (Q key)
-        this.systems.eventBus.on('input:keydown', (key) => {
-            if (key === 'q') {
                 const movement = player.getComponent(Movement);
                 const stamina = player.getComponent(Stamina);
                 
@@ -527,15 +566,9 @@ class Game {
             }
         });
         
-        // Shift tap detection for dodge roll
-        let shiftPressTime = 0;
-        const shiftTapThreshold = 0.2; // 200ms for tap detection
-        
         // Handle sprint (Shift key)
         this.systems.eventBus.on('input:keydown', (key) => {
             if (key === 'shift') {
-                shiftPressTime = performance.now();
-                
                 const movement = player.getComponent(Movement);
                 const stamina = player.getComponent(Stamina);
                 if (movement && stamina && stamina.currentStamina > 0) {
@@ -558,28 +591,7 @@ class Game {
         
         this.systems.eventBus.on('input:keyup', (key) => {
             if (key === 'shift') {
-                const shiftHoldDuration = (performance.now() - shiftPressTime) / 1000;
                 const movement = player.getComponent(Movement);
-                const stamina = player.getComponent(Stamina);
-                
-                // If released quickly (tap), perform dodge roll
-                if (shiftHoldDuration < shiftTapThreshold && movement && stamina && 
-                    stamina.currentStamina >= GameConfig.player.dodge.staminaCost) {
-                    
-                    // Get current movement direction
-                    let dodgeX = 0;
-                    let dodgeY = 0;
-                    
-                    if (inputSystem.isKeyPressed('w')) dodgeY -= 1;
-                    if (inputSystem.isKeyPressed('s')) dodgeY += 1;
-                    if (inputSystem.isKeyPressed('a')) dodgeX -= 1;
-                    if (inputSystem.isKeyPressed('d')) dodgeX += 1;
-                    
-                    // Perform dodge and consume stamina
-                    if (movement.performDodge(dodgeX, dodgeY)) {
-                        stamina.currentStamina -= GameConfig.player.dodge.staminaCost;
-                    }
-                }
                 
                 // Always stop sprinting on release
                 if (movement) {
@@ -656,9 +668,89 @@ class Game {
             this.canvas.width = window.innerWidth;
             this.canvas.height = window.innerHeight;
         });
+        
+        // Handle screen button clicks
+        this.canvas.addEventListener('click', (e) => {
+            const rect = this.canvas.getBoundingClientRect();
+            const x = e.clientX - rect.left;
+            const y = e.clientY - rect.top;
+            
+            if (this.screenManager.isScreen('title')) {
+                if (this.screenManager.checkButtonClick(x, y, 'title')) {
+                    this.startGame();
+                }
+            } else if (this.screenManager.isScreen('death')) {
+                if (this.screenManager.checkButtonClick(x, y, 'death')) {
+                    this.restartGame();
+                }
+            }
+        });
+    }
+    
+    startGame() {
+        // Initialize entities and start playing
+        this.initializeEntities();
+        this.screenManager.setScreen('playing');
+        this.updateUIVisibility(true);
+    }
+    
+    restartGame() {
+        // Clear all entities
+        const allEntities = this.entities.getAll();
+        for (const entity of allEntities) {
+            this.entities.remove(entity.id);
+        }
+        
+        // Clear enemies
+        const enemyManager = this.systems.get('enemies');
+        if (enemyManager) {
+            enemyManager.enemies = [];
+            enemyManager.enemiesSpawned = false;
+        }
+        
+        // Clear projectiles
+        const projectileManager = this.systems.get('projectiles');
+        if (projectileManager) {
+            projectileManager.projectiles = [];
+        }
+        
+        // Clear damage numbers
+        const damageNumberManager = this.systems.get('damageNumbers');
+        if (damageNumberManager) {
+            damageNumberManager.numbers = [];
+        }
+        
+        // Clear health orbs
+        const healthOrbManager = this.systems.get('healthOrbs');
+        if (healthOrbManager) {
+            healthOrbManager.clear();
+        }
+        
+        // Reset camera
+        const cameraSystem = this.systems.get('camera');
+        if (cameraSystem) {
+            cameraSystem.setZoom(1.0, this.canvas.width / 2, this.canvas.height / 2, this.canvas.width, this.canvas.height);
+        }
+        
+        // Reinitialize entities
+        this.initializeEntities();
+        this.screenManager.setScreen('playing');
+        this.updateUIVisibility(true);
+    }
+    
+    updateUIVisibility(visible) {
+        const uiOverlay = document.getElementById('ui-overlay');
+        if (uiOverlay) {
+            uiOverlay.style.display = visible ? 'block' : 'none';
+        }
     }
 
     update(deltaTime) {
+        // Only update game logic if playing
+        if (!this.screenManager.isScreen('playing')) {
+            return;
+        }
+
         // Handle camera zoom with mouse wheel
         const inputSystem = this.systems.get('input');
         const cameraSystem = this.systems.get('camera');
@@ -690,6 +782,12 @@ class Game {
             projectileManager.update(deltaTime, this.systems);
         }
         
+        // Update health orbs
+        const healthOrbManager = this.systems.get('healthOrbs');
+        if (healthOrbManager) {
+            healthOrbManager.update(deltaTime, this.systems);
+        }
+        
         // Update all entities
         this.entities.update(deltaTime, this.systems);
         
@@ -703,6 +801,13 @@ class Game {
             
             // Handle enemy attacks on player
             enemyManager.checkEnemyAttacks(player);
+            
+            // Check for player death
+            const health = player.getComponent(Health);
+            if (health && health.isDead && this.screenManager.isScreen('playing')) {
+                this.screenManager.setScreen('death');
+                this.updateUIVisibility(false);
+            }
         }
         
         // Update camera to follow player
@@ -741,6 +846,13 @@ class Game {
 
     render() {
         try {
+            // Render title or death screen if not playing
+            if (this.screenManager.isScreen('title') || this.screenManager.isScreen('death')) {
+                this.screenManager.render();
+                return;
+            }
+            
+            // Normal game rendering
             const renderSystem = this.systems.get('render');
             const cameraSystem = this.systems.get('camera');
             const obstacleManager = this.systems.get('obstacles');
@@ -770,6 +882,12 @@ class Game {
             const damageNumberManager = this.systems.get('damageNumbers');
             if (damageNumberManager) {
                 damageNumberManager.render(this.ctx, cameraSystem);
+            }
+            
+            // Render health orbs
+            const healthOrbManager = this.systems.get('healthOrbs');
+            if (healthOrbManager) {
+                healthOrbManager.render(this.ctx, cameraSystem);
             }
             
             renderSystem.renderMinimap(cameraSystem, this.entities, worldConfig.width, worldConfig.height);

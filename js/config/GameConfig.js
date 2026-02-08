@@ -1,8 +1,8 @@
 // Centralized game configuration
 const GameConfig = {
     world: {
-        width: 2400,
-        height: 1400,
+        width: 4800,
+        height: 2800,
         tileSize: 50
     },
 
@@ -23,8 +23,8 @@ const GameConfig = {
     },
     
     player: {
-        startX: 1200,
-        startY: 700,
+        startX: 2400,
+        startY: 1400,
         width: 30,
         height: 30,
         speed: 100, // pixels per second (now properly scaled by deltaTime)
@@ -37,6 +37,13 @@ const GameConfig = {
         attackCooldown: 0.3, // seconds - faster for combos (was 0.5)
         color: '#4444ff',
         defaultWeapon: 'sword',
+        chargedAttack: {
+            minChargeTime: 0.5, // Minimum time to charge (seconds)
+            maxChargeTime: 2.0, // Maximum charge time (seconds)
+            damageMultiplier: 2.0, // Damage multiplier at max charge
+            rangeMultiplier: 1.5, // Range multiplier at max charge
+            staminaCostMultiplier: 1.5 // Stamina cost multiplier at max charge
+        },
         sprint: {
             multiplier: 1.66, // 66% speed increase
             staminaCost: 12 // stamina consumed per second
@@ -49,7 +56,8 @@ const GameConfig = {
         },
         knockback: {
             force: 550, // Knockback force for player attacks (pixels per second initial velocity)
-            decay: 0.85 // Friction factor (higher = less friction, more distance)
+            decay: 0.85, // Friction factor (higher = less friction, more distance)
+            receivedMultiplier: 3.0 // Multiplier applied to knockback received from enemies
         },
         projectile: {
             speed: 400, // Pixels per second
@@ -64,7 +72,7 @@ const GameConfig = {
         types: {
             goblin: {
                 maxHealth: 30,
-                speed: 40, // pixels per second (now properly scaled by deltaTime)
+                speed: 25, // pixels per second (now properly scaled by deltaTime) - slowed down
                 attackRange: 40,
                 attackDamage: 5,
                 attackArcDegrees: 90,
@@ -80,7 +88,7 @@ const GameConfig = {
                     enabled: true,
                     chargeRange: 150, // Distance at which goblin starts charging lunge
                     chargeTime: 0.8, // Time to charge up the lunge
-                    lungeSpeed: 300, // Speed during lunge
+                    lungeSpeed: 200, // Speed during lunge - slowed down
                     lungeDistance: 120, // Maximum distance to lunge
                     lungeDamage: 8, // Damage dealt by lunge (higher than normal attack)
                     knockback: { force: 240 } // Per-attack knockback (default type is 160)
@@ -88,7 +96,7 @@ const GameConfig = {
             },
             skeleton: {
                 maxHealth: 50,
-                speed: 30, // pixels per second (now properly scaled by deltaTime)
+                speed: 20, // pixels per second (now properly scaled by deltaTime) - slowed down
                 attackRange: 50,
                 attackDamage: 8,
                 attackArcDegrees: 90,
@@ -102,15 +110,15 @@ const GameConfig = {
                 },
                 projectile: {
                     enabled: true, // Skeletons are ranged enemies
-                    speed: 300, // Pixels per second
+                    speed: 200, // Pixels per second - slowed down
                     damage: 6,
                     range: 400,
-                    cooldown: 2.0 // Seconds between shots
+                    cooldown: 3.5 // Seconds between shots - increased cooldown
                 }
             },
             demon: {
                 maxHealth: 80,
-                speed: 50, // pixels per second (now properly scaled by deltaTime)
+                speed: 30, // pixels per second (now properly scaled by deltaTime) - slowed down
                 attackRange: 60,
                 attackDamage: 12,
                 attackArcDegrees: 90,
@@ -130,54 +138,25 @@ const GameConfig = {
     },
     
     levels: {
-        // Level-based enemy spawn points
-        // Each level defines spawn zones where enemies will appear
+        // Level-based enemy pack spawn configuration
+        // Uses procedural generation similar to rocks/trees
         1: {
-            spawnZones: [
-                { x: 300, y: 300, type: 'goblin' },
-                { x: 600, y: 400, type: 'goblin' },
-                { x: 900, y: 500, type: 'goblin' },
-                { x: 1200, y: 300, type: 'goblin' },
-                { x: 1500, y: 600, type: 'goblin' },
-                { x: 1800, y: 400, type: 'goblin' },
-                { x: 2100, y: 700, type: 'goblin' },
-                { x: 500, y: 800, type: 'goblin' },
-                { x: 1000, y: 900, type: 'goblin' },
-                { x: 1600, y: 1000, type: 'goblin' }
-            ]
+            packSpawn: {
+                density: 0.008,  // ~10-12 packs
+                packSize: { min: 2, max: 4 }
+            }
         },
         2: {
-            spawnZones: [
-                { x: 400, y: 200, type: 'goblin' },
-                { x: 700, y: 350, type: 'goblin' },
-                { x: 1000, y: 450, type: 'skeleton' },
-                { x: 1300, y: 250, type: 'goblin' },
-                { x: 1600, y: 550, type: 'skeleton' },
-                { x: 1900, y: 350, type: 'goblin' },
-                { x: 2200, y: 650, type: 'skeleton' },
-                { x: 600, y: 750, type: 'goblin' },
-                { x: 1100, y: 850, type: 'skeleton' },
-                { x: 1700, y: 950, type: 'goblin' },
-                { x: 800, y: 1100, type: 'skeleton' },
-                { x: 1400, y: 1200, type: 'goblin' }
-            ]
+            packSpawn: {
+                density: 0.012,  // ~15-18 packs
+                packSize: { min: 3, max: 5 }
+            }
         },
         3: {
-            spawnZones: [
-                { x: 500, y: 150, type: 'skeleton' },
-                { x: 800, y: 300, type: 'skeleton' },
-                { x: 1100, y: 400, type: 'skeleton' },
-                { x: 1400, y: 200, type: 'demon' },
-                { x: 1700, y: 500, type: 'skeleton' },
-                { x: 2000, y: 300, type: 'demon' },
-                { x: 700, y: 700, type: 'skeleton' },
-                { x: 1200, y: 800, type: 'demon' },
-                { x: 1800, y: 900, type: 'skeleton' },
-                { x: 900, y: 1050, type: 'demon' },
-                { x: 1500, y: 1150, type: 'skeleton' },
-                { x: 600, y: 600, type: 'demon' },
-                { x: 1600, y: 650, type: 'skeleton' }
-            ]
+            packSpawn: {
+                density: 0.016,  // ~20-24 packs
+                packSize: { min: 4, max: 6 }
+            }
         }
     },
     
@@ -190,6 +169,33 @@ const GameConfig = {
         },
         border: {
             spacing: 50
+        },
+        structures: {
+            houses: {
+                enabled: true,
+                count: 5
+            },
+            woodClusters: {
+                enabled: true,
+                count: 4,
+                treesPerCluster: 8
+            },
+            settlements: {
+                enabled: true,
+                count: 2
+            },
+            firepits: {
+                enabled: true,
+                count: 3
+            },
+            sheds: {
+                enabled: true,
+                count: 4
+            },
+            wells: {
+                enabled: true,
+                count: 2
+            }
         }
     },
     
