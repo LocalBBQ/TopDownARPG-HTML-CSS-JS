@@ -37,8 +37,8 @@ class PlayerInputController {
 
         // Handle mouse down - Start charging attack
         this.eventBus.on(EventTypes.INPUT_MOUSEDOWN, (data) => {
-            // Only allow attack input while actively playing
-            if (!this.game.screenManager || !this.game.screenManager.isScreen('playing')) return;
+            // Only allow attack input while actively playing (combat levels or hub)
+            if (!this.game.screenManager || !(this.game.screenManager.isScreen('playing') || this.game.screenManager.isScreen('hub'))) return;
             const player = this.player;
             if (!player || !cameraSystem) return;
 
@@ -46,6 +46,9 @@ class PlayerInputController {
             const combat = player.getComponent(Combat);
             const worldPos = cameraSystem.screenToWorld(data.x, data.y);
             
+            // Can't act while stunned
+            const statusEffects = player.getComponent(StatusEffects);
+            if (statusEffects && statusEffects.isStunned) return;
             // Can't charge while blocking or already attacking
             if (combat && (combat.isBlocking || combat.isAttacking)) {
                 return;
@@ -59,8 +62,8 @@ class PlayerInputController {
         
         // Handle mouse up - Release attack (normal or charged)
         this.eventBus.on(EventTypes.INPUT_MOUSEUP, (data) => {
-            // Only allow attack input while actively playing
-            if (!this.game.screenManager || !this.game.screenManager.isScreen('playing')) return;
+            // Only allow attack input while actively playing (combat levels or hub)
+            if (!this.game.screenManager || !(this.game.screenManager.isScreen('playing') || this.game.screenManager.isScreen('hub'))) return;
             const player = this.player;
             if (!player || !cameraSystem) return;
 
@@ -69,10 +72,26 @@ class PlayerInputController {
             const combat = player.getComponent(Combat);
             const stamina = player.getComponent(Stamina);
             const worldPos = cameraSystem.screenToWorld(data.x, data.y);
+
+            const statusEffects = player.getComponent(StatusEffects);
+            if (statusEffects && statusEffects.isStunned) return;
             
-            // Can't attack while blocking
+            // While blocking: left-click = shield bash (if weapon has it), else ignore
             if (combat && combat.isBlocking) {
                 this.isChargingAttack = false;
+                const blockConfig = combat._getBlockConfig ? combat._getBlockConfig() : null;
+                if (blockConfig && blockConfig.shieldBash) {
+                    if (movement && transform) {
+                        movement.facingAngle = Utils.angleTo(
+                            transform.x, transform.y,
+                            worldPos.x, worldPos.y
+                        );
+                    }
+                    const stamina = player.getComponent(Stamina);
+                    if (stamina && stamina.currentStamina >= blockConfig.shieldBash.staminaCost) {
+                        combat.shieldBash(this.systems, worldPos.x, worldPos.y);
+                    }
+                }
                 return;
             }
             
@@ -88,28 +107,60 @@ class PlayerInputController {
                 );
             }
             
-            // Perform attack with charge duration
+            // Perform attack: crossbow = left-click to shoot when loaded; else shift+left = special, else combo
             if (combat && stamina && combat.isPlayer && combat.playerAttack) {
-                const nextStage = combat.playerAttack.comboStage < combat.playerAttack.weapon.maxComboStage 
-                    ? combat.playerAttack.comboStage + 1 : 1;
-                const stageProps = combat.playerAttack.weapon.getComboStageProperties(nextStage);
-                
-                // Calculate stamina cost (will be adjusted in startAttack if charged)
-                const baseStaminaCost = stageProps ? stageProps.staminaCost : 10;
-                const chargedAttackConfig = GameConfig.player.chargedAttack;
-                let staminaCost = baseStaminaCost;
-                
-                if (chargeDuration >= chargedAttackConfig.minChargeTime) {
-                    const chargeMultiplier = Math.min(1.0, (chargeDuration - chargedAttackConfig.minChargeTime) / 
-                        (chargedAttackConfig.maxChargeTime - chargedAttackConfig.minChargeTime));
-                    staminaCost = baseStaminaCost * (1.0 + (chargedAttackConfig.staminaCostMultiplier - 1.0) * chargeMultiplier);
+                const weapon = combat.playerAttack.weapon;
+                const isCrossbow = weapon && weapon.isRanged === true;
+                const crossbowConfig = GameConfig.player.crossbow;
+                if (isCrossbow && crossbowConfig) {
+                    // Crossbow: left-click fires when loaded
+                    const projectileManager = this.systems.get('projectiles');
+                    if (this.game.crossbowReloadProgress >= 1 && stamina.currentStamina >= crossbowConfig.staminaCost && projectileManager && transform && movement) {
+                        const worldPos = cameraSystem.screenToWorld(data.x, data.y);
+                        const angle = Utils.angleTo(transform.x, transform.y, worldPos.x, worldPos.y);
+                        let damage = crossbowConfig.damage;
+                        if (this.game.crossbowPerfectReloadNext) {
+                            damage *= crossbowConfig.perfectReloadDamageMultiplier;
+                            this.game.crossbowPerfectReloadNext = false;
+                        }
+                        projectileManager.createProjectile(
+                            transform.x, transform.y, angle,
+                            crossbowConfig.speed, damage, crossbowConfig.range,
+                            player, 'player', crossbowConfig.stunBuildup ?? 0
+                        );
+                        stamina.currentStamina -= crossbowConfig.staminaCost;
+                        this.game.crossbowReloadProgress = 0;
+                        this.game.crossbowReloadInProgress = false;
+                    }
+                    return;
                 }
-                
-                if (stageProps && stamina.currentStamina >= staminaCost) {
-                    stamina.currentStamina -= staminaCost;
-                    const attackData = combat.attack(worldPos.x, worldPos.y, chargeDuration);
-                    if (attackData) {
-                        // Attack started successfully
+                const useSpecial = data.shiftKey && weapon.specialAttack;
+
+                if (useSpecial) {
+                    const specialProps = weapon.getSpecialAttackProperties();
+                    if (specialProps && stamina.currentStamina >= specialProps.staminaCost) {
+                        stamina.currentStamina -= specialProps.staminaCost;
+                        combat.attack(worldPos.x, worldPos.y, 0, { useSpecialAttack: true });
+                        this.eventBus.emit(EventTypes.PLAYER_SPECIAL_ATTACK);
+                    }
+                } else {
+                    const nextStage = combat.playerAttack.comboStage < weapon.maxComboStage
+                        ? combat.playerAttack.comboStage + 1 : 1;
+                    const stageProps = weapon.getComboStageProperties(nextStage);
+
+                    const baseStaminaCost = stageProps ? stageProps.staminaCost : 10;
+                    const chargedAttackConfig = GameConfig.player.chargedAttack;
+                    let staminaCost = baseStaminaCost;
+
+                    if (chargeDuration >= chargedAttackConfig.minChargeTime) {
+                        const chargeMultiplier = Math.min(1.0, (chargeDuration - chargedAttackConfig.minChargeTime) /
+                            (chargedAttackConfig.maxChargeTime - chargedAttackConfig.minChargeTime));
+                        staminaCost = baseStaminaCost * (1.0 + (chargedAttackConfig.staminaCostMultiplier - 1.0) * chargeMultiplier);
+                    }
+
+                    if (stageProps && stamina.currentStamina >= staminaCost) {
+                        stamina.currentStamina -= staminaCost;
+                        combat.attack(worldPos.x, worldPos.y, chargeDuration);
                     }
                 }
             }
@@ -119,10 +170,13 @@ class PlayerInputController {
     bindBlockControls() {
         // Handle right click - Block (buffer input if attacking so block starts when attack ends)
         this.eventBus.on(EventTypes.INPUT_RIGHTCLICK, (data) => {
-            // Only allow block input while actively playing
-            if (!this.game.screenManager || !this.game.screenManager.isScreen('playing')) return;
+            // Only allow block input while actively playing (combat levels or hub)
+            if (!this.game.screenManager || !(this.game.screenManager.isScreen('playing') || this.game.screenManager.isScreen('hub'))) return;
             const player = this.player;
             if (!player) return;
+
+            const statusEffects = player.getComponent(StatusEffects);
+            if (statusEffects && statusEffects.isStunned) return;
 
             const combat = player.getComponent(Combat);
             const movement = player.getComponent(Movement);
@@ -150,10 +204,13 @@ class PlayerInputController {
         
         // Handle right click release - Stop blocking
         this.eventBus.on(EventTypes.INPUT_RIGHTCLICK_UP, () => {
-            // Only allow block input while actively playing
-            if (!this.game.screenManager || !this.game.screenManager.isScreen('playing')) return;
+            // Only allow block input while actively playing (combat levels or hub)
+            if (!this.game.screenManager || !(this.game.screenManager.isScreen('playing') || this.game.screenManager.isScreen('hub'))) return;
             const player = this.player;
             if (!player) return;
+
+            const statusEffects = player.getComponent(StatusEffects);
+            if (statusEffects && statusEffects.isStunned) return;
 
             const combat = player.getComponent(Combat);
             if (combat && combat.isPlayer) {
@@ -166,32 +223,53 @@ class PlayerInputController {
         const inputSystem = this.systems.get('input');
         const cameraSystem = this.systems.get('camera');
 
-        // Handle projectile shooting (R key)
+        // Handle projectile shooting (R key) and crossbow fire / perfect reload
         this.eventBus.on(EventTypes.INPUT_KEYDOWN, (key) => {
             if (key !== 'r' && key !== 'R') return;
 
-            // Only allow projectile input while actively playing
-            if (!this.game.screenManager || !this.game.screenManager.isScreen('playing')) return;
+            // Only allow projectile input while actively playing (combat levels or hub)
+            if (!this.game.screenManager || !(this.game.screenManager.isScreen('playing') || this.game.screenManager.isScreen('hub'))) return;
 
             const player = this.player;
             if (!player || !inputSystem || !cameraSystem) return;
+
+            const statusEffects = player.getComponent(StatusEffects);
+            if (statusEffects && statusEffects.isStunned) return;
 
             const transform = player.getComponent(Transform);
             const movement = player.getComponent(Movement);
             const stamina = player.getComponent(Stamina);
             const projectileManager = this.systems.get('projectiles');
-            
+            const combat = player.getComponent(Combat);
+            const weapon = combat && combat.playerAttack ? combat.playerAttack.weapon : null;
+            const isCrossbow = weapon && weapon.isRanged === true;
+            const crossbowConfig = GameConfig.player.crossbow;
+
+            // Crossbow: R = begin reload (when empty) or trigger perfect reload when in window
+            if (isCrossbow && crossbowConfig) {
+                if (this.game.crossbowReloadProgress < 1) {
+                    if (!this.game.crossbowReloadInProgress) {
+                        this.game.crossbowReloadInProgress = true; // begin reload
+                    } else {
+                        const p = this.game.crossbowReloadProgress;
+                        if (p >= crossbowConfig.perfectWindowStart && p <= crossbowConfig.perfectWindowEnd) {
+                            this.game.crossbowPerfectReloadNext = true;
+                            this.game.crossbowReloadProgress = 1;
+                            this.game.crossbowReloadInProgress = false; // end reload early
+                        }
+                    }
+                }
+                return;
+            }
+
+            // Generic projectile (when not crossbow)
             if (transform && movement && stamina && projectileManager) {
                 const projectileConfig = GameConfig.player.projectile;
                 if (!projectileConfig || !projectileConfig.enabled) return;
 
-                // Check cooldown and stamina
                 if (this.game.playerProjectileCooldown <= 0 && stamina.currentStamina >= projectileConfig.staminaCost) {
-                    // Get target direction (cursor position)
                     const worldPos = cameraSystem.screenToWorld(inputSystem.mouseX, inputSystem.mouseY);
                     const angle = Utils.angleTo(transform.x, transform.y, worldPos.x, worldPos.y);
-                    
-                    // Create projectile
                     projectileManager.createProjectile(
                         transform.x,
                         transform.y,
@@ -200,10 +278,9 @@ class PlayerInputController {
                         projectileConfig.damage,
                         projectileConfig.range,
                         player,
-                        'player'
+                        'player',
+                        projectileConfig.stunBuildup ?? 0
                     );
-                    
-                    // Consume stamina and set cooldown
                     stamina.currentStamina -= projectileConfig.staminaCost;
                     this.game.playerProjectileCooldown = projectileConfig.cooldown;
                 }
@@ -218,11 +295,14 @@ class PlayerInputController {
         this.eventBus.on(EventTypes.INPUT_KEYDOWN, (key) => {
             if (key !== ' ') return;
 
-            // Only allow dodge input while actively playing
-            if (!this.game.screenManager || !this.game.screenManager.isScreen('playing')) return;
+            // Only allow dodge input while actively playing (combat levels or hub)
+            if (!this.game.screenManager || !(this.game.screenManager.isScreen('playing') || this.game.screenManager.isScreen('hub'))) return;
 
             const player = this.player;
             if (!player || !inputSystem) return;
+
+            const statusEffects = player.getComponent(StatusEffects);
+            if (statusEffects && statusEffects.isStunned) return;
 
             const movement = player.getComponent(Movement);
             const stamina = player.getComponent(Stamina);
@@ -252,11 +332,14 @@ class PlayerInputController {
         this.eventBus.on(EventTypes.INPUT_KEYDOWN, (key) => {
             if (key !== 'shift') return;
 
-            // Only allow sprint input while actively playing
-            if (!this.game.screenManager || !this.game.screenManager.isScreen('playing')) return;
+            // Only allow sprint input while actively playing (combat levels or hub)
+            if (!this.game.screenManager || !(this.game.screenManager.isScreen('playing') || this.game.screenManager.isScreen('hub'))) return;
 
             const player = this.player;
             if (!player || !inputSystem) return;
+
+            const statusEffects = player.getComponent(StatusEffects);
+            if (statusEffects && statusEffects.isStunned) return;
 
             const movement = player.getComponent(Movement);
             const stamina = player.getComponent(Stamina);
@@ -281,8 +364,8 @@ class PlayerInputController {
         this.eventBus.on(EventTypes.INPUT_KEYUP, (key) => {
             if (key !== 'shift') return;
 
-            // Only allow sprint input while actively playing
-            if (!this.game.screenManager || !this.game.screenManager.isScreen('playing')) return;
+            // Only allow sprint input while actively playing (combat levels or hub)
+            if (!this.game.screenManager || !(this.game.screenManager.isScreen('playing') || this.game.screenManager.isScreen('hub'))) return;
 
             const player = this.player;
             if (!player || !inputSystem) return;
@@ -311,8 +394,8 @@ class PlayerInputController {
     bindWeaponSwitchControls() {
         // TEMPORARY: weapon switch for testing (1 = sword & shield, 2 = greatsword, 3 = broadsword)
         this.eventBus.on(EventTypes.INPUT_KEYDOWN, (key) => {
-            // Only allow weapon switching while actively playing
-            if (!this.game.screenManager || !this.game.screenManager.isScreen('playing')) return;
+            // Only allow weapon switching while actively playing (combat levels or hub)
+            if (!this.game.screenManager || !(this.game.screenManager.isScreen('playing') || this.game.screenManager.isScreen('hub'))) return;
             const player = this.player;
             if (!player) return;
 
@@ -325,9 +408,12 @@ class PlayerInputController {
             } else if (key === '2' && Weapons.greatsword) {
                 combat.stopBlocking();
                 combat.setWeapon(Weapons.greatsword);
-            } else if (key === '3' && Weapons.broadsword) {
+            } else if (key === '3' && Weapons.crossbow) {
                 combat.stopBlocking();
-                combat.setWeapon(Weapons.broadsword);
+                combat.setWeapon(Weapons.crossbow);
+                this.game.crossbowReloadProgress = 1;
+                this.game.crossbowReloadInProgress = false;
+                this.game.crossbowPerfectReloadNext = false;
             }
         });
     }
@@ -339,11 +425,14 @@ class PlayerInputController {
         this.eventBus.on(EventTypes.INPUT_KEYDOWN, (key) => {
             if (!['w', 'a', 's', 'd'].includes(key)) return;
 
-            // Only allow movement input while actively playing
-            if (!this.game.screenManager || !this.game.screenManager.isScreen('playing')) return;
+            // Only allow movement input while actively playing (combat levels or hub)
+            if (!this.game.screenManager || !(this.game.screenManager.isScreen('playing') || this.game.screenManager.isScreen('hub'))) return;
 
             const player = this.player;
             if (!player || !inputSystem) return;
+
+            const statusEffects = player.getComponent(StatusEffects);
+            if (statusEffects && statusEffects.isStunned) return;
 
             const movement = player.getComponent(Movement);
             if (movement) {
@@ -372,11 +461,14 @@ class PlayerInputController {
         this.eventBus.on(EventTypes.INPUT_KEYUP, (key) => {
             if (!['w', 'a', 's', 'd'].includes(key)) return;
 
-            // Only allow movement input while actively playing
-            if (!this.game.screenManager || !this.game.screenManager.isScreen('playing')) return;
+            // Only allow movement input while actively playing (combat levels or hub)
+            if (!this.game.screenManager || !(this.game.screenManager.isScreen('playing') || this.game.screenManager.isScreen('hub'))) return;
 
             const player = this.player;
             if (!player || !inputSystem) return;
+
+            const statusEffects = player.getComponent(StatusEffects);
+            if (statusEffects && statusEffects.isStunned) return;
 
             const movement = player.getComponent(Movement);
             if (movement) {

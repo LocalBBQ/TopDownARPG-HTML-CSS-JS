@@ -18,6 +18,11 @@ class Game {
             
             // Initialize player projectile cooldown
             this.playerProjectileCooldown = 0;
+            // Crossbow: reload progress 0–1 (1 = loaded); R starts reload (reloadInProgress); perfect-reload bonus for next shot
+            this.crossbowReloadProgress = 1;
+            this.crossbowReloadInProgress = false;
+            this.crossbowPerfectReloadNext = false;
+            this.hitStopRemaining = 0;
             // Portal state (spawns after enough kills; enter with E)
             this.portal = null;
             this.portalUseCooldown = 0;
@@ -34,8 +39,8 @@ class Game {
                 musicEnabled: true,
                 sfxEnabled: true,
                 showMinimap: true,
-                useCharacterSprites: true,   // Player + enemies use sprite sheets vs procedural canvas knight
-                useEnvironmentSprites: true  // Trees/rocks/houses etc use sprite images vs procedural shapes
+                useCharacterSprites: false,  // Player + enemies use sprite sheets vs procedural canvas knight
+                useEnvironmentSprites: false // Trees/rocks/houses etc use sprite images vs procedural shapes
             };
             
             // Initialize screen manager
@@ -48,6 +53,7 @@ class Game {
                 // Don't initialize entities yet - wait for title screen
                 this.setupEventListeners();
                 this.bindGlobalInputHandlers();
+                this.bindCombatFeedbackListeners();
 
                 this.running = true;
                 this.lastTime = performance.now();
@@ -83,10 +89,16 @@ class Game {
         this.initSystems();
         await this.loadPlayerSprites();
         await this.loadEnemySprites();
+        await this.loadGroundTextures();
     }
 
     initSystems() {
         const worldConfig = GameConfig.world;
+        const level1Config = GameConfig.levels && GameConfig.levels[1];
+        const initialWorldWidth = (level1Config && level1Config.worldWidth != null) ? level1Config.worldWidth : worldConfig.width;
+        const initialWorldHeight = (level1Config && level1Config.worldHeight != null) ? level1Config.worldHeight : worldConfig.height;
+        this._currentWorldWidth = initialWorldWidth;
+        this._currentWorldHeight = initialWorldHeight;
 
         // Create system manager if not already created
         if (!this.systems) {
@@ -103,17 +115,15 @@ class Game {
         // Register core systems in order
         this.systems
             .register('input', new InputSystem(this.canvas))
-            .register('camera', new CameraSystem(worldConfig.width, worldConfig.height))
+            .register('camera', new CameraSystem(initialWorldWidth, initialWorldHeight))
             .register('collision', new CollisionSystem())
             .register('obstacles', new ObstacleManager());
 
-        // Generate world before pathfinding
+        // Generate world before pathfinding (use level 1 config and dimensions)
         const obstacleManager = this.systems.get('obstacles');
-        const level1Config = GameConfig.levels && GameConfig.levels[1] && GameConfig.levels[1].obstacles
-            ? GameConfig.levels[1].obstacles
-            : GameConfig.obstacles;
+        const level1Obstacles = level1Config && level1Config.obstacles ? level1Config.obstacles : GameConfig.obstacles;
         const portalConfig = GameConfig.portal || { x: 2400, y: 1400, width: 80, height: 80 };
-        obstacleManager.generateWorld(worldConfig.width, worldConfig.height, level1Config, {
+        obstacleManager.generateWorld(initialWorldWidth, initialWorldHeight, level1Obstacles, {
             x: portalConfig.x + portalConfig.width / 2,
             y: portalConfig.y + portalConfig.height / 2,
             radius: 120
@@ -123,8 +133,8 @@ class Game {
         this.systems
             .register('pathfinding', new PathfindingSystem(
                 obstacleManager,
-                worldConfig.width,
-                worldConfig.height,
+                initialWorldWidth,
+                initialWorldHeight,
                 GameConfig.pathfinding.cellSize
             ))
             .register('enemies', new EnemyManager())
@@ -315,12 +325,50 @@ class Game {
         }
     }
 
+    async loadGroundTextures() {
+        const spriteManager = this.systems.get('sprites');
+        if (!spriteManager || !spriteManager.loadGroundTexture) return;
+        const registry = GameConfig.groundTextures || {};
+        const pathsToLoad = new Set();
+        const collect = (ground) => {
+            if (!ground || !ground.texture) return;
+            const path = registry[ground.texture] || ground.texture;
+            if (path) pathsToLoad.add(path);
+        };
+        if (GameConfig.hub && GameConfig.hub.theme && GameConfig.hub.theme.ground) {
+            collect(GameConfig.hub.theme.ground);
+        }
+        if (GameConfig.levels) {
+            for (const key of Object.keys(GameConfig.levels)) {
+                const level = GameConfig.levels[key];
+                if (level && level.theme && level.theme.ground) collect(level.theme.ground);
+            }
+        }
+        for (const path of pathsToLoad) {
+            try {
+                await spriteManager.loadGroundTexture(path);
+            } catch (e) {
+                console.warn('Failed to load ground texture:', path, e);
+            }
+        }
+    }
+
     initializeEntities() {
-        // Create player
-        const player = this.createPlayer();
+        const enemyManager = this.systems.get('enemies');
+        const initialLevel = enemyManager ? enemyManager.getCurrentLevel() : 1;
+        const levels = GameConfig.levels || {};
+        const hubLevel = levels[0];
+        const isHub = initialLevel === 0 && hubLevel;
+
+        let playerStart = isHub ? hubLevel.playerStart : null;
+        if (!isHub && levels[initialLevel] && levels[initialLevel].obstacles && levels[initialLevel].obstacles.useSceneTiles) {
+            const obstacleManager = this.systems.get('obstacles');
+            const suggested = obstacleManager && obstacleManager.getSuggestedPlayerStart ? obstacleManager.getSuggestedPlayerStart() : null;
+            if (suggested) playerStart = suggested;
+        }
+        const player = this.createPlayer(playerStart);
         this.entities.add(player, 'player');
-        
-        // Initialize camera position to player position
+
         const transform = player.getComponent(Transform);
         const cameraSystem = this.systems.get('camera');
         if (transform && cameraSystem) {
@@ -329,40 +377,26 @@ class Game {
             cameraSystem.x = transform.x - effectiveWidth / 2;
             cameraSystem.y = transform.y - effectiveHeight / 2;
         }
-        
-        // Set up damage number event listener
-        const damageNumberManager = this.systems.get('damageNumbers');
-        this.systems.eventBus.on(EventTypes.DAMAGE_TAKEN, (data) => {
-            damageNumberManager.createDamageNumber(
-                data.x,
-                data.y,
-                data.damage,
-                data.isPlayerDamage,
-                data.isBlocked
-            );
-        });
-        
-        // Spawn enemies based on level (set by startGame when starting from title)
-        const enemyManager = this.systems.get('enemies');
-        const obstacleManager = this.systems.get('obstacles');
-        const initialLevel = enemyManager ? enemyManager.getCurrentLevel() : 1;
 
+        const obstacleManager = this.systems.get('obstacles');
         if (enemyManager && obstacleManager) {
             enemyManager.spawnLevelEnemies(initialLevel, this.entities, obstacleManager);
         }
 
-        // Portal: same position every level; spawns when kills >= level's killsToUnlockPortal
-        const portalConfig = GameConfig.portal || { x: 2400, y: 1400, width: 80, height: 80 };
-        const currentLevel = enemyManager ? enemyManager.getCurrentLevel() : 1;
-        const maxLevel = GameConfig.levels ? Math.max(...Object.keys(GameConfig.levels).map(Number)) : 3;
-        this.portal = {
-            x: portalConfig.x,
-            y: portalConfig.y,
-            width: portalConfig.width,
-            height: portalConfig.height,
-            spawned: false,
-            targetLevel: Math.min(currentLevel + 1, maxLevel)
-        };
+        if (!isHub) {
+            const portalConfig = GameConfig.portal || { x: 2400, y: 1400, width: 80, height: 80 };
+            const currentLevel = enemyManager ? enemyManager.getCurrentLevel() : 1;
+            const levelKeys = GameConfig.levels ? Object.keys(GameConfig.levels).map(Number).filter(n => n > 0) : [1, 2, 3];
+            const maxLevel = levelKeys.length ? Math.max(...levelKeys) : 3;
+            this.portal = {
+                x: portalConfig.x,
+                y: portalConfig.y,
+                width: portalConfig.width,
+                height: portalConfig.height,
+                spawned: false,
+                targetLevel: Math.min(currentLevel + 1, maxLevel)
+            };
+        }
     }
 
     createPlayer(overrideStart = null) {
@@ -532,11 +566,12 @@ class Game {
         player
             .addComponent(new Transform(x, y, config.width, config.height))
             .addComponent(new Health(config.maxHealth))
+            .addComponent(new StatusEffects(true))
             .addComponent(new Stamina(config.maxStamina, config.staminaRegen))
             .addComponent(new PlayerMovement(config.speed))
-            .addComponent(new Combat(config.attackRange, config.attackDamage, Utils.degToRad(config.attackArcDegrees), config.attackCooldown, 0, true, Weapons[config.defaultWeapon] || Weapons.sword)) // isPlayer=true, weapon from config
+            .addComponent(new Combat(config.attackRange, config.attackDamage, Utils.degToRad(config.attackArcDegrees), config.attackCooldown, 0, true, Weapons[config.defaultWeapon] || Weapons.swordAndShield)) // isPlayer=true, weapon from config
             .addComponent(new Renderable('player', { color: config.color }))
-            .addComponent(new Sprite(defaultSheetKey, config.width * 4, config.height * 4))
+            .addComponent(new Sprite(defaultSheetKey, config.width * 3, config.height * 3))
             .addComponent(new Animation(animationConfig));
         
         // Set up player-specific behavior via controller
@@ -567,7 +602,7 @@ class Game {
 
             if (this.screenManager.isScreen('title')) {
                 if (this.screenManager.checkButtonClick(x, y, 'title')) {
-                    // From the title screen, go straight into the game (level 1 by default)
+                    this.screenManager.selectedStartLevel = 0;
                     this.startGame();
                 }
             } else if (this.screenManager.isScreen('hub') && this.boardOpen) {
@@ -630,7 +665,7 @@ class Game {
 
             if (isStartKey) {
                 if (this.screenManager.isScreen('title')) {
-                    // From the title screen, start the game directly
+                    this.screenManager.selectedStartLevel = 0;
                     this.startGame();
                 } else if (this.screenManager.isScreen('death')) {
                     this.restartGame();
@@ -652,6 +687,33 @@ class Game {
                     this.boardOpen = false;
                 }
             }
+        });
+    }
+
+    bindCombatFeedbackListeners() {
+        if (!this.systems || !this.systems.eventBus) return;
+        const cameraSystem = this.systems.get('camera');
+        const damageNumberManager = this.systems.get('damageNumbers');
+
+        // Register once so we don't get duplicate damage numbers when re-entering levels or restarting
+        if (damageNumberManager) {
+            this.systems.eventBus.on(EventTypes.DAMAGE_TAKEN, (data) => {
+                damageNumberManager.createDamageNumber(
+                    data.x,
+                    data.y,
+                    data.damage,
+                    data.isPlayerDamage,
+                    data.isBlocked
+                );
+            });
+        }
+
+        this.systems.eventBus.on(EventTypes.PLAYER_HIT_ENEMY, () => {
+            this.hitStopRemaining = Math.max(this.hitStopRemaining, 0.05);
+        });
+
+        this.systems.eventBus.on(EventTypes.PLAYER_SPECIAL_ATTACK, () => {
+            if (cameraSystem && cameraSystem.addShake) cameraSystem.addShake(8);
         });
     }
 
@@ -702,22 +764,41 @@ class Game {
     }
 
     regenerateWorldForLevel(level) {
-        const worldConfig = GameConfig.world;
         const obstacleManager = this.systems.get('obstacles');
         if (!obstacleManager) return;
 
         obstacleManager.clearWorld();
 
-        const levelObstacles = GameConfig.levels && GameConfig.levels[level] && GameConfig.levels[level].obstacles
-            ? GameConfig.levels[level].obstacles
+        if (level === 0) {
+            const hubLevel = GameConfig.levels && GameConfig.levels[0];
+            if (hubLevel && hubLevel.walls) {
+                for (const w of hubLevel.walls) {
+                    obstacleManager.addObstacle(w.x, w.y, w.width, w.height, 'wall', null, { color: '#4a3020' });
+                }
+            }
+            return;
+        }
+
+        const worldConfig = GameConfig.world;
+        const levelConfig = GameConfig.levels && GameConfig.levels[level];
+        const levelObstacles = levelConfig && levelConfig.obstacles
+            ? levelConfig.obstacles
             : GameConfig.obstacles;
+        const worldWidth = (levelConfig && levelConfig.worldWidth != null) ? levelConfig.worldWidth : worldConfig.width;
+        const worldHeight = (levelConfig && levelConfig.worldHeight != null) ? levelConfig.worldHeight : worldConfig.height;
 
         const portalConfig = GameConfig.portal || { x: 2400, y: 1400, width: 80, height: 80 };
-        obstacleManager.generateWorld(worldConfig.width, worldConfig.height, levelObstacles, {
+        obstacleManager.generateWorld(worldWidth, worldHeight, levelObstacles, {
             x: portalConfig.x + portalConfig.width / 2,
             y: portalConfig.y + portalConfig.height / 2,
             radius: 120
         });
+        this._currentWorldWidth = worldWidth;
+        this._currentWorldHeight = worldHeight;
+        const cameraSystem = this.systems.get('camera');
+        const pathfindingSystem = this.systems.get('pathfinding');
+        if (cameraSystem && cameraSystem.setWorldBounds) cameraSystem.setWorldBounds(worldWidth, worldHeight);
+        if (pathfindingSystem && pathfindingSystem.setWorldBounds) pathfindingSystem.setWorldBounds(worldWidth, worldHeight);
     }
 
     quitToMainMenu() {
@@ -726,63 +807,39 @@ class Game {
         this.updateUIVisibility(false);
     }
 
-    startHub() {
-        const hubConfig = GameConfig.hub;
-        const obstacleManager = this.systems.get('obstacles');
-        const enemyManager = this.systems.get('enemies');
-
-        obstacleManager.clearWorld();
-        for (const w of hubConfig.walls) {
-            obstacleManager.addObstacle(w.x, w.y, w.width, w.height, 'wall', null, { color: '#4a3020' });
-        }
-
-        if (enemyManager) {
-            enemyManager.enemies = [];
-            enemyManager.enemiesSpawned = false;
-        }
-
-        // Clear any remaining entities/projectiles/damage numbers/orbs
-        this.clearAllEntitiesAndProjectiles();
-
-        const player = this.createPlayer(hubConfig.playerStart);
-        this.entities.add(player, 'player');
-
-        const cameraSystem = this.systems.get('camera');
-        cameraSystem.setWorldBounds(1e7, 1e7);
-        const transform = player.getComponent(Transform);
-        if (transform && cameraSystem) {
-            const effectiveWidth = this.canvas.width / cameraSystem.zoom;
-            const effectiveHeight = this.canvas.height / cameraSystem.zoom;
-            cameraSystem.x = transform.x - effectiveWidth / 2;
-            cameraSystem.y = transform.y - effectiveHeight / 2;
-        }
-
-        this.portal = null;
-        this.board = { ...hubConfig.board };
-        this.boardOpen = false;
-        this.boardUseCooldown = 0;
-        this.playerNearBoard = false;
-        this.hubSelectedLevel = 1;
-
-        this.screenManager.setScreen('hub');
-        this.updateUIVisibility(true);
-    }
-    
     startGame() {
         const selectedLevel = this.screenManager.selectedStartLevel;
         const enemyManager = this.systems.get('enemies');
         const cameraSystem = this.systems.get('camera');
         const worldConfig = GameConfig.world;
+        const levels = GameConfig.levels || {};
+        const hubLevel = levels[0];
+
+        this.clearAllEntitiesAndProjectiles();
+
         if (cameraSystem) {
-            cameraSystem.setWorldBounds(worldConfig.width, worldConfig.height);
+            if (selectedLevel === 0 && hubLevel) {
+                cameraSystem.setWorldBounds(hubLevel.width, hubLevel.height);
+            } else {
+                cameraSystem.setWorldBounds(worldConfig.width, worldConfig.height);
+            }
         }
 
-        // Regenerate world and reset enemies for the selected level
         this.regenerateWorldForLevel(selectedLevel);
         this.resetEnemyManager(selectedLevel);
-
         this.initializeEntities();
-        this.screenManager.setScreen('playing');
+
+        if (selectedLevel === 0 && hubLevel) {
+            this.portal = null;
+            this.board = { ...hubLevel.board };
+            this.boardOpen = false;
+            this.boardUseCooldown = 0;
+            this.playerNearBoard = false;
+            this.hubSelectedLevel = 1;
+            this.screenManager.setScreen('hub');
+        } else {
+            this.screenManager.setScreen('playing');
+        }
         this.updateUIVisibility(true);
     }
     
@@ -811,7 +868,7 @@ class Game {
     updateUIVisibility(visible) {
         const uiOverlay = document.getElementById('ui-overlay');
         if (uiOverlay) {
-            uiOverlay.style.display = visible ? 'block' : 'none';
+            uiOverlay.style.display = visible ? 'flex' : 'none';
         }
     }
 
@@ -879,13 +936,22 @@ class Game {
         if (inputSystem && inputSystem.isKeyPressed('e') && nextLevelExists) {
             const obstacleManager = this.systems.get('obstacles');
             const worldConfig = GameConfig.world;
-            const nextObstacles = GameConfig.levels[nextLevel].obstacles;
+            const nextLevelConfig = GameConfig.levels[nextLevel];
+            const nextWorldWidth = (nextLevelConfig && nextLevelConfig.worldWidth != null) ? nextLevelConfig.worldWidth : worldConfig.width;
+            const nextWorldHeight = (nextLevelConfig && nextLevelConfig.worldHeight != null) ? nextLevelConfig.worldHeight : worldConfig.height;
+            const nextObstacles = nextLevelConfig.obstacles;
             obstacleManager.clearWorld();
-            obstacleManager.generateWorld(worldConfig.width, worldConfig.height, nextObstacles, {
+            obstacleManager.generateWorld(nextWorldWidth, nextWorldHeight, nextObstacles, {
                 x: this.portal.x + this.portal.width / 2,
                 y: this.portal.y + this.portal.height / 2,
                 radius: 120
             });
+            this._currentWorldWidth = nextWorldWidth;
+            this._currentWorldHeight = nextWorldHeight;
+            const cameraSystem = this.systems.get('camera');
+            const pathfindingSystem = this.systems.get('pathfinding');
+            if (cameraSystem && cameraSystem.setWorldBounds) cameraSystem.setWorldBounds(nextWorldWidth, nextWorldHeight);
+            if (pathfindingSystem && pathfindingSystem.setWorldBounds) pathfindingSystem.setWorldBounds(nextWorldWidth, nextWorldHeight);
             enemyManager.changeLevel(nextLevel, this.entities, obstacleManager);
             this.portalUseCooldown = 1.5; // Prevent double-trigger
         }
@@ -898,12 +964,13 @@ class Game {
             this.boardUseCooldown = Math.max(0, this.boardUseCooldown - deltaTime);
         }
 
-        // Handle camera zoom while in the hub
         this.handleCameraZoom();
 
         this.systems.update(deltaTime);
         this.entities.update(deltaTime, this.systems);
 
+        const cameraSystem = this.systems.get('camera');
+        const inputSystem = this.systems.get('input');
         const player = this.entities.get('player');
         if (player) {
             const transform = player.getComponent(Transform);
@@ -919,7 +986,7 @@ class Game {
                     this.board.x, this.board.y, this.board.width, this.board.height
                 );
                 this.playerNearBoard = overlap;
-                if (overlap && this.boardUseCooldown <= 0 && inputSystem.isKeyPressed('e')) {
+                if (overlap && this.boardUseCooldown <= 0 && inputSystem && inputSystem.isKeyPressed('e')) {
                     this.boardOpen = true;
                     this.boardUseCooldown = 0.4;
                 }
@@ -955,6 +1022,27 @@ class Game {
             this.playerProjectileCooldown = Math.max(0, this.playerProjectileCooldown - deltaTime);
         }
 
+        // Update crossbow reload (only when R has been pressed to begin reload)
+        const player = this.entities.get('player');
+        const combat = player ? player.getComponent(Combat) : null;
+        const weapon = combat && combat.playerAttack ? combat.playerAttack.weapon : null;
+        const isCrossbow = weapon && weapon.isRanged === true;
+        const crossbowConfig = GameConfig.player.crossbow;
+        if (isCrossbow && crossbowConfig && this.crossbowReloadInProgress && this.crossbowReloadProgress < 1) {
+            this.crossbowReloadProgress = Math.min(1, this.crossbowReloadProgress + deltaTime / crossbowConfig.reloadTime);
+            if (this.crossbowReloadProgress >= 1) this.crossbowReloadInProgress = false;
+        }
+        if (player && combat && !isCrossbow) {
+            this.crossbowReloadProgress = 1;
+            this.crossbowReloadInProgress = false;
+            this.crossbowPerfectReloadNext = false;
+        }
+        // Expose crossbow state on player for rendering (reload bar under floating health bar)
+        if (player && isCrossbow) {
+            player.crossbowReloadProgress = this.crossbowReloadProgress;
+            player.crossbowReloadInProgress = this.crossbowReloadInProgress;
+        }
+
         // Update all systems
         this.systems.update(deltaTime);
         
@@ -985,7 +1073,6 @@ class Game {
         this.entities.update(deltaTime, this.systems);
         
         // Handle player attacks
-        const player = this.entities.get('player');
         if (player) {
             const enemyManager = this.systems.get('enemies');
             
@@ -1021,22 +1108,29 @@ class Game {
 
     updateUI(player) {
         if (!player) return;
-        
+
         const health = player.getComponent(Health);
         const stamina = player.getComponent(Stamina);
-        
+        const combat = player.getComponent(Combat);
+
         if (health) {
             const healthPercent = health.percent * 100;
             document.getElementById('health-bar').style.width = healthPercent + '%';
-            document.getElementById('health-text').textContent = 
+            document.getElementById('health-text').textContent =
                 Math.floor(health.currentHealth) + '/' + health.maxHealth;
         }
-        
+
         if (stamina) {
             const staminaPercent = stamina.percent * 100;
-            document.getElementById('stamina-bar').style.width = staminaPercent + '%';
-            document.getElementById('stamina-text').textContent = 
+            const staminaBarEl = document.getElementById('stamina-bar');
+            staminaBarEl.style.width = staminaPercent + '%';
+            document.getElementById('stamina-text').textContent =
                 Math.floor(stamina.currentStamina) + '/' + stamina.maxStamina;
+            if (combat && combat.specialAttackFlashUntil > Date.now()) {
+                staminaBarEl.classList.add('stamina-pulse');
+            } else {
+                staminaBarEl.classList.remove('stamina-pulse');
+            }
         }
 
     }
@@ -1118,7 +1212,9 @@ class Game {
             }
             
             if (this.settings.showMinimap) {
-                renderSystem.renderMinimap(cameraSystem, this.entities, worldConfig.width, worldConfig.height, this.portal, currentLevel);
+                const w = this._currentWorldWidth != null ? this._currentWorldWidth : worldConfig.width;
+                const h = this._currentWorldHeight != null ? this._currentWorldHeight : worldConfig.height;
+                renderSystem.renderMinimap(cameraSystem, this.entities, w, h, this.portal, currentLevel);
             }
 
             if (this.screenManager.isScreen('pause') || this.screenManager.isScreen('settings')) {
@@ -1136,7 +1232,10 @@ class Game {
         const deltaTime = (currentTime - this.lastTime) / 1000;
         this.lastTime = currentTime;
 
-        this.update(deltaTime);
+        const effectiveDelta = this.hitStopRemaining > 0 ? 0 : deltaTime;
+        if (this.hitStopRemaining > 0) this.hitStopRemaining -= deltaTime;
+
+        this.update(effectiveDelta);
         this.render();
 
         requestAnimationFrame(() => this.gameLoop());

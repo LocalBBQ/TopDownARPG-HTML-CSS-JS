@@ -13,6 +13,13 @@ class CameraSystem {
         this.maxZoom = GameConfig.camera.maxZoom;
         this.zoomMouseX = 0;
         this.zoomMouseY = 0;
+        this.shakeIntensity = 0;
+        this.shakeOffsetX = 0;
+        this.shakeOffsetY = 0;
+    }
+
+    addShake(intensity) {
+        this.shakeIntensity = Math.max(this.shakeIntensity, intensity);
     }
 
     init(systems) {
@@ -26,16 +33,26 @@ class CameraSystem {
     }
 
     update(deltaTime, systems) {
+        // Decay screen shake
+        if (this.shakeIntensity > 0) {
+            this.shakeOffsetX = (Math.random() - 0.5) * 2 * this.shakeIntensity;
+            this.shakeOffsetY = (Math.random() - 0.5) * 2 * this.shakeIntensity;
+            this.shakeIntensity *= 0.85;
+            if (this.shakeIntensity < 0.5) this.shakeIntensity = 0;
+        } else {
+            this.shakeOffsetX = 0;
+            this.shakeOffsetY = 0;
+        }
+
         // Smoothly interpolate zoom towards target
         const oldZoom = this.zoom;
         this.zoom = Utils.lerp(this.zoom, this.targetZoom, this.zoomSmoothing);
-        
+
         // If zoom changed significantly, adjust camera position to zoom towards mouse
         if (Math.abs(this.zoom - oldZoom) > 0.001) {
             const worldX = (this.zoomMouseX / oldZoom) + this.x;
             const worldY = (this.zoomMouseY / oldZoom) + this.y;
-            
-            // Adjust camera position to maintain zoom point
+
             this.x = worldX - (this.zoomMouseX / this.zoom);
             this.y = worldY - (this.zoomMouseY / this.zoom);
         }
@@ -71,8 +88,8 @@ class CameraSystem {
 
     worldToScreen(worldX, worldY) {
         return {
-            x: (worldX - this.x) * this.zoom,
-            y: (worldY - this.y) * this.zoom
+            x: (worldX - this.x) * this.zoom + this.shakeOffsetX,
+            y: (worldY - this.y) * this.zoom + this.shakeOffsetY
         };
     }
 
@@ -85,11 +102,11 @@ class CameraSystem {
     }
 
     toScreenX(worldX) {
-        return (worldX - this.x) * this.zoom;
+        return (worldX - this.x) * this.zoom + this.shakeOffsetX;
     }
 
     toScreenY(worldY) {
-        return (worldY - this.y) * this.zoom;
+        return (worldY - this.y) * this.zoom + this.shakeOffsetY;
     }
 }
 

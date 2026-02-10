@@ -94,6 +94,17 @@ body {
 .bar.stamina {
     background: linear-gradient(180deg, #2a5070 0%, #1a3048 50%, #0f2035 100%);
     box-shadow: inset 0 1px 0 rgba(180, 220, 255, 0.15);
+    transition: box-shadow 0.1s ease, filter 0.1s ease;
+}
+
+.bar.stamina.stamina-pulse {
+    box-shadow: inset 0 1px 0 rgba(180, 220, 255, 0.4), 0 0 12px rgba(200, 230, 255, 0.5);
+    filter: brightness(1.2);
+}
+
+.bar.stun {
+    background: linear-gradient(180deg, #ffffff 0%, #e0e0e0 50%, #c8c8c8 100%);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.4);
 }
 
 .stat-bar span {
@@ -103,6 +114,12 @@ body {
     font-variant-numeric: tabular-nums;
     min-width: 48px;
     text-align: right;
+}
+
+/* Spacer so stun row has same flex layout as HP/SP (avoids layout shift) */
+.stat-bar-spacer {
+    min-width: 48px;
+    width: 48px;
 }
 
 /* Controls - bottom left */

@@ -22,14 +22,21 @@ class InputSystem {
 
     setupEventListeners() {
         window.addEventListener('keydown', (e) => {
+            // Prevent Ctrl from triggering Windows/browser shortcuts (e.g. Ctrl+click, Ctrl+S)
+            if (e.ctrlKey || e.key === 'Control') {
+                e.preventDefault();
+            }
             this.keys[e.key.toLowerCase()] = true;
             this.systems.eventBus.emit(EventTypes.INPUT_KEYDOWN, e.key.toLowerCase());
-        });
+        }, { capture: true });
 
         window.addEventListener('keyup', (e) => {
+            if (e.ctrlKey || e.key === 'Control') {
+                e.preventDefault();
+            }
             this.keys[e.key.toLowerCase()] = false;
             this.systems.eventBus.emit(EventTypes.INPUT_KEYUP, e.key.toLowerCase());
-        });
+        }, { capture: true });
 
         this.canvas.addEventListener('mousemove', (e) => {
             const rect = this.canvas.getBoundingClientRect();
@@ -51,7 +58,8 @@ class InputSystem {
                 this.chargeStartTime = performance.now();
                 this.systems.eventBus.emit(EventTypes.INPUT_MOUSEDOWN, { 
                     x: this.mouseX, 
-                    y: this.mouseY 
+                    y: this.mouseY,
+                    shiftKey: e.shiftKey
                 });
             } else if (e.button === 2) {
                 // Right click
@@ -73,7 +81,8 @@ class InputSystem {
                 this.systems.eventBus.emit(EventTypes.INPUT_MOUSEUP, { 
                     x: this.mouseX, 
                     y: this.mouseY,
-                    chargeDuration: chargeDuration
+                    chargeDuration: chargeDuration,
+                    shiftKey: e.shiftKey
                 });
             } else if (e.button === 2) {
                 // Right mouse button

@@ -4,6 +4,7 @@ class SpriteManager {
         this.sprites = new Map(); // Cache loaded sprites
         this.spriteSheets = new Map(); // Cache sprite sheets with metadata
         this.loadingPromises = new Map(); // Track loading promises to avoid duplicate loads
+        this.groundTextures = new Map(); // path -> HTMLImageElement for ground tiles
     }
 
     // Load a single sprite image
@@ -32,6 +33,24 @@ class SpriteManager {
 
         this.loadingPromises.set(path, promise);
         return promise;
+    }
+
+    /** Load a ground texture by path and cache in groundTextures. */
+    async loadGroundTexture(path) {
+        if (this.groundTextures.has(path)) {
+            return this.groundTextures.get(path);
+        }
+        const img = await this.loadSprite(path);
+        this.groundTextures.set(path, img);
+        return img;
+    }
+
+    /** Get loaded ground texture by id (GameConfig.groundTextures key) or by path. Returns null if not loaded. */
+    getGroundTexture(idOrPath) {
+        const path = (typeof GameConfig !== 'undefined' && GameConfig.groundTextures && GameConfig.groundTextures[idOrPath])
+            ? GameConfig.groundTextures[idOrPath]
+            : idOrPath;
+        return this.groundTextures.get(path) || null;
     }
 
     // Load a sprite sheet with frame definitions

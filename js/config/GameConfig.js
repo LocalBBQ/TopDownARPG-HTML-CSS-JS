@@ -6,72 +6,18 @@ const GameConfig = {
         tileSize: 50
     },
 
-    weapons: {
-        sword: {
-            name: 'sword',
-            baseRange: 80,
-            baseDamage: 15,
-            baseArcDegrees: 60,
-            cooldown: 0.3,
-            comboWindow: 1.5,
-            stages: [
-                { name: 'swipe', arcDegrees: 90, duration: 320, staminaCost: 10, rangeMultiplier: 1.0, damageMultiplier: 1.2, animationKey: 'melee' },
-                { name: 'stab', arcDegrees: 24, duration: 350, staminaCost: 12, rangeMultiplier: 1.2, damageMultiplier: 1.0, animationKey: 'melee2', dashSpeed: 500, dashDuration: 0.25 },
-                { name: 'spin', arcDegrees: 360, duration: 520, staminaCost: 15, rangeMultiplier: 0.9, damageMultiplier: 1.5, animationKey: 'meleeSpin', dashSpeed: 450, dashDuration: 0.45 }
-            ]
-        },
-        swordAndShield: {
-            name: 'swordAndShield',
-            baseRange: 80,
-            baseDamage: 15,
-            baseArcDegrees: 60,
-            cooldown: 0.3,
-            comboWindow: 1.5,
-            block: {
-                enabled: true,
-                arcDegrees: 180,
-                damageReduction: 1.0,
-                staminaCost: 5,
-                animationKey: 'block'
-            },
-            stages: [
-                { name: 'swipe', arcDegrees: 90, duration: 320, staminaCost: 10, rangeMultiplier: 1.0, damageMultiplier: 1.2, animationKey: 'melee' },
-                { name: 'stab', arcDegrees: 24, duration: 350, staminaCost: 12, rangeMultiplier: 1.2, damageMultiplier: 1.0, animationKey: 'melee2', dashSpeed: 500, dashDuration: 0.25 },
-                { name: 'spin', arcDegrees: 360, duration: 520, staminaCost: 15, rangeMultiplier: 0.9, damageMultiplier: 1.5, animationKey: 'meleeSpin', dashSpeed: 450, dashDuration: 0.45 }
-            ]
-        },
-        greatsword: {
-            weaponClass: 'Greatsword',
-            name: 'greatsword',
-            twoHanded: true,
-            baseRange: 100,
-            baseDamage: 28,
-            baseArcDegrees: 100,
-            cooldown: 0.55,
-            comboWindow: 1.6,
-            stages: [
-                { name: 'slash1', arcDegrees: 100, duration: 480, staminaCost: 18, rangeMultiplier: 1.0, damageMultiplier: 1.2, animationKey: 'melee' },
-                { name: 'slash2', arcDegrees: 110, duration: 540, staminaCost: 20, rangeMultiplier: 1.05, damageMultiplier: 1.5, animationKey: 'melee2' },
-                { name: 'slash3', arcDegrees: 120, duration: 620, staminaCost: 24, rangeMultiplier: 1.05, damageMultiplier: 1.9, animationKey: 'meleeSpin' }
-            ]
-        },
-        broadsword: {
-            weaponClass: 'Greatsword',
-            name: 'broadsword',
-            twoHanded: true,
-            baseRange: 110,
-            baseDamage: 32,
-            baseArcDegrees: 95,
-            cooldown: 0.5,
-            comboWindow: 1.5,
-            stages: [
-                { name: 'broad1', arcDegrees: 95, duration: 440, staminaCost: 16, rangeMultiplier: 1.0, damageMultiplier: 1.25, animationKey: 'melee' },
-                { name: 'broad2', arcDegrees: 100, duration: 500, staminaCost: 18, rangeMultiplier: 1.05, damageMultiplier: 1.45, animationKey: 'melee2' },
-                { name: 'broad3', arcDegrees: 110, duration: 580, staminaCost: 22, rangeMultiplier: 1.05, damageMultiplier: 1.85, animationKey: 'meleeSpin' }
-            ]
-        }
+    /** Entity-vs-entity collision: buffer (px) added so player and enemies don't get as close. */
+    entityCollision: {
+        buffer: 12
     },
-    
+
+    /** Ground texture registry: id -> asset path. Use theme.ground.texture = id in levels. */
+    groundTextures: {
+        grass: 'assets/sprites/environment/Grass1.png'
+        // e.g. dirt: 'assets/sprites/environment/Dirt1.png',
+        // stone: 'assets/sprites/environment/Stone1.png',
+    },
+
     player: {
         startX: 2400,
         startY: 1400,
@@ -79,7 +25,7 @@ const GameConfig = {
         height: 30,
         speed: 100, // pixels per second (now properly scaled by deltaTime)
         maxHealth: 100,
-        maxStamina: 50,
+        maxStamina: 100,
         staminaRegen: 6.75, // stamina per second (scaled by deltaTime)
         attackRange: 80,
         attackDamage: 15,
@@ -115,9 +61,34 @@ const GameConfig = {
             damage: 10, // Base damage
             range: 500, // Maximum travel distance
             cooldown: 0.5, // Seconds between shots
-            staminaCost: 8 // Stamina cost per shot
+            staminaCost: 8, // Stamina cost per shot
+            stunBuildup: 20
         },
-        healthOrbDropChance: 0.25 // 25% chance for enemies to drop a health orb on death
+        crossbow: {
+            damage: 22,
+            speed: 550,
+            range: 600,
+            staminaCost: 12,
+            stunBuildup: 25,
+            reloadTime: 1.4,           // seconds to fully reload
+            perfectWindowStart: 0.62,   // perfect reload zone start (0–1)
+            perfectWindowEnd: 0.78,     // perfect reload zone end (0–1)
+            perfectReloadDamageMultiplier: 1.5  // damage multiplier on next shot if perfect reload
+        },
+        healthOrbDropChance: 0.25, // 25% chance for enemies to drop a health orb on death
+        stun: {
+            threshold: 100,      // stun meter fills to this, then stun triggers
+            duration: 1,        // stun duration in seconds
+            decayPerSecond: 15,  // meter drains when not being hit (0 = no decay)
+            decayCooldown: 4,   // seconds after last stun buildup before decay starts (player only)
+            blockedMultiplier: 0.5  // stun buildup when hit is blocked (0.5 = 50%, 1 = full)
+        }
+    },
+
+    statusEffects: {
+        enemyStunThreshold: 100,  // enemy stun meter threshold
+        enemyStunDuration: 1,     // seconds enemies are stunned when meter fills
+        enemyStunDecayPerSecond: 20  // enemy meter decay (0 = no decay)
     },
     
     enemy: {
@@ -125,13 +96,14 @@ const GameConfig = {
             goblin: {
                 maxHealth: 30,
                 speed: 25, // pixels per second (now properly scaled by deltaTime) - slowed down
-                attackRange: 40,
+                attackRange: 40,        // Swipe hitbox: max distance (px) to hit player
                 attackDamage: 5,
-                attackArcDegrees: 90,
+                attackArcDegrees: 90,   // Swipe arc (degrees) – goblin currently uses range only
                 detectionRange: 200,
                 color: '#44aa44',
                 attackCooldown: 1.0, // seconds (was 60 frames at 60fps)
                 windUpTime: 0.6, // seconds before attack hits
+                stunBuildupPerHit: 18,  // stun meter added to player when goblin hits
                 knockback: {
                     force: 160, // Knockback force when goblin hits player (increased by 10)
                     decay: 0.88 // Friction factor
@@ -143,7 +115,12 @@ const GameConfig = {
                     lungeSpeed: 200, // Speed during lunge - slowed down
                     lungeDistance: 120, // Maximum distance to lunge
                     lungeDamage: 8, // Damage dealt by lunge (higher than normal attack)
-                    knockback: { force: 240 } // Per-attack knockback (default type is 160)
+                    hitRadiusBonus: 0, // Extra px added to enemy+player radius for lunge hit (bigger = easier to get hit)
+                    knockback: { force: 240 }, // Per-attack knockback (default type is 160)
+                    hopBackChance: 0.5, // 50% chance to hop backward after lunge
+                    hopBackDelay: 0.75, // Seconds to wait before hopping back (750ms)
+                    hopBackDistance: 60, // Pixels to hop back
+                    hopBackSpeed: 140 // Speed during hop back
                 }
             },
             skeleton: {
@@ -155,6 +132,7 @@ const GameConfig = {
                 color: '#cccccc',
                 attackCooldown: 1.5, // seconds (was 50 frames at 60fps)
                 windUpTime: 0.7, // seconds before attack hits
+                stunBuildupPerHit: 15,
                 knockback: {
                     force: 190, // Knockback force when skeleton hits player (increased by 10)
                     decay: 0.87
@@ -164,7 +142,8 @@ const GameConfig = {
                     speed: 200, // Pixels per second - slowed down
                     damage: 6,
                     range: 280,
-                    cooldown: 3.5 // Seconds between shots - increased cooldown
+                    cooldown: 3.5, // Seconds between shots - increased cooldown
+                    stunBuildup: 15
                 }
             },
             lesserDemon: {
@@ -177,6 +156,7 @@ const GameConfig = {
                 color: '#884444',
                 attackCooldown: 0.85, // seconds - faster than goblin
                 windUpTime: 0.5, // seconds before attack hits
+                stunBuildupPerHit: 18,
                 knockback: {
                     force: 180, // Knockback force when lesser demon hits player
                     decay: 0.87
@@ -201,6 +181,7 @@ const GameConfig = {
                 color: '#aa4444',
                 attackCooldown: 0.67, // seconds (was 40 frames at 60fps)
                 windUpTime: 0.5, // seconds before attack hits
+                stunBuildupPerHit: 22,
                 knockback: {
                     force: 230, // Knockback force when demon hits player (stronger, increased by 10)
                     decay: 0.86
@@ -251,6 +232,25 @@ const GameConfig = {
     },
 
     levels: {
+        // Level 0 = hub (Sanctuary); no enemies, no portal, level-select board
+        0: {
+            name: 'Sanctuary',
+            tileSize: 50,
+            width: 1600,
+            height: 1600,
+            playerStart: { x: 800, y: 800 },
+            board: { x: 750, y: 765, width: 100, height: 70 },
+            theme: {
+                ground: { r: 42, g: 38, b: 32, variation: 6 },
+                sky: 'rgba(100, 90, 80, 0.06)'
+            },
+            walls: [
+                { x: 200, y: 200, width: 1200, height: 50 },
+                { x: 200, y: 1350, width: 1200, height: 50 },
+                { x: 200, y: 200, width: 50, height: 1200 },
+                { x: 1350, y: 200, width: 50, height: 1200 }
+            ]
+        },
         // Level-based enemy pack + theme (ground colors) + obstacles; portal after killsToUnlockPortal
         1: {
             name: 'Village Outskirts',
@@ -258,22 +258,34 @@ const GameConfig = {
             enemyTypes: ['goblin'],
             killsToUnlockPortal: 10,
             theme: {
-                ground: { r: 38, g: 48, b: 38, variation: 8 },
+                ground: { r: 38, g: 48, b: 38, variation: 8, texture: 'grass' },
                 sky: 'rgba(135, 206, 235, 0.05)'
             },
+            // Optional world size when using scene tiles (6*800 x 3*800)
+            worldWidth: 4800,
+            worldHeight: 2400,
             obstacles: {
-                forest: { density: 0.025 },
-                mushrooms: { density: 0.012 },
-                rocks: { density: 0.022 },
                 border: { spacing: 50 },
-                structures: {
-                    houses: { enabled: true, count: 3 },
-                    woodClusters: { enabled: true, count: 3, treesPerCluster: 6 },
-                    settlements: { enabled: true, count: 1 },
-                    firepits: { enabled: true, count: 2 },
-                    sheds: { enabled: true, count: 2 },
-                    wells: { enabled: true, count: 1 },
-                    ruins: { enabled: true, rubblePiles: 12, pillarClusters: 6, ruinedWalls: 8, ruinedStructures: 4, brokenArches: 5, statueRemnants: 6 }
+                useSceneTiles: true,
+                sceneTileLayout: {
+                    tileSize: 800,
+                    cols: 6,
+                    rows: 3,
+                    // Weights: higher = more common. Open areas dominant; few settled/encounter tiles.
+                    pool: [
+                        { id: 'clearing', weight: 5 },
+                        { id: 'crossroads', weight: 4 },
+                        { id: 'orchardEdge', weight: 3 },
+                        { id: 'thickGrove', weight: 3 },
+                        { id: 'waysideShrine', weight: 2 },
+                        { id: 'woodcutterClearing', weight: 2 },
+                        { id: 'lumberMill', weight: 1 },
+                        { id: 'lumberMillB', weight: 1 },
+                        { id: 'smallFarm', weight: 1 },
+                        { id: 'goblinCamp', weight: 1 },
+                        { id: 'goblinCampB', weight: 1 },
+                        { id: 'banditAmbush', weight: 0.5 }
+                    ]
                 }
             }
         },

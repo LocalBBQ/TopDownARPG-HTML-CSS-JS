@@ -22,7 +22,7 @@ class Health {
             this.wasJustHit = true;
         }
         
-        // Create damage number if damage was actually dealt
+        // Stun buildup is applied by callers (EnemyManager, ProjectileManager) with explicit amounts
         if (actualDamage > 0 && this.entity) {
             const transform = this.entity.getComponent(Transform);
             if (transform) {

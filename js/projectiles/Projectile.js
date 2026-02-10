@@ -1,6 +1,6 @@
 // Projectile entity - represents a single projectile
 class Projectile {
-    constructor(x, y, angle, speed, damage, range, owner, ownerType = 'player') {
+    constructor(x, y, angle, speed, damage, range, owner, ownerType = 'player', stunBuildup = 0) {
         this.x = x;
         this.y = y;
         this.angle = angle; // Direction in radians
@@ -9,6 +9,7 @@ class Projectile {
         this.range = range; // Maximum distance projectile can travel
         this.owner = owner; // Reference to entity that fired this
         this.ownerType = ownerType; // 'player' or 'enemy'
+        this.stunBuildup = stunBuildup; // Stun meter added to target on hit
         this.distanceTraveled = 0;
         this.width = 8;
         this.height = 8;

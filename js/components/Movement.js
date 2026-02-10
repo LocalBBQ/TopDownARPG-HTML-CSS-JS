@@ -284,6 +284,9 @@ class Movement {
             }
         }
 
+        const buffer = (GameConfig.entityCollision && GameConfig.entityCollision.buffer) || 0;
+        const half = buffer / 2;
+
         // Check collision with player (if this is an enemy)
         if (!isPlayer) {
             const player = entityManager.get('player');
@@ -292,10 +295,13 @@ class Movement {
                 const playerHealth = player.getComponent(Health);
                 
                 if (playerTransform && playerHealth && !playerHealth.isDead) {
+                    const otherLeft = playerTransform.left - half;
+                    const otherTop = playerTransform.top - half;
+                    const otherW = playerTransform.width + buffer;
+                    const otherH = playerTransform.height + buffer;
                     if (Utils.rectCollision(
                         testX - width / 2, testY - height / 2, width, height,
-                        playerTransform.left, playerTransform.top, 
-                        playerTransform.width, playerTransform.height
+                        otherLeft, otherTop, otherW, otherH
                     )) {
                         return true;
                     }
@@ -312,10 +318,13 @@ class Movement {
                         const enemyHealth = enemy.getComponent(Health);
                         
                         if (enemyTransform && enemyHealth && !enemyHealth.isDead) {
+                            const otherLeft = enemyTransform.left - half;
+                            const otherTop = enemyTransform.top - half;
+                            const otherW = enemyTransform.width + buffer;
+                            const otherH = enemyTransform.height + buffer;
                             if (Utils.rectCollision(
                                 testX - width / 2, testY - height / 2, width, height,
-                                enemyTransform.left, enemyTransform.top,
-                                enemyTransform.width, enemyTransform.height
+                                otherLeft, otherTop, otherW, otherH
                             )) {
                                 return true;
                             }

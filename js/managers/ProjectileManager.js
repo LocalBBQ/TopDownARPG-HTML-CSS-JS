@@ -5,8 +5,8 @@ class ProjectileManager {
     }
 
     // Create a new projectile
-    createProjectile(x, y, angle, speed, damage, range, owner, ownerType = 'player') {
-        const projectile = new Projectile(x, y, angle, speed, damage, range, owner, ownerType);
+    createProjectile(x, y, angle, speed, damage, range, owner, ownerType = 'player', stunBuildup = 0) {
+        const projectile = new Projectile(x, y, angle, speed, damage, range, owner, ownerType, stunBuildup);
         this.projectiles.push(projectile);
         return projectile;
     }
@@ -50,6 +50,8 @@ class ProjectileManager {
                             const enemyTransform = enemy.getComponent(Transform);
                             if (enemyHealth) {
                                 const died = enemyHealth.takeDamage(projectile.damage);
+                                const enemyStatus = enemy.getComponent(StatusEffects);
+                                if (enemyStatus) enemyStatus.addStunBuildup(projectile.stunBuildup || 0);
                                 if (died && systems) {
                                     const dropChance = GameConfig.player.healthOrbDropChance ?? 0.25;
                                     if (Math.random() < dropChance && enemyTransform) {
@@ -108,7 +110,13 @@ class ProjectileManager {
                             }
                             
                             playerHealth.takeDamage(finalDamage, blocked);
-                            
+                            const playerStatus = player.getComponent(StatusEffects);
+                            if (playerStatus) {
+                                const baseStun = projectile.stunBuildup || 0;
+                                const mult = blocked ? (GameConfig.player.stun?.blockedMultiplier ?? 0.5) : 1;
+                                playerStatus.addStunBuildup(baseStun * mult);
+                            }
+
                             // Apply knockback: full when not blocked, half when blocked
                             if (playerMovement && playerTransform) {
                                 const dx = playerTransform.x - projectile.x;

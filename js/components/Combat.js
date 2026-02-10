@@ -5,10 +5,12 @@ class Combat {
         this.isPlayer = isPlayer;
         this.currentAttackIsCircular = false;
         this.currentAttackAnimationKey = null;
+        this.currentAttackIsSpecial = false;
+        this.specialAttackFlashUntil = 0;
         
         // Use appropriate attack handler
         if (isPlayer) {
-            this.playerAttack = new PlayerAttack(weapon || Weapons.sword);
+            this.playerAttack = new PlayerAttack(weapon || Weapons.swordAndShield);
             this.goblinAttack = null;
             this.skeletonAttack = null;
             this.demonAttack = null;
@@ -59,6 +61,7 @@ class Combat {
 
         // Current attack knockback (player only; from weapon/stage config, used when applying hit)
         this._currentAttackKnockbackForce = null;
+        this._currentAttackStunBuildup = null;
     }
     
     // Set weapon for player
@@ -75,7 +78,10 @@ class Combat {
     update(deltaTime, systems) {
         if (this.isPlayer && this.playerAttack) {
             this.playerAttack.update(deltaTime);
-            // Blocking stamina is consumed once when starting (handled in startBlocking)
+            if (this.isBlocking && this.entity) {
+                const statusEffects = this.entity.getComponent(StatusEffects);
+                if (statusEffects && statusEffects.isStunned) this.stopBlocking();
+            }
         } else if (this.demonAttack) {
             this.demonAttack.update(deltaTime);
         } else if (this.goblinAttack) {
@@ -125,6 +131,61 @@ class Combat {
     stopBlocking() {
         this.isBlocking = false;
     }
+
+    /**
+     * Shield bash: while blocking, attack = dash forward and knock back enemies in front.
+     * Call when player is blocking and releases attack; consumes stamina and stops block.
+     * @param {Object} systems - game systems (for entityManager)
+     * @param {number} targetX - world X (used to confirm facing; movement.facingAngle should already be set)
+     * @returns {boolean} true if bash was performed
+     */
+    shieldBash(systems, targetX, targetY) {
+        if (!this.isPlayer || !this.entity) return false;
+        const blockConfig = this._getBlockConfig();
+        const sb = blockConfig && blockConfig.shieldBash;
+        if (!sb) return false;
+        if (!this.isBlocking) return false;
+
+        const stamina = this.entity.getComponent(Stamina);
+        if (stamina && stamina.currentStamina < sb.staminaCost) return false;
+
+        // Keep blocking during and after shield bash (do not call stopBlocking())
+        if (stamina) stamina.currentStamina -= sb.staminaCost;
+
+        const transform = this.entity.getComponent(Transform);
+        const movement = this.entity.getComponent(Movement);
+        if (!transform || !movement || !movement.startAttackDash) return true;
+
+        const facingAngle = movement.facingAngle;
+        const entityManager = systems ? systems.get('entities') : null;
+        if (entityManager) {
+            const enemies = entityManager.getAll('enemy');
+            const arcRad = sb.arcRad != null ? sb.arcRad : (120 * Math.PI / 180);
+            const range = sb.range != null ? sb.range : 100;
+            const knockback = sb.knockback != null ? sb.knockback : 500;
+
+            if (enemies && enemies.length > 0) {
+                for (const enemy of enemies) {
+                    const enemyHealth = enemy.getComponent(Health);
+                    const enemyTransform = enemy.getComponent(Transform);
+                    if (!enemyHealth || !enemyTransform || enemyHealth.isDead) continue;
+                    if (!Utils.pointInArc(enemyTransform.x, enemyTransform.y, transform.x, transform.y, facingAngle, arcRad, range)) continue;
+                    const enemyMovement = enemy.getComponent(Movement);
+                    if (enemyMovement) {
+                        const dx = enemyTransform.x - transform.x;
+                        const dy = enemyTransform.y - transform.y;
+                        const norm = Utils.normalize(dx, dy);
+                        enemyMovement.applyKnockback(norm.x, norm.y, knockback);
+                    }
+                }
+            }
+        }
+
+        const dirX = Math.cos(facingAngle);
+        const dirY = Math.sin(facingAngle);
+        movement.startAttackDash(dirX, dirY, sb.dashDuration, sb.dashSpeed);
+        return true;
+    }
     
     // Check if an attack from a given angle can be blocked
     canBlockAttack(attackAngle, facingAngle) {
@@ -139,18 +200,20 @@ class Combat {
         return angleDiff <= (blockConfig.arcRad / 2);
     }
 
-    attack(targetX = null, targetY = null, chargeDuration = 0) {
+    attack(targetX = null, targetY = null, chargeDuration = 0, options = {}) {
         if (this.isPlayer && this.playerAttack) {
-            // Player attack with weapon combos
-            const attackData = this.playerAttack.startAttack(targetX, targetY, this.entity, chargeDuration);
+            // Player attack with weapon combos (or special attack if options.useSpecialAttack)
+            const attackData = this.playerAttack.startAttack(targetX, targetY, this.entity, chargeDuration, options);
             if (attackData) {
                 this._currentAttackKnockbackForce = attackData.knockbackForce ?? null;
-                // Update legacy properties for compatibility
+                this._currentAttackStunBuildup = attackData.stunBuildup ?? 25;
                 this.attackRange = attackData.range;
                 this.attackDamage = attackData.damage;
                 this.attackArc = attackData.arc;
                 this.currentAttackIsCircular = attackData.isCircular === true;
                 this.currentAttackAnimationKey = attackData.animationKey || null;
+                this.currentAttackIsSpecial = attackData.isSpecial === true;
+                if (attackData.isSpecial) this.specialAttackFlashUntil = Date.now() + 400;
                 
                 // Emit attack event
                 if (this.entity && this.entity.systems) {
@@ -171,7 +234,9 @@ class Combat {
                 setTimeout(() => {
                     combatRef.currentAttackIsCircular = false;
                     combatRef.currentAttackAnimationKey = null;
+                    combatRef.currentAttackIsSpecial = false;
                     combatRef._currentAttackKnockbackForce = null;
+                    combatRef._currentAttackStunBuildup = null;
                     combatRef.playerAttack.endAttack();
                     // Apply buffered block input (player pressed block during attack)
                     if (combatRef.isPlayer && combatRef.blockInputBuffered) {
@@ -309,6 +374,10 @@ class Combat {
 
     get currentAttackKnockbackForce() {
         return this._currentAttackKnockbackForce;
+    }
+
+    get currentAttackStunBuildup() {
+        return this._currentAttackStunBuildup ?? 0;
     }
     
     get windUpProgress() {

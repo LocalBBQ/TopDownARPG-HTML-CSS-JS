@@ -18,11 +18,12 @@ class PlayerMovement extends Movement {
         this.dodgeCooldown = 0;
         this.maxDodgeCooldown = GameConfig.player.dodge.cooldown;
         
-        // Attack dash properties (for combo 3)
+        // Attack dash properties (for combo 3 and shield bash)
         this.isAttackDashing = false;
         this.attackDashTimer = 0;
         this.attackDashDuration = 0;
-        this.attackDashSpeed = 450; // pixels per second
+        this.attackDashSpeed = 450; // pixels per second (default)
+        this.attackDashSpeedCurrent = 450; // speed for current dash (may be overridden e.g. shield bash)
         this.attackDashDirectionX = 0;
         this.attackDashDirectionY = 0;
     }
@@ -31,23 +32,31 @@ class PlayerMovement extends Movement {
         const transform = this.entity.getComponent(Transform);
         if (!transform) return;
 
+        const statusEffects = this.entity.getComponent(StatusEffects);
+        if (statusEffects && statusEffects.isStunned) {
+            this.velocityX = 0;
+            this.velocityY = 0;
+            return;
+        }
+
         // Update dodge cooldown
         if (this.dodgeCooldown > 0) {
             this.dodgeCooldown = Math.max(0, this.dodgeCooldown - deltaTime);
         }
 
-        // Handle attack dash (combo 3) - highest priority
+        // Handle attack dash (combo 3 or shield bash) - highest priority
         if (this.isAttackDashing) {
             this.attackDashTimer += deltaTime;
             
-            // Override velocity with dash movement
-            this.velocityX = this.attackDashDirectionX * this.attackDashSpeed;
-            this.velocityY = this.attackDashDirectionY * this.attackDashSpeed;
+            // Override velocity with dash movement (use current dash speed for this dash)
+            this.velocityX = this.attackDashDirectionX * this.attackDashSpeedCurrent;
+            this.velocityY = this.attackDashDirectionY * this.attackDashSpeedCurrent;
             
             // End dash after duration
             if (this.attackDashTimer >= this.attackDashDuration) {
                 this.isAttackDashing = false;
                 this.attackDashTimer = 0;
+                this.attackDashSpeedCurrent = this.attackDashSpeed;
                 this.velocityX = 0;
                 this.velocityY = 0;
             }
@@ -206,12 +215,16 @@ class PlayerMovement extends Movement {
     }
 
     updateFacingAngle(deltaTime, systems) {
-        // Player always faces cursor
+        // Lock facing during attack so direction doesn't change mid-swing
+        const combat = this.entity.getComponent(Combat);
+        if (combat && combat.isAttacking) return;
+
+        // Player faces cursor when not attacking
         if (systems) {
             const inputSystem = systems.get('input');
             const cameraSystem = systems.get('camera');
             const transform = this.entity.getComponent(Transform);
-            
+
             if (inputSystem && cameraSystem && transform) {
                 const mouseWorldX = cameraSystem.toWorldX(inputSystem.mouseX);
                 const mouseWorldY = cameraSystem.toWorldY(inputSystem.mouseY);
@@ -261,12 +274,13 @@ class PlayerMovement extends Movement {
         return true;
     }
 
-    startAttackDash(directionX, directionY, duration) {
-        // Set dash direction
+    startAttackDash(directionX, directionY, duration, speed = null) {
+        // Set dash direction and optional speed (e.g. for shield bash)
         this.attackDashDirectionX = directionX;
         this.attackDashDirectionY = directionY;
         this.attackDashDuration = duration;
         this.attackDashTimer = 0;
+        this.attackDashSpeedCurrent = (speed != null) ? speed : this.attackDashSpeed;
         this.isAttackDashing = true;
         
         return true;

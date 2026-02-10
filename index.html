@@ -27,7 +27,7 @@
                 </div>
             </div>
             <div id="controls">
-                <p>WASD move · Shift sprint · Space dodge · L/R click attack · block · R shoot · E portal · 1/2/3 weapon (temp)</p>
+                <p>WASD move · Shift sprint · Space dodge · L/R click attack · block · Shift+L click 360 slash · 1/2/3 weapon (1 sword&shield, 2 greatsword, 3 crossbow: L shoot, R reload) · E portal</p>
             </div>
         </div>
     </div>
@@ -41,9 +41,14 @@
     <script src="js/core/SystemManager.js"></script>
     <script src="js/core/ScreenManager.js"></script>
     <script src="js/config/GameConfig.js"></script>
+    <script src="js/config/SceneTiles.js"></script>
     
     <!-- Weapons -->
     <script src="js/weapons/Weapon.js"></script>
+    <script src="js/weapons/SwordAndShield.js"></script>
+    <script src="js/weapons/GreatswordWeapon.js"></script>
+    <script src="js/weapons/CrossbowWeapon.js"></script>
+    <script src="js/weapons/WeaponsRegistry.js"></script>
     <script src="js/weapons/PlayerAttack.js"></script>
     <script src="js/weapons/EnemyAttack.js"></script>
     <script src="js/weapons/GoblinAttack.js"></script>
@@ -53,6 +58,7 @@
     <!-- Components -->
     <script src="js/components/Transform.js"></script>
     <script src="js/components/Health.js"></script>
+    <script src="js/components/StatusEffects.js"></script>
     <script src="js/components/Stamina.js"></script>
     <script src="js/components/Movement.js"></script>
     <script src="js/components/PlayerMovement.js"></script>

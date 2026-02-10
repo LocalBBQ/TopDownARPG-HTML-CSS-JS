@@ -23,7 +23,11 @@ const PlayerCombatRenderer = {
         let fillStyle = 'rgba(40, 35, 30, 0.22)';
         if (useComboColors) {
             const animKey = combat.currentAttackAnimationKey || 'melee';
-            if (animKey === 'meleeSpin') {
+            if (combat.currentAttackIsSpecial) {
+                edgeColor = '#c99830';
+                edgeHighlight = 'rgba(255, 220, 100, 0.9)';
+                fillStyle = 'rgba(100, 70, 20, 0.35)';
+            } else if (animKey === 'meleeSpin') {
                 edgeColor = '#8b7340';
                 edgeHighlight = 'rgba(220, 200, 120, 0.85)';
                 fillStyle = 'rgba(80, 60, 30, 0.28)';
@@ -80,8 +84,10 @@ const PlayerCombatRenderer = {
         const sideOffset = (transform.width / 2 + 4) * camera.zoom;
         const gripX = screenX + Math.cos(movement.facingAngle + Math.PI / 2) * sideOffset;
         const gripY = screenY + Math.sin(movement.facingAngle + Math.PI / 2) * sideOffset;
+        const animKey = combat.currentAttackAnimationKey || 'melee';
+        const isMeleeSpinWithPlayer = animKey === 'meleeSpin'; // weapon fastened to player; whole body spins via RenderSystem
         let swordAngle = movement.facingAngle;
-        if (combat.isAttacking && combat.attackDuration > 0) {
+        if (combat.isAttacking && combat.attackDuration > 0 && !isMeleeSpinWithPlayer) {
             const sweepProgress = this.getSweepProgress(combat);
             if (combat.currentAttackIsCircular) {
                 swordAngle = movement.facingAngle + sweepProgress * Math.PI * 2;
@@ -89,6 +95,10 @@ const PlayerCombatRenderer = {
                 const halfArc = (combat.attackArc || Math.PI / 3) / 2;
                 swordAngle = movement.facingAngle - halfArc + sweepProgress * (combat.attackArc || Math.PI / 3);
             }
+        }
+        if (isMeleeSpinWithPlayer) {
+            // Sword at side of player; full spin is applied to player+weapon in RenderSystem
+            swordAngle = movement.facingAngle + Math.PI / 2;
         }
         ctx.save();
         ctx.translate(gripX, gripY);
@@ -123,14 +133,16 @@ const PlayerCombatRenderer = {
         ctx.fillRect(-guardThick / 2, -guardHalfW, guardThick, guardHalfW * 2);
         ctx.strokeRect(-guardThick / 2, -guardHalfW, guardThick, guardHalfW * 2);
 
-        // Blade – tapered to a point (long rhombus), medieval steel
+        // Blade – slight taper (trapezoid), medieval steel
         const hw = bladeWidthAtGuard / 2;
+        const tipWidth = hw * 0.65; // Less taper: tip stays broad
         ctx.fillStyle = '#a8a8b0';
         ctx.strokeStyle = '#3d3d42';
         ctx.beginPath();
         ctx.moveTo(0, -hw);
         ctx.lineTo(0, hw);
-        ctx.lineTo(swordLength, 0);
+        ctx.lineTo(swordLength, tipWidth);
+        ctx.lineTo(swordLength, -tipWidth);
         ctx.closePath();
         ctx.fill();
         ctx.stroke();
@@ -139,8 +151,68 @@ const PlayerCombatRenderer = {
         ctx.lineWidth = lw * 0.6;
         ctx.beginPath();
         ctx.moveTo(hw * 0.5, 0);
-        ctx.lineTo(swordLength - hw, 0);
+        ctx.lineTo(swordLength, 0);
         ctx.stroke();
+
+        ctx.restore();
+    },
+
+    drawCrossbow(ctx, screenX, screenY, transform, movement, combat, camera) {
+        if (!movement || !combat || !transform) return;
+        const zoom = camera.zoom;
+        const lw = Math.max(1, 1 / zoom);
+        const dist = (transform.width / 2 + 12) * zoom;
+        const cx = screenX + Math.cos(movement.facingAngle) * dist;
+        const cy = screenY + Math.sin(movement.facingAngle) * dist;
+        ctx.save();
+        ctx.translate(cx, cy);
+        ctx.rotate(movement.facingAngle);
+
+        const stockLen = 28 * zoom;
+        const limbHalf = 10 * zoom;
+        const stockW = 5 * zoom;
+        const limbW = 3 * zoom;
+
+        // Stock (body) – dark wood
+        ctx.fillStyle = '#3d2817';
+        ctx.strokeStyle = '#2a1a0c';
+        ctx.lineWidth = lw;
+        ctx.fillRect(-stockLen * 0.5, -stockW / 2, stockLen, stockW);
+        ctx.strokeRect(-stockLen * 0.5, -stockW / 2, stockLen, stockW);
+
+        // Limbs (curved arms at front)
+        ctx.strokeStyle = '#4a3520';
+        ctx.lineWidth = limbW;
+        ctx.beginPath();
+        ctx.moveTo(stockLen * 0.35, 0);
+        ctx.quadraticCurveTo(stockLen * 0.55, -limbHalf, stockLen * 0.5, -limbHalf * 0.6);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(stockLen * 0.35, 0);
+        ctx.quadraticCurveTo(stockLen * 0.55, limbHalf, stockLen * 0.5, limbHalf * 0.6);
+        ctx.stroke();
+
+        // Stirrup (metal at front)
+        ctx.fillStyle = '#5a5a62';
+        ctx.strokeStyle = '#3a3a42';
+        ctx.beginPath();
+        ctx.arc(stockLen * 0.5, 0, 4 * zoom, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+
+        // String
+        ctx.strokeStyle = '#c0b090';
+        ctx.lineWidth = Math.max(1, 1.5 / zoom);
+        ctx.beginPath();
+        ctx.moveTo(stockLen * 0.5, -limbHalf * 0.5);
+        ctx.lineTo(stockLen * 0.5, limbHalf * 0.5);
+        ctx.stroke();
+
+        // Trigger area (metal)
+        ctx.fillStyle = '#4a4a52';
+        ctx.fillRect(-8 * zoom, -stockW / 2 - 2 * zoom, 6 * zoom, stockW + 4 * zoom);
+        ctx.strokeStyle = '#3a3a42';
+        ctx.strokeRect(-8 * zoom, -stockW / 2 - 2 * zoom, 6 * zoom, stockW + 4 * zoom);
 
         ctx.restore();
     },

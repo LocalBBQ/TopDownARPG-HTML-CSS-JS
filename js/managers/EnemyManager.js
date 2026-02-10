@@ -40,6 +40,7 @@ class EnemyManager {
         enemy
             .addComponent(new Transform(x, y, size, size))
             .addComponent(new Health(config.maxHealth))
+            .addComponent(new StatusEffects(false))
             .addComponent(new EnemyMovement(config.speed, type)) // Pass enemy type for type-specific behavior
             .addComponent(new Combat(config.attackRange, config.attackDamage, Utils.degToRad(config.attackArcDegrees ?? 90), config.attackCooldown, config.windUpTime || 0.5, false, null, type)) // isPlayer=false, weapon=null, enemyType=type
             .addComponent(ai)
@@ -159,7 +160,31 @@ class EnemyManager {
         }
     }
 
-    // Spawn enemies for a specific level using pack spawning
+    /**
+     * Spawn a single pack at a given center (for scene-tile spawn hints).
+     */
+    spawnPackAt(centerX, centerY, radius, packSize, entityManager, obstacleManager, enemyTypes) {
+        const size = typeof packSize === 'object'
+            ? Utils.randomInt(packSize.min || 2, packSize.max || 4)
+            : Math.max(1, packSize);
+        const packRadius = Math.min(radius, 80);
+        let spawned = 0;
+        const maxAttempts = size * 8;
+        for (let a = 0; a < maxAttempts && spawned < size; a++) {
+            const angle = Math.random() * Math.PI * 2;
+            const dist = Utils.random(0, packRadius);
+            const x = centerX + Math.cos(angle) * dist;
+            const y = centerY + Math.sin(angle) * dist;
+            if (!obstacleManager || obstacleManager.canMoveTo(x, y, 25, 25)) {
+                const types = enemyTypes && enemyTypes.length > 0 ? enemyTypes : ['goblin'];
+                const type = types[Utils.randomInt(0, types.length - 1)];
+                this.spawnEnemy(x, y, type, entityManager);
+                spawned++;
+            }
+        }
+    }
+
+    // Spawn enemies for a specific level using pack spawning + optional scene-tile spawn hints
     spawnLevelEnemies(level, entityManager, obstacleManager) {
         const levelConfig = GameConfig.levels[level];
         if (!levelConfig || !levelConfig.packSpawn) {
@@ -171,17 +196,44 @@ class EnemyManager {
         this.enemiesSpawned = true;
 
         const worldConfig = GameConfig.world;
+        const worldWidth = (levelConfig.worldWidth != null) ? levelConfig.worldWidth : worldConfig.width;
+        const worldHeight = (levelConfig.worldHeight != null) ? levelConfig.worldHeight : worldConfig.height;
         const packConfig = levelConfig.packSpawn;
         const enemyTypes = levelConfig.enemyTypes || null;
         this.generateEnemyPacks(
-            worldConfig.width,
-            worldConfig.height,
+            worldWidth,
+            worldHeight,
             packConfig.density,
             packConfig.packSize,
             entityManager,
             obstacleManager,
             enemyTypes
         );
+
+        // Scene-tile spawn hints: extra packs on tiles that define spawn (e.g. goblinCamp, banditAmbush)
+        const obstacles = levelConfig.obstacles || {};
+        if (obstacles.useSceneTiles && obstacleManager && typeof obstacleManager.getLastPlacedTiles === 'function') {
+            const placed = obstacleManager.getLastPlacedTiles();
+            const tileSizeDefault = typeof SceneTiles !== 'undefined' ? SceneTiles.defaultTileSize : 800;
+            for (const cell of placed) {
+                const tile = typeof SceneTiles !== 'undefined' && SceneTiles.getTile ? SceneTiles.getTile(cell.tileId) : null;
+                if (!tile || !tile.spawn || tile.spawn.type !== 'pack') continue;
+                const tileSize = cell.tileSize != null ? cell.tileSize : tileSizeDefault;
+                const centerX = cell.originX + tileSize / 2;
+                const centerY = cell.originY + tileSize / 2;
+                const count = (tile.spawn.count != null && tile.spawn.count > 0) ? tile.spawn.count : 1;
+                for (let i = 0; i < count; i++) {
+                    this.spawnPackAt(
+                        centerX, centerY,
+                        tileSize * 0.35,
+                        packConfig.packSize,
+                        entityManager,
+                        obstacleManager,
+                        enemyTypes
+                    );
+                }
+            }
+        }
     }
 
     update(deltaTime, systems) {
@@ -213,14 +265,24 @@ class EnemyManager {
             return [];
         }
         
+        // For non-circular attacks: only apply damage during a single "hit window" in the middle of the swing (avoids double application)
+        const is360Attack = combat.currentAttackIsCircular;
+        if (!is360Attack) {
+            const duration = combat.attackDuration > 0 ? combat.attackDuration : 0.001;
+            const timer = combat.attackTimer != null ? combat.attackTimer : 0;
+            const progress = timer / duration;
+            const hitWindowStart = 0.25;
+            const hitWindowEnd = 0.75;
+            if (progress < hitWindowStart || progress > hitWindowEnd) {
+                return [];
+            }
+        }
+        
         const hitEnemies = [];
         
         // Sensitivity buffers for more generous hit detection
         const rangeSensitivity = 30; // Extra 30 pixels of detection range
         const arcSensitivity = 0.3; // Extra ~17 degrees on each side
-        
-        // Check if this is a 360/circular attack (shape-based, not stage index)
-        const is360Attack = combat.currentAttackIsCircular;
         
         for (const enemy of this.enemies) {
             const enemyHealth = enemy.getComponent(Health);
@@ -262,7 +324,16 @@ class EnemyManager {
                 }
                 
                 if (hitEnemy) {
+                    // Mark immediately so we never apply damage twice (same frame or re-entry)
+                    if (combat.isPlayer && combat.playerAttack) {
+                        combat.playerAttack.markEnemyHit(enemy.id);
+                    }
                     const died = enemyHealth.takeDamage(combat.attackDamage);
+                    const enemyStatus = enemy.getComponent(StatusEffects);
+                    if (enemyStatus) enemyStatus.addStunBuildup(combat.currentAttackStunBuildup || 0);
+                    if (this.systems && this.systems.eventBus) {
+                        this.systems.eventBus.emit(EventTypes.PLAYER_HIT_ENEMY, { killed: died });
+                    }
                     if (died && this.systems) {
                         const dropChance = GameConfig.player.healthOrbDropChance ?? 0.25;
                         if (Math.random() < dropChance) {
@@ -281,11 +352,6 @@ class EnemyManager {
                         const dy = enemyTransform.y - transform.y;
                         const knockbackForce = combat.currentAttackKnockbackForce ?? GameConfig.player.knockback.force;
                         enemyMovement.applyKnockback(dx, dy, knockbackForce);
-                    }
-                    
-                    // Mark this enemy as hit to prevent multiple hits
-                    if (combat.isPlayer && combat.playerAttack) {
-                        combat.playerAttack.markEnemyHit(enemy.id);
                     }
                 }
             }
@@ -333,9 +399,12 @@ class EnemyManager {
                 // Lunge attack: check if enemy is colliding with player during lunge
                 const enemyRadius = enemyTransform.width / 2;
                 const playerRadius = playerTransform.width / 2;
-                // Add buffer for lunge attacks to account for player movement during lunge
-                const lungeCollisionBuffer = 10; // Extra pixels for more forgiving collision
-                const collisionDist = enemyRadius + playerRadius + lungeCollisionBuffer;
+                const ai = enemy.getComponent(AI);
+                const enemyType = ai ? ai.enemyType : 'goblin';
+                const enemyConfig = GameConfig.enemy.types[enemyType] || GameConfig.enemy.types.goblin;
+                const baseBuffer = 10; // Extra pixels for more forgiving collision
+                const hitBonus = (enemyConfig.lunge && enemyConfig.lunge.hitRadiusBonus) || 0;
+                const collisionDist = enemyRadius + playerRadius + baseBuffer + hitBonus;
                 
                 if (currentDist < collisionDist && !enemyCombat.attackProcessed) {
                     // Lunge damage: goblin uses goblinAttack.lungeDamage, others use enemyAttack or config
@@ -357,10 +426,13 @@ class EnemyManager {
                         }
                     }
                     playerHealth.takeDamage(finalDamage, blocked);
+                    const playerStatus = player.getComponent(StatusEffects);
+                    if (playerStatus) {
+                        const baseStun = enemyConfig.stunBuildupPerHit ?? 0;
+                        const mult = blocked ? (GameConfig.player.stun?.blockedMultiplier ?? 0.5) : 1;
+                        playerStatus.addStunBuildup(baseStun * mult);
+                    }
                     if (playerMovement) {
-                        const ai = enemy.getComponent(AI);
-                        const enemyType = ai ? ai.enemyType : 'goblin';
-                        const enemyConfig = GameConfig.enemy.types[enemyType] || GameConfig.enemy.types.goblin;
                         const knockbackConfig = enemyConfig.knockback || { force: 160, decay: 0.88 };
                         const lungeKnockbackForce = enemyConfig.lunge?.knockback?.force ?? knockbackConfig.force;
                         const knockbackForce = blocked ? lungeKnockbackForce * 0.5 : lungeKnockbackForce;
@@ -409,13 +481,19 @@ class EnemyManager {
                     }
 
                     playerHealth.takeDamage(finalDamage, blocked);
+                    const ai = enemy.getComponent(AI);
+                    const enemyTypeForStun = ai ? ai.enemyType : 'goblin';
+                    const enemyConfigForStun = GameConfig.enemy.types[enemyTypeForStun] || GameConfig.enemy.types.goblin;
+                    const playerStatus = player.getComponent(StatusEffects);
+                    if (playerStatus) {
+                        const baseStun = enemyConfigForStun.stunBuildupPerHit ?? 0;
+                        const mult = blocked ? (GameConfig.player.stun?.blockedMultiplier ?? 0.5) : 1;
+                        playerStatus.addStunBuildup(baseStun * mult);
+                    }
 
                     // Always apply knockback: full when not blocked, half when blocked
                     if (playerMovement) {
-                        const ai = enemy.getComponent(AI);
-                        const enemyType = ai ? ai.enemyType : 'goblin';
-                        const enemyConfig = GameConfig.enemy.types[enemyType] || GameConfig.enemy.types.goblin;
-                        const knockbackConfig = enemyConfig.knockback || { force: 160, decay: 0.88 };
+                        const knockbackConfig = enemyConfigForStun.knockback || { force: 160, decay: 0.88 };
                         const baseForce = knockbackConfig.force;
                         const knockbackForce = blocked ? baseForce * 0.5 : baseForce;
                         const dx = playerTransform.x - enemyTransform.x;
@@ -425,12 +503,16 @@ class EnemyManager {
 
                     if (enemyCombat.demonAttack) {
                         enemyCombat.demonAttack.markEnemyHit('player');
+                    } else if (enemyCombat.goblinAttack) {
+                        enemyCombat.goblinAttack.attackProcessed = true;
                     } else if (enemyCombat.enemyAttack) {
                         enemyCombat.enemyAttack.attackProcessed = true;
                     }
                 }
                 // Mark attack processed so this branch runs once per attack (for non-demon)
-                if (enemyCombat.enemyAttack) {
+                if (enemyCombat.goblinAttack) {
+                    enemyCombat.goblinAttack.attackProcessed = true;
+                } else if (enemyCombat.enemyAttack) {
                     enemyCombat.enemyAttack.attackProcessed = true;
                 }
             }

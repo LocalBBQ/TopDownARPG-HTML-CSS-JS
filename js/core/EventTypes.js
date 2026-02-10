@@ -10,7 +10,9 @@ const EventTypes = {
     INPUT_RIGHTCLICK_UP: 'input:rightclickup',
 
     // Combat / damage events
-    DAMAGE_TAKEN: 'damage:taken'
+    DAMAGE_TAKEN: 'damage:taken',
+    PLAYER_HIT_ENEMY: 'combat:playerHitEnemy',
+    PLAYER_SPECIAL_ATTACK: 'combat:playerSpecialAttack'
 };
 
 // Expose globally for script-tag based usage

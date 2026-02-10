@@ -36,17 +36,35 @@ class RenderSystem {
         const theme = levelConfig && levelConfig.theme ? levelConfig.theme : null;
         const ground = theme && theme.ground ? theme.ground : { r: 30, g: 50, b: 30, variation: 18 };
 
+        const useEnvironmentSprites = !this.settings || this.settings.useEnvironmentSprites !== false;
+        const spriteManager = this.systems && this.systems.get ? this.systems.get('sprites') : null;
+        const groundImage = useEnvironmentSprites && ground.texture && spriteManager && spriteManager.getGroundTexture ? spriteManager.getGroundTexture(ground.texture) : null;
+        const tileScreenSize = tileSize * camera.zoom;
+
+        const useTexture = groundImage && groundImage.complete && groundImage.naturalWidth > 0;
+        if (useTexture) {
+            this.ctx.imageSmoothingEnabled = false;
+        }
+
         for (let x = startX; x < endX; x += tileSize) {
             for (let y = startY; y < endY; y += tileSize) {
                 const screenX = camera.toScreenX(x);
                 const screenY = camera.toScreenY(y);
-                const v = Math.floor((x + y) % 3) * (ground.variation || 15);
-                const r = Math.max(0, Math.min(255, ground.r + v));
-                const gVal = Math.max(0, Math.min(255, ground.g + v));
-                const b = Math.max(0, Math.min(255, ground.b + v));
-                this.ctx.fillStyle = `rgb(${r}, ${gVal}, ${b})`;
-                this.ctx.fillRect(screenX, screenY, tileSize * camera.zoom, tileSize * camera.zoom);
+                if (useTexture) {
+                    this.ctx.drawImage(groundImage, 0, 0, groundImage.naturalWidth, groundImage.naturalHeight, screenX, screenY, tileScreenSize, tileScreenSize);
+                } else {
+                    const v = Math.floor((x + y) % 3) * (ground.variation || 15);
+                    const r = Math.max(0, Math.min(255, ground.r + v));
+                    const gVal = Math.max(0, Math.min(255, ground.g + v));
+                    const b = Math.max(0, Math.min(255, ground.b + v));
+                    this.ctx.fillStyle = `rgb(${r}, ${gVal}, ${b})`;
+                    this.ctx.fillRect(screenX, screenY, tileScreenSize, tileScreenSize);
+                }
             }
+        }
+
+        if (useTexture) {
+            this.ctx.imageSmoothingEnabled = true;
         }
 
         if (obstacleManager) {
@@ -481,6 +499,13 @@ class RenderSystem {
         // Apply transformations
         this.ctx.save();
         this.ctx.translate(drawX, drawY);
+        // During meleeSpin, rotate entire player model so sprite and weapon spin together
+        const combat = entity.getComponent(Combat);
+        const renderable = entity.getComponent(Renderable);
+        if (renderable && renderable.type === 'player' && combat && combat.isAttacking && combat.currentAttackAnimationKey === 'meleeSpin') {
+            const sweepProgress = PlayerCombatRenderer.getSweepProgress(combat);
+            this.ctx.rotate(sweepProgress * Math.PI * 2);
+        }
         this.ctx.scale(sprite.scaleX * (sprite.flipX ? -1 : 1), sprite.scaleY);
         this.ctx.rotate(sprite.rotation);
 
@@ -562,13 +587,14 @@ class RenderSystem {
         );
         this.ctx.fill();
 
-        // Draw health bar if health is not full
-        if (health && health.percent < 1) {
-            const barWidth = (renderable && renderable.type === 'player') ? 40 * camera.zoom : 30 * camera.zoom;
-            const barHeight = (renderable && renderable.type === 'player') ? 5 * camera.zoom : 4 * camera.zoom;
-            const barX = screenX - barWidth / 2;
-            const barY = screenY - (transform.height + 10) * camera.zoom;
+        // Draw health bar if health is not full (and for player, always show bar area for stun below)
+        const isPlayer = renderable && renderable.type === 'player';
+        const barWidth = isPlayer ? 40 * camera.zoom : 30 * camera.zoom;
+        const barHeight = isPlayer ? 5 * camera.zoom : 4 * camera.zoom;
+        const barX = screenX - barWidth / 2;
+        const barY = screenY - (transform.height + (isPlayer ? 10 : 8)) * camera.zoom;
 
+        if (health && health.percent < 1) {
             this.ctx.fillStyle = '#333';
             this.ctx.fillRect(barX, barY, barWidth, barHeight);
 
@@ -582,14 +608,119 @@ class RenderSystem {
             this.ctx.strokeRect(barX, barY, barWidth, barHeight);
         }
 
-        // Draw attack/block indicators for player only when using procedural fallback (renderPlayer).
-        // When drawing from sprite (idle/block sheets), the sprite is the single source of truth — do not
-        // draw procedural sword/shield on top or we get two images.
+        // Under health: stamina bar for player, stun bar for enemies
+        const statusEffects = entity.getComponent(StatusEffects);
+        const stamina = entity.getComponent(Stamina);
+        if (isPlayer && stamina) {
+            const gap = 2 * camera.zoom;
+            const underBarHeight = 4 * camera.zoom;
+            const underBarY = barY + barHeight + gap;
+            this.ctx.fillStyle = '#0f1520';
+            this.ctx.fillRect(barX, underBarY, barWidth, underBarHeight);
+            this.ctx.strokeStyle = '#2a3548';
+            this.ctx.lineWidth = 1 / camera.zoom;
+            this.ctx.strokeRect(barX, underBarY, barWidth, underBarHeight);
+            this.ctx.fillStyle = '#2a5070';
+            this.ctx.fillRect(barX, underBarY, barWidth * stamina.percent, underBarHeight);
+        } else if (!isPlayer && statusEffects && statusEffects.stunMeterPercent > 0) {
+            const gap = 2 * camera.zoom;
+            const stunBarHeight = 3 * camera.zoom;
+            const stunBarY = barY + barHeight + gap;
+            this.ctx.fillStyle = '#222';
+            this.ctx.fillRect(barX, stunBarY, barWidth, stunBarHeight);
+            this.ctx.strokeStyle = '#444';
+            this.ctx.lineWidth = 1 / camera.zoom;
+            this.ctx.strokeRect(barX, stunBarY, barWidth, stunBarHeight);
+            const stunPercent = statusEffects.stunMeterPercent;
+            this.ctx.fillStyle = stunPercent >= 1 ? '#ff6600' : '#ffaa00';
+            this.ctx.fillRect(barX, stunBarY, barWidth * stunPercent, stunBarHeight);
+        }
+
+        // Stun text indicator (STUNNED)
+        if (statusEffects && statusEffects.isStunned) {
+            const barOffset = (transform.height + 10) * camera.zoom;
+            const stunY = screenY - barOffset - (health && health.percent < 1 ? 14 * camera.zoom : 8 * camera.zoom);
+            this.ctx.save();
+            this.ctx.font = `bold ${Math.max(10, 12 * camera.zoom)}px sans-serif`;
+            this.ctx.fillStyle = '#ffaa00';
+            this.ctx.strokeStyle = '#000';
+            this.ctx.lineWidth = 2 / camera.zoom;
+            this.ctx.textAlign = 'center';
+            this.ctx.textBaseline = 'middle';
+            this.ctx.strokeText('STUNNED', screenX, stunY);
+            this.ctx.fillText('STUNNED', screenX, stunY);
+            this.ctx.restore();
+        }
+
+        // Player: attack arc, crossbow, reload bar, and stun duration bar
         if (renderable && renderable.type === 'player') {
+            const isMeleeSpin = combat && combat.isAttacking && combat.currentAttackAnimationKey === 'meleeSpin';
+            if (isMeleeSpin) {
+                this.ctx.save();
+                this.ctx.translate(screenX, screenY);
+                this.ctx.rotate(PlayerCombatRenderer.getSweepProgress(combat) * Math.PI * 2);
+                this.ctx.translate(-screenX, -screenY);
+            }
             if (combat && combat.isAttacking && movement) {
                 PlayerCombatRenderer.drawAttackArc(this.ctx, screenX, screenY, combat, movement, camera, { comboColors: false });
             }
-            // Skip procedural sword/shield when player is rendered via sprite (sprite already includes character + weapons)
+            const weapon = combat && combat.playerAttack ? combat.playerAttack.weapon : null;
+            const isCrossbow = weapon && weapon.isRanged === true;
+            if (isCrossbow && combat && movement && transform) {
+                PlayerCombatRenderer.drawCrossbow(this.ctx, screenX, screenY, transform, movement, combat, camera);
+            } else if (combat && movement && transform) {
+                PlayerCombatRenderer.drawSword(this.ctx, screenX, screenY, transform, movement, combat, camera, {});
+                PlayerCombatRenderer.drawShield(this.ctx, screenX, screenY, transform, movement, combat, camera, {});
+            }
+            if (isMeleeSpin) this.ctx.restore();
+            const crossbowConfig = GameConfig.player.crossbow;
+            const reloadInProgress = entity.crossbowReloadInProgress === true;
+            if (isCrossbow && crossbowConfig && reloadInProgress && transform) {
+                const pBarWidth = 40 * camera.zoom;
+                const pBarHeight = 5 * camera.zoom;
+                const pBarX = screenX - pBarWidth / 2;
+                const pBarY = screenY - (transform.height + 10) * camera.zoom;
+                const gap = 3 * camera.zoom;
+                let reloadBarY = pBarY + pBarHeight + gap;
+                if (stamina)
+                    reloadBarY += (4 * camera.zoom) + gap;
+                const reloadBarHeight = 4 * camera.zoom;
+                this.ctx.fillStyle = '#1a1208';
+                this.ctx.fillRect(pBarX, reloadBarY, pBarWidth, reloadBarHeight);
+                this.ctx.strokeStyle = '#3d2817';
+                this.ctx.lineWidth = 1 / camera.zoom;
+                this.ctx.strokeRect(pBarX, reloadBarY, pBarWidth, reloadBarHeight);
+                const progress = Math.min(1, entity.crossbowReloadProgress || 0);
+                const perfectStart = crossbowConfig.perfectWindowStart;
+                const perfectEnd = crossbowConfig.perfectWindowEnd;
+                this.ctx.fillStyle = 'rgba(180, 220, 100, 0.4)';
+                this.ctx.fillRect(pBarX + pBarWidth * perfectStart, reloadBarY, pBarWidth * (perfectEnd - perfectStart), reloadBarHeight);
+                this.ctx.strokeStyle = 'rgba(200, 255, 120, 0.6)';
+                this.ctx.lineWidth = 1 / camera.zoom;
+                this.ctx.strokeRect(pBarX + pBarWidth * perfectStart, reloadBarY, pBarWidth * (perfectEnd - perfectStart), reloadBarHeight);
+                this.ctx.fillStyle = '#4a6040';
+                this.ctx.fillRect(pBarX, reloadBarY, pBarWidth * progress, reloadBarHeight);
+            }
+            // Stun duration bar (sprite path): below stamina / reload when stunned
+            if (statusEffects && statusEffects.isStunned) {
+                const gap = 3 * camera.zoom;
+                const pBarY = screenY - (transform.height + 10) * camera.zoom;
+                const pBarHeight = 5 * camera.zoom;
+                let stunDurBarY = pBarY + pBarHeight + gap;
+                if (stamina) stunDurBarY += (4 * camera.zoom) + gap;
+                if (isCrossbow && crossbowConfig && reloadInProgress) stunDurBarY += (4 * camera.zoom) + gap;
+                const stunDurBarHeight = 3 * camera.zoom;
+                const stunDurBarW = 40 * camera.zoom;
+                const stunDurBarX = screenX - stunDurBarW / 2;
+                this.ctx.fillStyle = '#2a1a0a';
+                this.ctx.fillRect(stunDurBarX, stunDurBarY, stunDurBarW, stunDurBarHeight);
+                this.ctx.strokeStyle = '#4a3020';
+                this.ctx.lineWidth = 1 / camera.zoom;
+                this.ctx.strokeRect(stunDurBarX, stunDurBarY, stunDurBarW, stunDurBarHeight);
+                const stunRemain = statusEffects.stunDurationPercentRemaining;
+                this.ctx.fillStyle = '#ffaa00';
+                this.ctx.fillRect(stunDurBarX, stunDurBarY, stunDurBarW * stunRemain, stunDurBarHeight);
+            }
         }
     }
 
@@ -617,6 +748,13 @@ class RenderSystem {
             this.ctx.stroke();
         }
 
+        const isMeleeSpin = combat && combat.isAttacking && combat.currentAttackAnimationKey === 'meleeSpin';
+        if (isMeleeSpin) {
+            this.ctx.save();
+            this.ctx.translate(screenX, screenY);
+            this.ctx.rotate(PlayerCombatRenderer.getSweepProgress(combat) * Math.PI * 2);
+            this.ctx.translate(-screenX, -screenY);
+        }
         if (combat && combat.isAttacking) {
             PlayerCombatRenderer.drawAttackArc(this.ctx, screenX, screenY, combat, movement, camera, { comboColors: true });
         }
@@ -695,8 +833,15 @@ class RenderSystem {
         this.ctx.restore();
         this.ctx.globalAlpha = 1.0;
 
-        PlayerCombatRenderer.drawSword(this.ctx, screenX, screenY, transform, movement, combat, camera, {});
-        PlayerCombatRenderer.drawShield(this.ctx, screenX, screenY, transform, movement, combat, camera, {});
+        const weapon = combat && combat.playerAttack ? combat.playerAttack.weapon : null;
+        const isCrossbow = weapon && weapon.isRanged === true;
+        if (isCrossbow) {
+            PlayerCombatRenderer.drawCrossbow(this.ctx, screenX, screenY, transform, movement, combat, camera);
+        } else {
+            PlayerCombatRenderer.drawSword(this.ctx, screenX, screenY, transform, movement, combat, camera, {});
+            PlayerCombatRenderer.drawShield(this.ctx, screenX, screenY, transform, movement, combat, camera, {});
+        }
+        if (isMeleeSpin) this.ctx.restore();
 
         // Draw health bar
         if (health) {
@@ -717,8 +862,79 @@ class RenderSystem {
             this.ctx.lineWidth = 1 / camera.zoom;
             this.ctx.strokeRect(barX, barY, barWidth, barHeight);
             
-            // Reset text align
             this.ctx.textAlign = 'left';
+
+            let barsBottomY = barY + barHeight + (3 * camera.zoom);
+            const stamina = entity.getComponent(Stamina);
+            if (stamina) {
+                const gap = 3 * camera.zoom;
+                const staminaBarHeight = 4 * camera.zoom;
+                const staminaBarY = barY + barHeight + gap;
+                barsBottomY = staminaBarY + staminaBarHeight + gap;
+                this.ctx.fillStyle = '#0f1520';
+                this.ctx.fillRect(barX, staminaBarY, barWidth, staminaBarHeight);
+                this.ctx.strokeStyle = '#2a3548';
+                this.ctx.strokeRect(barX, staminaBarY, barWidth, staminaBarHeight);
+                const staminaPercent = stamina.percent;
+                this.ctx.fillStyle = '#2a5070';
+                this.ctx.fillRect(barX, staminaBarY, barWidth * staminaPercent, staminaBarHeight);
+            }
+
+            // Crossbow reload bar: under health (and stamina bar)
+            const crossbowConfig = GameConfig.player.crossbow;
+            const reloadInProgress = entity.crossbowReloadInProgress === true;
+            if (isCrossbow && crossbowConfig && reloadInProgress) {
+                const reloadBarHeight = 4 * camera.zoom;
+                const reloadBarY = barsBottomY;
+                const reloadBarX = barX;
+                const reloadBarW = barWidth;
+
+                this.ctx.fillStyle = '#1a1208';
+                this.ctx.fillRect(reloadBarX, reloadBarY, reloadBarW, reloadBarHeight);
+                this.ctx.strokeStyle = '#3d2817';
+                this.ctx.lineWidth = 1 / camera.zoom;
+                this.ctx.strokeRect(reloadBarX, reloadBarY, reloadBarW, reloadBarHeight);
+
+                const progress = Math.min(1, entity.crossbowReloadProgress || 0);
+                const perfectStart = crossbowConfig.perfectWindowStart;
+                const perfectEnd = crossbowConfig.perfectWindowEnd;
+
+                this.ctx.fillStyle = 'rgba(180, 220, 100, 0.4)';
+                this.ctx.fillRect(
+                    reloadBarX + reloadBarW * perfectStart,
+                    reloadBarY,
+                    reloadBarW * (perfectEnd - perfectStart),
+                    reloadBarHeight
+                );
+                this.ctx.strokeStyle = 'rgba(200, 255, 120, 0.6)';
+                this.ctx.lineWidth = 1 / camera.zoom;
+                this.ctx.strokeRect(
+                    reloadBarX + reloadBarW * perfectStart,
+                    reloadBarY,
+                    reloadBarW * (perfectEnd - perfectStart),
+                    reloadBarHeight
+                );
+
+                this.ctx.fillStyle = '#4a6040';
+                this.ctx.fillRect(reloadBarX, reloadBarY, reloadBarW * progress, reloadBarHeight);
+            }
+
+            // Stun duration bar: appears below other bars while player is stunned (drains as time left)
+            const statusEffects = entity.getComponent(StatusEffects);
+            if (statusEffects && statusEffects.isStunned) {
+                const gap = 3 * camera.zoom;
+                const stunDurBarHeight = 3 * camera.zoom;
+                const stunDurBarY = barsBottomY + gap;
+                const stunDurBarW = barWidth;
+                this.ctx.fillStyle = '#2a1a0a';
+                this.ctx.fillRect(barX, stunDurBarY, stunDurBarW, stunDurBarHeight);
+                this.ctx.strokeStyle = '#4a3020';
+                this.ctx.lineWidth = 1 / camera.zoom;
+                this.ctx.strokeRect(barX, stunDurBarY, stunDurBarW, stunDurBarHeight);
+                const stunRemain = statusEffects.stunDurationPercentRemaining;
+                this.ctx.fillStyle = '#ffaa00';
+                this.ctx.fillRect(barX, stunDurBarY, stunDurBarW * stunRemain, stunDurBarHeight);
+            }
         }
         
         // Render charge meter if charging (vertical bar on left side of player)
@@ -1083,12 +1299,12 @@ class RenderSystem {
         }
 
         // Draw health bar
-        if (health && health.percent < 1) {
-            const barWidth = 30 * camera.zoom;
-            const barHeight = 4 * camera.zoom;
-            const barX = screenX - barWidth / 2;
-            const barY = screenY - (transform.height + 8) * camera.zoom;
+        const barWidth = 30 * camera.zoom;
+        const barHeight = 4 * camera.zoom;
+        const barX = screenX - barWidth / 2;
+        const barY = screenY - (transform.height + 8) * camera.zoom;
 
+        if (health && health.percent < 1) {
             this.ctx.fillStyle = '#333';
             this.ctx.fillRect(barX, barY, barWidth, barHeight);
 
@@ -1100,6 +1316,22 @@ class RenderSystem {
             this.ctx.strokeStyle = '#000';
             this.ctx.lineWidth = 1 / camera.zoom;
             this.ctx.strokeRect(barX, barY, barWidth, barHeight);
+        }
+
+        // Stun bar under health bar
+        const statusEffects = entity.getComponent(StatusEffects);
+        if (statusEffects && statusEffects.stunMeterPercent > 0) {
+            const gap = 2 * camera.zoom;
+            const stunBarHeight = 3 * camera.zoom;
+            const stunBarY = barY + barHeight + gap;
+            this.ctx.fillStyle = '#222';
+            this.ctx.fillRect(barX, stunBarY, barWidth, stunBarHeight);
+            this.ctx.strokeStyle = '#444';
+            this.ctx.lineWidth = 1 / camera.zoom;
+            this.ctx.strokeRect(barX, stunBarY, barWidth, stunBarHeight);
+            const stunPercent = statusEffects.stunMeterPercent;
+            this.ctx.fillStyle = stunPercent >= 1 ? '#ff6600' : '#ffaa00';
+            this.ctx.fillRect(barX, stunBarY, barWidth * stunPercent, stunBarHeight);
         }
     }
 
@@ -1176,7 +1408,7 @@ class RenderSystem {
             }
         }
         
-        // Draw entities
+        // Draw entities (enemies smaller on minimap)
         const entities = entityManager.getAll();
         for (const entity of entities) {
             if (!entity.active) continue;
@@ -1185,9 +1417,11 @@ class RenderSystem {
             const renderable = entity.getComponent(Renderable);
             if (!transform || !renderable) continue;
             
+            const isEnemy = renderable.type === 'enemy';
+            const dotRadius = isEnemy ? 1.5 / scale : 3 / scale;
             this.ctx.fillStyle = renderable.color;
             this.ctx.beginPath();
-            this.ctx.arc(transform.x, transform.y, 3 / scale, 0, Math.PI * 2);
+            this.ctx.arc(transform.x, transform.y, dotRadius, 0, Math.PI * 2);
             this.ctx.fill();
         }
 

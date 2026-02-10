@@ -10,6 +10,13 @@ class PathfindingSystem {
         this.gridHeight = Math.ceil(worldHeight / cellSize);
     }
 
+    setWorldBounds(worldWidth, worldHeight) {
+        this.worldWidth = worldWidth;
+        this.worldHeight = worldHeight;
+        this.gridWidth = Math.ceil(worldWidth / this.cellSize);
+        this.gridHeight = Math.ceil(worldHeight / this.cellSize);
+    }
+
     init(systems) {
         this.systems = systems;
     }

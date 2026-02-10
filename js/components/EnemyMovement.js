@@ -19,6 +19,7 @@ class EnemyMovement extends Movement {
         this.lungeSpeed = 0;
         this.lungeDistance = 0;
         this.lungeTraveled = 0;
+        this.lungeStuckFrames = 0; // Frames with no progress (blocked) – end lunge if too many
         
         // Initialize attack dash properties (for demons using combo attacks)
         this.isAttackDashing = false;
@@ -26,11 +27,60 @@ class EnemyMovement extends Movement {
         this.attackDashDuration = 0;
         this.attackDashDirectionX = 0;
         this.attackDashDirectionY = 0;
+
+        // Hop-back after lunge (goblin only)
+        this.isHoppingBack = false;
+        this.hopBackDelayRemaining = 0; // Countdown before hop back starts (seconds)
+        this.hopBackTargetX = 0;
+        this.hopBackTargetY = 0;
+        this.hopBackSpeed = 0;
+        this.hopBackDistance = 0;
+        this.hopBackTraveled = 0;
     }
 
     update(deltaTime, systems) {
         const transform = this.entity.getComponent(Transform);
         if (!transform) return;
+
+        const statusEffects = this.entity.getComponent(StatusEffects);
+        if (statusEffects && statusEffects.isStunned) {
+            this.velocityX = 0;
+            this.velocityY = 0;
+            return;
+        }
+
+        // Handle hop-back delay (goblin only) - wait before starting hop
+        if (this.hopBackDelayRemaining > 0) {
+            this.hopBackDelayRemaining = Math.max(0, this.hopBackDelayRemaining - deltaTime);
+            this.velocityX = 0;
+            this.velocityY = 0;
+            if (this.hopBackDelayRemaining <= 0) {
+                this.isHoppingBack = true;
+            }
+            return;
+        }
+
+        // Handle hop-back after lunge (goblin only) - highest priority
+        if (this.isHoppingBack) {
+            const dx = this.hopBackTargetX - transform.x;
+            const dy = this.hopBackTargetY - transform.y;
+            const distanceToTarget = Math.sqrt(dx * dx + dy * dy);
+
+            if (distanceToTarget > 0.1 && this.hopBackTraveled < this.hopBackDistance) {
+                const normalized = Utils.normalize(dx, dy);
+                const moveX = normalized.x * this.hopBackSpeed * deltaTime;
+                const moveY = normalized.y * this.hopBackSpeed * deltaTime;
+                const step = Math.sqrt(moveX * moveX + moveY * moveY);
+                this.hopBackTraveled += step;
+                this.velocityX = normalized.x * this.hopBackSpeed;
+                this.velocityY = normalized.y * this.hopBackSpeed;
+                this.facingAngle = Math.atan2(normalized.y, normalized.x);
+            } else {
+                this.endHopBack();
+            }
+            this.applyMovement(deltaTime, systems);
+            return;
+        }
 
         // Handle attack dash (for demons using combo attacks) - highest priority
         if (this.isAttackDashing !== undefined && this.isAttackDashing) {
@@ -70,6 +120,8 @@ class EnemyMovement extends Movement {
 
         // Handle enemy lunge - highest priority (only for types that support it)
         if (this.hasLunge && this.isLunging) {
+            const prevX = transform.x;
+            const prevY = transform.y;
             const dx = this.lungeTargetX - transform.x;
             const dy = this.lungeTargetY - transform.y;
             const distanceToTarget = Math.sqrt(dx * dx + dy * dy);
@@ -98,8 +150,20 @@ class EnemyMovement extends Movement {
                 this.endLunge();
             }
             
-            // Skip normal movement logic during lunge - just apply movement
+            // Apply movement (may be blocked by obstacles)
             this.applyMovement(deltaTime, systems);
+            
+            // If blocked: barely moved despite trying – end lunge after a few frames to avoid freezing
+            const moved = Math.sqrt((transform.x - prevX) ** 2 + (transform.y - prevY) ** 2);
+            const expectedMin = this.lungeSpeed * deltaTime * 0.2; // At least 20% of expected movement
+            if (this.isLunging && moved < expectedMin && moved < 3) {
+                this.lungeStuckFrames++;
+                if (this.lungeStuckFrames >= 5) {
+                    this.endLunge();
+                }
+            } else {
+                this.lungeStuckFrames = 0;
+            }
             return;
         }
 
@@ -108,8 +172,9 @@ class EnemyMovement extends Movement {
     }
 
     updateMovement(deltaTime, systems) {
-        // Skip normal movement during attack dash, lunge, or knockback
-        if ((this.isAttackDashing !== undefined && this.isAttackDashing) || 
+        // Skip normal movement during hop-back delay, hop-back, attack dash, lunge, or knockback
+        if (this.hopBackDelayRemaining > 0 || this.isHoppingBack ||
+            (this.isAttackDashing !== undefined && this.isAttackDashing) || 
             (this.hasLunge && this.isLunging) || 
             this.isKnockedBack) {
             return;
@@ -156,6 +221,7 @@ class EnemyMovement extends Movement {
         this.lungeSpeed = lungeConfig.lungeSpeed || 300;
         this.lungeDistance = lungeConfig.lungeDistance || 120;
         this.lungeTraveled = 0;
+        this.lungeStuckFrames = 0;
         
         // Cancel any existing movement
         this.cancelPath();
@@ -164,6 +230,9 @@ class EnemyMovement extends Movement {
     endLunge() {
         if (!this.hasLunge) return;
         
+        const transform = this.entity.getComponent(Transform);
+        if (!transform) return;
+
         this.isLunging = false;
         this.velocityX = 0;
         this.velocityY = 0;
@@ -175,6 +244,31 @@ class EnemyMovement extends Movement {
             combat.goblinAttack.endLunge();
         }
         
+        // Goblin: 50% chance to hop back after lunge
+        if (this.enemyType === 'goblin') {
+            const enemyConfig = GameConfig.enemy.types.goblin;
+            const lungeConfig = enemyConfig && enemyConfig.lunge;
+            const chance = (lungeConfig && lungeConfig.hopBackChance) || 0;
+            if (chance > 0 && Math.random() < chance) {
+                const hopBackDistance = (lungeConfig && lungeConfig.hopBackDistance) || 60;
+                const hopBackSpeed = (lungeConfig && lungeConfig.hopBackSpeed) || 140;
+                const hopBackDelay = (lungeConfig && lungeConfig.hopBackDelay) != null ? lungeConfig.hopBackDelay : 0.75;
+                const backDx = transform.x - this.lungeTargetX;
+                const backDy = transform.y - this.lungeTargetY;
+                const len = Math.sqrt(backDx * backDx + backDy * backDy) || 1;
+                const nx = backDx / len;
+                const ny = backDy / len;
+                this.hopBackTargetX = transform.x + nx * hopBackDistance;
+                this.hopBackTargetY = transform.y + ny * hopBackDistance;
+                this.hopBackSpeed = hopBackSpeed;
+                this.hopBackDistance = hopBackDistance;
+                this.hopBackTraveled = 0;
+                this.hopBackDelayRemaining = hopBackDelay;
+                this.isHoppingBack = false;
+                return;
+            }
+        }
+        
         // Notify AI component - set cooldown if we've used all lunges
         const ai = this.entity.getComponent(AI);
         if (ai) {
@@ -182,6 +276,22 @@ class EnemyMovement extends Movement {
             if (ai.lungeCount >= ai.maxLunges) {
                 ai.lungeCooldown = ai.lungeCooldownDuration;
                 ai.lungeCount = 0; // Reset counter for next cooldown cycle
+            }
+        }
+    }
+    
+    endHopBack() {
+        this.isHoppingBack = false;
+        this.hopBackDelayRemaining = 0;
+        this.velocityX = 0;
+        this.velocityY = 0;
+        this.hopBackTraveled = 0;
+        // Notify AI (e.g. cooldown) if we didn't do it in endLunge because we hopped
+        const ai = this.entity.getComponent(AI);
+        if (ai && this.enemyType === 'goblin') {
+            if (ai.lungeCount >= ai.maxLunges) {
+                ai.lungeCooldown = ai.lungeCooldownDuration;
+                ai.lungeCount = 0;
             }
         }
     }

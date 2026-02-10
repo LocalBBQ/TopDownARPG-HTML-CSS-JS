@@ -49,6 +49,9 @@ class AI {
         
         if (!transform || !movement) return;
         if (health && health.isDead) return;
+
+        const statusEffects = this.entity.getComponent(StatusEffects);
+        if (statusEffects && statusEffects.isStunned) return;
         
         // Reset attack initiation flag at start of each frame
         this.attackInitiatedThisFrame = false;
@@ -165,6 +168,10 @@ class AI {
         }
         // Check if should start charging lunge
         else if (canLunge && distToPlayer <= lungeConfig.chargeRange && distToPlayer > this.attackRange) {
+            // Goblin: 50% chance to lunge twice this cycle, 50% once (roll at start of cycle)
+            if (isGoblin && this.lungeCount === 0) {
+                this.maxLunges = Math.random() < 0.5 ? 1 : 2;
+            }
             this.isChargingLunge = true;
             this.lungeChargeTimer = lungeConfig.chargeTime;
             this.lungeTargetX = playerTransform.x;
@@ -191,7 +198,8 @@ class AI {
                     projectileConfig.damage,
                     projectileConfig.range,
                     this.entity,
-                    'enemy'
+                    'enemy',
+                    projectileConfig.stunBuildup ?? 0
                 );
                 this.projectileCooldown = projectileConfig.cooldown;
                 this.state = 'attack';
