@@ -190,13 +190,51 @@ class Game {
             }
         }
 
+        // Load knight 8-direction attack sprite sheet — same frame size and layout as idle (Knight_8_Direction.png)
+        const knightAttk1Path = 'assets/sprites/player/Knight_8_D_Attk1.png';
+        if (knightFrameWidth > 0 && knightFrameHeight > 0) {
+            try {
+                await spriteManager.loadSprite(knightAttk1Path);
+                await spriteManager.loadSpriteSheet(
+                    knightAttk1Path,
+                    knightFrameWidth,
+                    knightFrameHeight,
+                    knightRows,
+                    knightCols
+                );
+                const attk1SheetKey = `${knightAttk1Path}_${knightFrameWidth}_${knightFrameHeight}_${knightRows}_${knightCols}`;
+                loadedKnightSheets.melee = attk1SheetKey;
+                console.log(`Loaded Knight_8_D_Attk1: same frame size as idle (${knightFrameWidth}x${knightFrameHeight}, ${knightRows}×${knightCols})`);
+            } catch (error) {
+                console.warn('Failed to load Knight_8_D_Attk1.png:', error);
+            }
+        }
+
+        // Load knight attack 2 (second combo hit) — same frame size and layout as idle (Knight_8_Direction.png)
+        const knightAttk2Path = 'assets/sprites/player/Knight_8_D_Attk2.png';
+        if (knightFrameWidth > 0 && knightFrameHeight > 0) {
+            try {
+                await spriteManager.loadSprite(knightAttk2Path);
+                await spriteManager.loadSpriteSheet(
+                    knightAttk2Path,
+                    knightFrameWidth,
+                    knightFrameHeight,
+                    knightRows,
+                    knightCols
+                );
+                const attk2SheetKey = `${knightAttk2Path}_${knightFrameWidth}_${knightFrameHeight}_${knightRows}_${knightCols}`;
+                loadedKnightSheets.melee2 = attk2SheetKey;
+                console.log(`Loaded Knight_8_D_Attk2: same frame size as idle (${knightFrameWidth}x${knightFrameHeight}, ${knightRows}×${knightCols})`);
+            } catch (error) {
+                console.warn('Failed to load Knight_8_D_Attk2.png:', error);
+            }
+        }
+
         // Load optional knight animation sprite sheets (horizontal strips) from alternate path
         const spriteBasePath = 'assets/sprites/player/2D HD Character Knight/Spritesheets/With shadows/';
         const knightAnimations = {
             walk: 'Walk.png',
             run: 'Run.png',
-            melee: 'Melee.png',
-            melee2: 'Melee2.png',
             meleeSpin: 'MeleeSpin.png',
             roll: 'Rolling.png',
             takeDamage: 'TakeDamage.png'
@@ -392,13 +430,16 @@ class Game {
         if (knightSheets.melee) {
             const meleeSheet = spriteManager.getSpriteSheet(knightSheets.melee);
             if (meleeSheet) {
-                const totalFrames = meleeSheet.totalFrames || (meleeSheet.rows * meleeSheet.cols);
-                const meleeFrames = Array.from({length: totalFrames}, (_, i) => i);
+                const is8DirSingleFrame = (meleeSheet.rows === 8 && meleeSheet.cols === 1) || (meleeSheet.rows === 1 && meleeSheet.cols === 8);
+                const meleeUseDirectionAsColumn = meleeSheet.rows === 1 && meleeSheet.cols === 8;
+                const meleeFrames = is8DirSingleFrame ? [0] : Array.from({length: meleeSheet.totalFrames || (meleeSheet.rows * meleeSheet.cols)}, (_, i) => i);
                 animationConfig.animations.melee = {
                     spriteSheetKey: knightSheets.melee,
                     frames: meleeFrames,
                     frameDuration: 0.1,
-                    loop: false
+                    loop: false,
+                    useDirection: is8DirSingleFrame,
+                    useDirectionAsColumn: meleeUseDirectionAsColumn
                 };
             }
         }
@@ -406,13 +447,16 @@ class Game {
         if (knightSheets.melee2) {
             const melee2Sheet = spriteManager.getSpriteSheet(knightSheets.melee2);
             if (melee2Sheet) {
-                const totalFrames = melee2Sheet.totalFrames || (melee2Sheet.rows * melee2Sheet.cols);
-                const melee2Frames = Array.from({length: totalFrames}, (_, i) => i);
+                const is8DirSingleFrame = (melee2Sheet.rows === 8 && melee2Sheet.cols === 1) || (melee2Sheet.rows === 1 && melee2Sheet.cols === 8);
+                const melee2UseDirectionAsColumn = melee2Sheet.rows === 1 && melee2Sheet.cols === 8;
+                const melee2Frames = is8DirSingleFrame ? [0] : Array.from({length: melee2Sheet.totalFrames || (melee2Sheet.rows * melee2Sheet.cols)}, (_, i) => i);
                 animationConfig.animations.melee2 = {
                     spriteSheetKey: knightSheets.melee2,
                     frames: melee2Frames,
                     frameDuration: 0.1,
-                    loop: false
+                    loop: false,
+                    useDirection: is8DirSingleFrame,
+                    useDirectionAsColumn: melee2UseDirectionAsColumn
                 };
             }
         }
