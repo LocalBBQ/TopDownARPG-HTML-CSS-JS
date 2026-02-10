@@ -31,7 +31,7 @@ class Health {
                 const systems = this.entity.systems;
                 if (systems && systems.eventBus) {
                     const isPlayer = this.entity.id === 'player';
-                    systems.eventBus.emit('damage:taken', {
+                    systems.eventBus.emit(EventTypes.DAMAGE_TAKEN, {
                         x: transform.x,
                         y: transform.y - transform.height / 2, // Above entity
                         damage: actualDamage,

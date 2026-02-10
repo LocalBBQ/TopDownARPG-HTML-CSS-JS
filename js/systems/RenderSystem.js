@@ -3,6 +3,8 @@ class RenderSystem {
     constructor(canvas, ctx) {
         this.canvas = canvas;
         this.ctx = ctx;
+        // Optional runtime settings injected by Game (see Game.initSystems)
+        this.settings = null;
     }
 
     init(systems) {
@@ -54,6 +56,7 @@ class RenderSystem {
 
     renderObstacles(obstacleManager, camera, currentLevel = 1) {
         const zoom = camera.zoom;
+        const useEnvironmentSprites = !this.settings || this.settings.useEnvironmentSprites !== false;
         for (const obstacle of obstacleManager.obstacles) {
             const screenX = camera.toScreenX(obstacle.x);
             const screenY = camera.toScreenY(obstacle.y);
@@ -61,7 +64,7 @@ class RenderSystem {
             const h = obstacle.height * zoom;
 
             if (screenX > -w && screenX < this.canvas.width + w && screenY > -h && screenY < this.canvas.height + h) {
-                if (obstacle.spritePath && obstacleManager.loadedSprites.has(obstacle.spritePath)) {
+                if (useEnvironmentSprites && obstacle.spritePath && obstacleManager.loadedSprites.has(obstacle.spritePath)) {
                     const sprite = obstacleManager.loadedSprites.get(obstacle.spritePath);
                     if (sprite.complete && sprite.naturalWidth > 0) {
                         this.ctx.drawImage(sprite, screenX, screenY, w, h);
@@ -306,6 +309,7 @@ class RenderSystem {
 
     renderEntities(entities, camera) {
         const spriteManager = this.systems ? this.systems.get('sprites') : null;
+        const useCharacterSprites = !this.settings || this.settings.useCharacterSprites !== false;
         
         for (const entity of entities) {
             if (!entity.active) continue;
@@ -323,12 +327,14 @@ class RenderSystem {
                 continue;
             }
 
-            // Try to render with sprite first, fallback to type-based rendering
+            // Try to render with sprite first (if enabled), otherwise fallback to type-based rendering
             const sprite = entity.getComponent(Sprite);
-            if (sprite && spriteManager) {
+            const isCharacter = renderable.type === 'player' || renderable.type === 'enemy';
+
+            if (sprite && spriteManager && (useCharacterSprites || !isCharacter)) {
                 this.renderSprite(entity, camera, screenX, screenY, spriteManager);
             } else {
-                // Render based on type (fallback)
+                // Render based on type (fallback, including when character sprites are disabled)
                 if (renderable.type === 'player') {
                     this.renderPlayer(entity, camera, screenX, screenY);
                 } else if (renderable.type === 'enemy') {

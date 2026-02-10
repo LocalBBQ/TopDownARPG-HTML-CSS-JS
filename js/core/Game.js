@@ -12,9 +12,9 @@ class Game {
                 throw new Error('Could not get 2d context');
             }
             
-            // Initialize systems
-            this.systems = new SystemManager();
+            // Core managers (systems will be created in initSystems)
             this.entities = new EntityManager();
+            this.systems = null;
             
             // Initialize player projectile cooldown
             this.playerProjectileCooldown = 0;
@@ -28,16 +28,27 @@ class Game {
             this.boardUseCooldown = 0;
             this.playerNearBoard = false;
             this.hubSelectedLevel = 1;
+
+            // Game-wide settings (toggled from pause/settings screen)
+            this.settings = {
+                musicEnabled: true,
+                sfxEnabled: true,
+                showMinimap: true,
+                useCharacterSprites: true,   // Player + enemies use sprite sheets vs procedural canvas knight
+                useEnvironmentSprites: true  // Trees/rocks/houses etc use sprite images vs procedural shapes
+            };
             
             // Initialize screen manager
             this.screenManager = null; // Will be initialized after canvas setup
             
-            this.setupCanvas();
+            // Size canvas and create screen manager
+            this.initCanvas();
             // Initialize systems asynchronously (loads sprites)
             this.initializeSystems().then(() => {
                 // Don't initialize entities yet - wait for title screen
                 this.setupEventListeners();
-                
+                this.bindGlobalInputHandlers();
+
                 this.running = true;
                 this.lastTime = performance.now();
                 
@@ -46,33 +57,6 @@ class Game {
                 // Start with title screen
                 this.screenManager.setScreen('title');
                 this.updateUIVisibility(false);
-                
-                // Set up space key handler after input system is ready
-                const inputSystem = this.systems.get('input');
-                if (inputSystem && this.systems.eventBus) {
-                    this.systems.eventBus.on('input:keydown', (key) => {
-                        const isStartKey = key === ' ' || key === 'enter';
-                        if (isStartKey) {
-                            if (this.screenManager.isScreen('title')) {
-                                this.startHub();
-                            } else if (this.screenManager.isScreen('death')) {
-                                this.restartGame();
-                            } else if (this.screenManager.isScreen('hub') && this.boardOpen) {
-                                this.boardOpen = false;
-                                this.screenManager.selectedStartLevel = this.hubSelectedLevel;
-                                this.startGame();
-                            }
-                        } else if (key === 'escape') {
-                            if (this.screenManager.isScreen('playing')) {
-                                this.screenManager.setScreen('pause');
-                            } else if (this.screenManager.isScreen('pause')) {
-                                this.screenManager.setScreen('playing');
-                            } else if (this.screenManager.isScreen('hub') && this.boardOpen) {
-                                this.boardOpen = false;
-                            }
-                        }
-                    });
-                }
                 
                 this.start();
             }).catch((error) => {
@@ -86,7 +70,7 @@ class Game {
         }
     }
 
-    setupCanvas() {
+    initCanvas() {
         this.canvas.width = window.innerWidth;
         this.canvas.height = window.innerHeight;
         
@@ -95,22 +79,34 @@ class Game {
     }
 
     async initializeSystems() {
+        // Register systems and core managers, then load assets
+        this.initSystems();
+        await this.loadPlayerSprites();
+        await this.loadEnemySprites();
+    }
+
+    initSystems() {
         const worldConfig = GameConfig.world;
-        
-        // Register entities as a "system" so other systems can access it
+
+        // Create system manager if not already created
+        if (!this.systems) {
+            this.systems = new SystemManager();
+        }
+
+        // Register entities as a \"system\" so other systems can access it
         this.systems.register('entities', this.entities);
-        
+
         // Register sprite manager first
         const spriteManager = new SpriteManager();
         this.systems.register('sprites', spriteManager);
-        
-        // Register systems in order
+
+        // Register core systems in order
         this.systems
             .register('input', new InputSystem(this.canvas))
             .register('camera', new CameraSystem(worldConfig.width, worldConfig.height))
             .register('collision', new CollisionSystem())
             .register('obstacles', new ObstacleManager());
-        
+
         // Generate world before pathfinding
         const obstacleManager = this.systems.get('obstacles');
         const level1Config = GameConfig.levels && GameConfig.levels[1] && GameConfig.levels[1].obstacles
@@ -122,8 +118,8 @@ class Game {
             y: portalConfig.y + portalConfig.height / 2,
             radius: 120
         });
-        
-        // Now register pathfinding (needs obstacles)
+
+        // Now register systems that depend on obstacles
         this.systems
             .register('pathfinding', new PathfindingSystem(
                 obstacleManager,
@@ -132,17 +128,25 @@ class Game {
                 GameConfig.pathfinding.cellSize
             ))
             .register('enemies', new EnemyManager())
+            .register('hazards', new HazardManager())
             .register('damageNumbers', new DamageNumberManager())
             .register('projectiles', new ProjectileManager())
             .register('healthOrbs', new HealthOrbManager())
             .register('render', new RenderSystem(this.canvas, this.ctx));
-        
+
         // Initialize render system with systems reference
         const renderSystem = this.systems.get('render');
         if (renderSystem && renderSystem.init) {
             renderSystem.init(this.systems);
+            // Expose live settings so render system can respect sprite toggles
+            renderSystem.settings = this.settings;
         }
-        
+    }
+
+    async loadPlayerSprites() {
+        const spriteManager = this.systems.get('sprites');
+        if (!spriteManager) return;
+
         // Load knight 8-direction sprite sheet (single frame per direction)
         // Auto-detect layout: horizontal strip (1 row × 8 cols) vs vertical (8 rows × 1 col)
         const loadedKnightSheets = {};
@@ -165,7 +169,7 @@ class Game {
             const knightSheetKey = `${knight8DirPath}_${knightFrameWidth}_${knightFrameHeight}_${knightRows}_${knightCols}`;
             loadedKnightSheets.idle = knightSheetKey;
             loadedKnightSheets._8DirLayout = isHorizontalStrip ? '1x8' : '8x1'; // for createPlayer
-            console.log(`Loaded Knight_8_Direction: ${knightImg.width}x${knightImg.height}, frame ${knightFrameWidth}x${knightFrameHeight} (${knightRows} rows × ${knightCols} cols)`);
+            console.log(`Loaded Knight_8_Direction: ${knightImg.width}x${knightImg.height}, frame ${knightFrameWidth}x${knightFrameHeight} (${knightRows} rows × ${knightCols})`);
         } catch (error) {
             console.warn('Failed to load Knight_8_Direction.png:', error);
         }
@@ -274,7 +278,12 @@ class Game {
         
         // Store loaded sheets for later use
         spriteManager.knightSheets = loadedKnightSheets;
-        
+    }
+
+    async loadEnemySprites() {
+        const spriteManager = this.systems.get('sprites');
+        if (!spriteManager) return;
+
         // Load goblin sprite sheet
         try {
             const goblinSpritePath = 'assets/sprites/enemies/Goblin.png';
@@ -323,7 +332,7 @@ class Game {
         
         // Set up damage number event listener
         const damageNumberManager = this.systems.get('damageNumbers');
-        this.systems.eventBus.on('damage:taken', (data) => {
+        this.systems.eventBus.on(EventTypes.DAMAGE_TAKEN, (data) => {
             damageNumberManager.createDamageNumber(
                 data.x,
                 data.y,
@@ -530,299 +539,16 @@ class Game {
             .addComponent(new Sprite(defaultSheetKey, config.width * 4, config.height * 4))
             .addComponent(new Animation(animationConfig));
         
-        // Set up player-specific behavior
-        this.setupPlayerBehavior(player);
+        // Set up player-specific behavior via controller
+        if (!this.playerInputController) {
+            this.playerInputController = new PlayerInputController(this);
+            this.playerInputController.setPlayer(player);
+            this.playerInputController.bindAll();
+        } else {
+            this.playerInputController.setPlayer(player);
+        }
         
         return player;
-    }
-
-    setupPlayerBehavior(player) {
-        const inputSystem = this.systems.get('input');
-        const cameraSystem = this.systems.get('camera');
-        const pathfindingSystem = this.systems.get('pathfinding');
-        
-        // Track charge state
-        let isChargingAttack = false;
-        let chargeTargetX = 0;
-        let chargeTargetY = 0;
-        
-        // Handle mouse down - Start charging attack
-        this.systems.eventBus.on('input:mousedown', (data) => {
-            const transform = player.getComponent(Transform);
-            const combat = player.getComponent(Combat);
-            const worldPos = cameraSystem.screenToWorld(data.x, data.y);
-            
-            // Can't charge while blocking or already attacking
-            if (combat && (combat.isBlocking || combat.isAttacking)) {
-                return;
-            }
-            
-            // Start charging
-            isChargingAttack = true;
-            chargeTargetX = worldPos.x;
-            chargeTargetY = worldPos.y;
-        });
-        
-        // Handle mouse up - Release attack (normal or charged)
-        this.systems.eventBus.on('input:mouseup', (data) => {
-            const transform = player.getComponent(Transform);
-            const movement = player.getComponent(Movement);
-            const combat = player.getComponent(Combat);
-            const stamina = player.getComponent(Stamina);
-            const worldPos = cameraSystem.screenToWorld(data.x, data.y);
-            
-            // Can't attack while blocking
-            if (combat && combat.isBlocking) {
-                isChargingAttack = false;
-                return;
-            }
-            
-            // If we were charging, use the charge duration
-            const chargeDuration = isChargingAttack ? data.chargeDuration : 0;
-            isChargingAttack = false;
-            
-            // Face the cursor direction
-            if (movement && transform) {
-                movement.facingAngle = Utils.angleTo(
-                    transform.x, transform.y,
-                    worldPos.x, worldPos.y
-                );
-            }
-            
-            // Perform attack with charge duration
-            if (combat && stamina && combat.isPlayer && combat.playerAttack) {
-                const nextStage = combat.playerAttack.comboStage < combat.playerAttack.weapon.maxComboStage 
-                    ? combat.playerAttack.comboStage + 1 : 1;
-                const stageProps = combat.playerAttack.weapon.getComboStageProperties(nextStage);
-                
-                // Calculate stamina cost (will be adjusted in startAttack if charged)
-                const baseStaminaCost = stageProps ? stageProps.staminaCost : 10;
-                const chargedAttackConfig = GameConfig.player.chargedAttack;
-                let staminaCost = baseStaminaCost;
-                
-                if (chargeDuration >= chargedAttackConfig.minChargeTime) {
-                    const chargeMultiplier = Math.min(1.0, (chargeDuration - chargedAttackConfig.minChargeTime) / 
-                        (chargedAttackConfig.maxChargeTime - chargedAttackConfig.minChargeTime));
-                    staminaCost = baseStaminaCost * (1.0 + (chargedAttackConfig.staminaCostMultiplier - 1.0) * chargeMultiplier);
-                }
-                
-                if (stageProps && stamina.currentStamina >= staminaCost) {
-                    stamina.currentStamina -= staminaCost;
-                    const attackData = combat.attack(worldPos.x, worldPos.y, chargeDuration);
-                    if (attackData) {
-                        // Attack started successfully
-                    }
-                }
-            }
-        });
-        
-        // Handle right click - Block (buffer input if attacking so block starts when attack ends)
-        this.systems.eventBus.on('input:rightclick', (data) => {
-            const combat = player.getComponent(Combat);
-            const movement = player.getComponent(Movement);
-            const transform = player.getComponent(Transform);
-            const cameraSystem = this.systems.get('camera');
-            
-            if (!combat || !combat.isPlayer) return;
-            
-            const worldPos = cameraSystem.screenToWorld(data.x, data.y);
-            const facingAngle = transform ? Utils.angleTo(transform.x, transform.y, worldPos.x, worldPos.y) : 0;
-            
-            if (combat.isAttacking) {
-                // Buffer block input to apply as soon as attack ends
-                combat.blockInputBuffered = true;
-                combat.blockInputBufferedFacingAngle = facingAngle;
-            } else {
-                combat.blockInputBuffered = false;
-                combat.blockInputBufferedFacingAngle = null;
-                if (movement && transform) {
-                    movement.facingAngle = facingAngle;
-                }
-                combat.startBlocking();
-            }
-        });
-        
-        // Handle right click release - Stop blocking
-        this.systems.eventBus.on('input:rightclickup', (data) => {
-            const combat = player.getComponent(Combat);
-            if (combat && combat.isPlayer) {
-                combat.stopBlocking();
-            }
-        });
-        
-        // Handle projectile shooting (R key)
-        this.systems.eventBus.on('input:keydown', (key) => {
-            if (key === 'r' || key === 'R') {
-                const transform = player.getComponent(Transform);
-                const movement = player.getComponent(Movement);
-                const stamina = player.getComponent(Stamina);
-                const projectileManager = this.systems.get('projectiles');
-                
-                if (transform && movement && stamina && projectileManager) {
-                    const projectileConfig = GameConfig.player.projectile;
-                    if (!projectileConfig || !projectileConfig.enabled) return;
-
-                    // Check cooldown and stamina
-                    if (this.playerProjectileCooldown <= 0 && stamina.currentStamina >= projectileConfig.staminaCost) {
-                        // Get target direction (cursor position)
-                        const worldPos = cameraSystem.screenToWorld(inputSystem.mouseX, inputSystem.mouseY);
-                        const angle = Utils.angleTo(transform.x, transform.y, worldPos.x, worldPos.y);
-                        
-                        // Create projectile
-                        projectileManager.createProjectile(
-                            transform.x,
-                            transform.y,
-                            angle,
-                            projectileConfig.speed,
-                            projectileConfig.damage,
-                            projectileConfig.range,
-                            player,
-                            'player'
-                        );
-                        
-                        // Consume stamina and set cooldown
-                        stamina.currentStamina -= projectileConfig.staminaCost;
-                        this.playerProjectileCooldown = projectileConfig.cooldown;
-                    }
-                }
-            }
-        });
-        
-        // Handle dodge roll (Space key)
-        this.systems.eventBus.on('input:keydown', (key) => {
-            if (key === ' ') {
-                const movement = player.getComponent(Movement);
-                const stamina = player.getComponent(Stamina);
-                
-                if (movement && stamina && stamina.currentStamina >= GameConfig.player.dodge.staminaCost) {
-                    // Get current movement direction
-                    let dodgeX = 0;
-                    let dodgeY = 0;
-                    
-                    if (inputSystem.isKeyPressed('w')) dodgeY -= 1;
-                    if (inputSystem.isKeyPressed('s')) dodgeY += 1;
-                    if (inputSystem.isKeyPressed('a')) dodgeX -= 1;
-                    if (inputSystem.isKeyPressed('d')) dodgeX += 1;
-                    
-                    // Perform dodge and consume stamina
-                    if (movement.performDodge(dodgeX, dodgeY)) {
-                        stamina.currentStamina -= GameConfig.player.dodge.staminaCost;
-                    }
-                }
-            }
-        });
-        
-        // Handle sprint (Shift key)
-        this.systems.eventBus.on('input:keydown', (key) => {
-            if (key === 'shift') {
-                const movement = player.getComponent(Movement);
-                const stamina = player.getComponent(Stamina);
-                if (movement && stamina && stamina.currentStamina > 0) {
-                    movement.setSprinting(true);
-                    
-                    // If already moving with WASD, update velocity with sprint speed
-                    let moveX = 0;
-                    let moveY = 0;
-                    if (inputSystem.isKeyPressed('w')) moveY -= 1;
-                    if (inputSystem.isKeyPressed('s')) moveY += 1;
-                    if (inputSystem.isKeyPressed('a')) moveX -= 1;
-                    if (inputSystem.isKeyPressed('d')) moveX += 1;
-                    
-                    if (moveX !== 0 || moveY !== 0) {
-                        movement.setVelocity(moveX, moveY);
-                    }
-                }
-            }
-        });
-        
-        this.systems.eventBus.on('input:keyup', (key) => {
-            if (key === 'shift') {
-                const movement = player.getComponent(Movement);
-                
-                // Always stop sprinting on release
-                if (movement) {
-                    movement.setSprinting(false);
-                    
-                    // If still moving with WASD, update velocity back to normal speed
-                    let moveX = 0;
-                    let moveY = 0;
-                    if (inputSystem.isKeyPressed('w')) moveY -= 1;
-                    if (inputSystem.isKeyPressed('s')) moveY += 1;
-                    if (inputSystem.isKeyPressed('a')) moveX -= 1;
-                    if (inputSystem.isKeyPressed('d')) moveX += 1;
-                    
-                    if (moveX !== 0 || moveY !== 0) {
-                        movement.setVelocity(moveX, moveY);
-                    }
-                }
-            }
-        });
-
-        // TEMPORARY: weapon switch for testing (1 = sword & shield, 2 = greatsword) - remove when proper weapon UI exists
-        this.systems.eventBus.on('input:keydown', (key) => {
-            const combat = player.getComponent(Combat);
-            if (!combat || !combat.isPlayer) return;
-            if (key === '1' && Weapons.swordAndShield) {
-                combat.stopBlocking();
-                combat.setWeapon(Weapons.swordAndShield);
-            } else if (key === '2' && Weapons.greatsword) {
-                combat.stopBlocking();
-                combat.setWeapon(Weapons.greatsword);
-            } else if (key === '3' && Weapons.broadsword) {
-                combat.stopBlocking();
-                combat.setWeapon(Weapons.broadsword);
-            }
-        });
-
-        // Handle WASD movement
-        this.systems.eventBus.on('input:keydown', (key) => {
-            const movement = player.getComponent(Movement);
-            if (movement && ['w', 'a', 's', 'd'].includes(key)) {
-                // Don't allow movement input while knocked back
-                if (movement.isKnockedBack) {
-                    return;
-                }
-                movement.cancelPath();
-                movement.clearAttackTarget(); // Clear attack target when manually moving
-                
-                // Set velocity based on keys
-                let moveX = 0;
-                let moveY = 0;
-                if (inputSystem.isKeyPressed('w')) moveY -= 1;
-                if (inputSystem.isKeyPressed('s')) moveY += 1;
-                if (inputSystem.isKeyPressed('a')) moveX -= 1;
-                if (inputSystem.isKeyPressed('d')) moveX += 1;
-                
-                if (moveX !== 0 || moveY !== 0) {
-                    movement.setVelocity(moveX, moveY);
-                }
-            }
-        });
-        
-        // Handle key release
-        this.systems.eventBus.on('input:keyup', (key) => {
-            const movement = player.getComponent(Movement);
-            if (movement && ['w', 'a', 's', 'd'].includes(key)) {
-                // Don't allow movement input while knocked back
-                if (movement.isKnockedBack) {
-                    return;
-                }
-                // Check if no movement keys are pressed
-                if (!inputSystem.isKeyPressed('w') && !inputSystem.isKeyPressed('s') &&
-                    !inputSystem.isKeyPressed('a') && !inputSystem.isKeyPressed('d')) {
-                    movement.stop();
-                } else {
-                    // Recalculate velocity
-                    let moveX = 0;
-                    let moveY = 0;
-                    if (inputSystem.isKeyPressed('w')) moveY -= 1;
-                    if (inputSystem.isKeyPressed('s')) moveY += 1;
-                    if (inputSystem.isKeyPressed('a')) moveX -= 1;
-                    if (inputSystem.isKeyPressed('d')) moveX += 1;
-                    movement.setVelocity(moveX, moveY);
-                }
-            }
-        });
     }
 
     setupEventListeners() {
@@ -840,11 +566,9 @@ class Game {
             const y = (e.clientY - rect.top) * scaleY;
 
             if (this.screenManager.isScreen('title')) {
-                const levelAt = this.screenManager.getLevelSelectAt(x, y);
-                if (levelAt !== null) {
-                    this.screenManager.selectedStartLevel = levelAt;
-                } else if (this.screenManager.checkButtonClick(x, y, 'title')) {
-                    this.startHub();
+                if (this.screenManager.checkButtonClick(x, y, 'title')) {
+                    // From the title screen, go straight into the game (level 1 by default)
+                    this.startGame();
                 }
             } else if (this.screenManager.isScreen('hub') && this.boardOpen) {
                 const levelAt = this.screenManager.getLevelSelectAt(x, y);
@@ -870,24 +594,134 @@ class Game {
                     this.screenManager.setScreen('playing');
                 } else if (pauseBtn === 'quit') {
                     this.quitToMainMenu();
+                } else if (pauseBtn === 'settings') {
+                    this.screenManager.setScreen('settings');
+                }
+            } else if (this.screenManager.isScreen('settings')) {
+                const item = this.screenManager.getSettingsItemAt(x, y, this.settings);
+                if (item === 'music') {
+                    this.settings.musicEnabled = !this.settings.musicEnabled;
+                } else if (item === 'sfx') {
+                    this.settings.sfxEnabled = !this.settings.sfxEnabled;
+                } else if (item === 'minimap') {
+                    this.settings.showMinimap = !this.settings.showMinimap;
+                } else if (item === 'characterSprites') {
+                    this.settings.useCharacterSprites = !this.settings.useCharacterSprites;
+                } else if (item === 'environmentSprites') {
+                    this.settings.useEnvironmentSprites = !this.settings.useEnvironmentSprites;
+                } else if (item === 'back') {
+                    // Return to pause menu
+                    this.screenManager.setScreen('pause');
                 }
             }
         });
     }
 
-    quitToMainMenu() {
+    bindGlobalInputHandlers() {
+        const inputSystem = this.systems ? this.systems.get('input') : null;
+        if (!inputSystem || !this.systems || !this.systems.eventBus) {
+            return;
+        }
+
+        // Handle global key commands: start game, restart, pause, and settings screen
+        this.systems.eventBus.on(EventTypes.INPUT_KEYDOWN, (key) => {
+            const isStartKey = key === ' ' || key === 'enter';
+            const isEscapeKey = key === 'escape' || key === 'esc';
+
+            if (isStartKey) {
+                if (this.screenManager.isScreen('title')) {
+                    // From the title screen, start the game directly
+                    this.startGame();
+                } else if (this.screenManager.isScreen('death')) {
+                    this.restartGame();
+                } else if (this.screenManager.isScreen('hub') && this.boardOpen) {
+                    this.boardOpen = false;
+                    this.screenManager.selectedStartLevel = this.hubSelectedLevel;
+                    this.startGame();
+                }
+            } else if (isEscapeKey) {
+                // Toggle pause when in-game, or close overlays
+                if (this.screenManager.isScreen('playing')) {
+                    this.screenManager.setScreen('pause');
+                } else if (this.screenManager.isScreen('pause')) {
+                    this.screenManager.setScreen('playing');
+                } else if (this.screenManager.isScreen('settings')) {
+                    // From settings, go back to pause
+                    this.screenManager.setScreen('pause');
+                } else if (this.screenManager.isScreen('hub') && this.boardOpen) {
+                    this.boardOpen = false;
+                }
+            }
+        });
+    }
+
+    clearAllEntitiesAndProjectiles() {
+        // Clear all entities
         const allEntities = this.entities.getAll();
         for (const entity of allEntities) {
             this.entities.remove(entity.id);
         }
+
+        // Clear projectiles
         const projectileManager = this.systems.get('projectiles');
-        if (projectileManager) projectileManager.projectiles = [];
-        const enemyManager = this.systems.get('enemies');
-        if (enemyManager && enemyManager.clearFlamePillars) enemyManager.clearFlamePillars();
+        if (projectileManager) {
+            projectileManager.projectiles = [];
+        }
+
+        // Clear enemy-specific hazards (e.g. flame pillars)
+        const hazardManager = this.systems.get('hazards');
+        if (hazardManager && hazardManager.clearFlamePillars) {
+            hazardManager.clearFlamePillars();
+        }
+
+        // Clear damage numbers
         const damageNumberManager = this.systems.get('damageNumbers');
-        if (damageNumberManager) damageNumberManager.numbers = [];
+        if (damageNumberManager) {
+            damageNumberManager.numbers = [];
+        }
+
+        // Clear health orbs
         const healthOrbManager = this.systems.get('healthOrbs');
-        if (healthOrbManager) healthOrbManager.clear();
+        if (healthOrbManager) {
+            healthOrbManager.clear();
+        }
+    }
+
+    resetEnemyManager(level) {
+        const enemyManager = this.systems.get('enemies');
+        if (!enemyManager) return;
+
+        enemyManager.enemies = [];
+        enemyManager.enemiesSpawned = false;
+        enemyManager.currentLevel = level;
+        enemyManager.enemiesKilledThisLevel = 0;
+
+        if (enemyManager.clearFlamePillars) {
+            enemyManager.clearFlamePillars();
+        }
+    }
+
+    regenerateWorldForLevel(level) {
+        const worldConfig = GameConfig.world;
+        const obstacleManager = this.systems.get('obstacles');
+        if (!obstacleManager) return;
+
+        obstacleManager.clearWorld();
+
+        const levelObstacles = GameConfig.levels && GameConfig.levels[level] && GameConfig.levels[level].obstacles
+            ? GameConfig.levels[level].obstacles
+            : GameConfig.obstacles;
+
+        const portalConfig = GameConfig.portal || { x: 2400, y: 1400, width: 80, height: 80 };
+        obstacleManager.generateWorld(worldConfig.width, worldConfig.height, levelObstacles, {
+            x: portalConfig.x + portalConfig.width / 2,
+            y: portalConfig.y + portalConfig.height / 2,
+            radius: 120
+        });
+    }
+
+    quitToMainMenu() {
+        this.clearAllEntitiesAndProjectiles();
         this.screenManager.setScreen('title');
         this.updateUIVisibility(false);
     }
@@ -907,12 +741,8 @@ class Game {
             enemyManager.enemiesSpawned = false;
         }
 
-        const allEntities = this.entities.getAll();
-        for (const entity of allEntities) {
-            this.entities.remove(entity.id);
-        }
-        const projectileManager = this.systems.get('projectiles');
-        if (projectileManager) projectileManager.projectiles = [];
+        // Clear any remaining entities/projectiles/damage numbers/orbs
+        this.clearAllEntitiesAndProjectiles();
 
         const player = this.createPlayer(hubConfig.playerStart);
         this.entities.add(player, 'player');
@@ -940,30 +770,16 @@ class Game {
     
     startGame() {
         const selectedLevel = this.screenManager.selectedStartLevel;
-        const worldConfig = GameConfig.world;
-        const obstacleManager = this.systems.get('obstacles');
         const enemyManager = this.systems.get('enemies');
         const cameraSystem = this.systems.get('camera');
-        if (cameraSystem) cameraSystem.setWorldBounds(worldConfig.width, worldConfig.height);
-
-        obstacleManager.clearWorld();
-        const levelConfig = GameConfig.levels && GameConfig.levels[selectedLevel] && GameConfig.levels[selectedLevel].obstacles
-            ? GameConfig.levels[selectedLevel].obstacles
-            : GameConfig.obstacles;
-        const portalConfig = GameConfig.portal || { x: 2400, y: 1400, width: 80, height: 80 };
-        obstacleManager.generateWorld(worldConfig.width, worldConfig.height, levelConfig, {
-            x: portalConfig.x + portalConfig.width / 2,
-            y: portalConfig.y + portalConfig.height / 2,
-            radius: 120
-        });
-
-        if (enemyManager) {
-            enemyManager.enemies = [];
-            enemyManager.enemiesSpawned = false;
-            enemyManager.currentLevel = selectedLevel;
-            enemyManager.enemiesKilledThisLevel = 0;
-            if (enemyManager.clearFlamePillars) enemyManager.clearFlamePillars();
+        const worldConfig = GameConfig.world;
+        if (cameraSystem) {
+            cameraSystem.setWorldBounds(worldConfig.width, worldConfig.height);
         }
+
+        // Regenerate world and reset enemies for the selected level
+        this.regenerateWorldForLevel(selectedLevel);
+        this.resetEnemyManager(selectedLevel);
 
         this.initializeEntities();
         this.screenManager.setScreen('playing');
@@ -972,56 +788,13 @@ class Game {
     
     restartGame() {
         const worldConfig = GameConfig.world;
-        const enemyManager = this.systems.get('enemies');
-        const obstacleManager = this.systems.get('obstacles');
 
-        // Reset enemy manager to level 1: kill count and level so spawns match stage
-        if (enemyManager) {
-            enemyManager.enemies = [];
-            enemyManager.enemiesSpawned = false;
-            enemyManager.currentLevel = 1;
-            enemyManager.enemiesKilledThisLevel = 0;
-        }
+        // Reset enemies and world back to level 1
+        this.resetEnemyManager(1);
+        this.regenerateWorldForLevel(1);
 
-        // Regenerate level 1 world so environment matches stage (Village Outskirts)
-        if (obstacleManager) {
-            obstacleManager.clearWorld();
-            const level1Obstacles = GameConfig.levels && GameConfig.levels[1] && GameConfig.levels[1].obstacles
-                ? GameConfig.levels[1].obstacles
-                : GameConfig.obstacles;
-            const portalConfig = GameConfig.portal || { x: 2400, y: 1400, width: 80, height: 80 };
-            obstacleManager.generateWorld(worldConfig.width, worldConfig.height, level1Obstacles, {
-                x: portalConfig.x + portalConfig.width / 2,
-                y: portalConfig.y + portalConfig.height / 2,
-                radius: 120
-            });
-        }
-
-        // Clear all entities (player will be recreated in initializeEntities)
-        const allEntities = this.entities.getAll();
-        for (const entity of allEntities) {
-            this.entities.remove(entity.id);
-        }
-
-        // Clear projectiles
-        const projectileManager = this.systems.get('projectiles');
-        if (projectileManager) {
-            projectileManager.projectiles = [];
-        }
-        const enemyManagerClear = this.systems.get('enemies');
-        if (enemyManagerClear && enemyManagerClear.clearFlamePillars) enemyManagerClear.clearFlamePillars();
-
-        // Clear damage numbers
-        const damageNumberManager = this.systems.get('damageNumbers');
-        if (damageNumberManager) {
-            damageNumberManager.numbers = [];
-        }
-
-        // Clear health orbs
-        const healthOrbManager = this.systems.get('healthOrbs');
-        if (healthOrbManager) {
-            healthOrbManager.clear();
-        }
+        // Clear all runtime entities and transient effects
+        this.clearAllEntitiesAndProjectiles();
 
         // Reset camera
         const cameraSystem = this.systems.get('camera');
@@ -1042,6 +815,82 @@ class Game {
         }
     }
 
+    handleCameraZoom() {
+        const inputSystem = this.systems.get('input');
+        const cameraSystem = this.systems.get('camera');
+        if (!inputSystem || !cameraSystem) return;
+
+        const wheelDelta = inputSystem.getWheelDelta();
+        if (wheelDelta === 0) return;
+
+        const zoomChange = wheelDelta > 0 ? -GameConfig.camera.zoomSpeed : GameConfig.camera.zoomSpeed;
+        const newZoom = cameraSystem.targetZoom + zoomChange;
+        cameraSystem.setZoom(newZoom, inputSystem.mouseX, inputSystem.mouseY, this.canvas.width, this.canvas.height);
+    }
+
+    updatePortal(deltaTime, player) {
+        if (!this.portal) return;
+
+        // Cooldown before the portal can be used again
+        if (this.portalUseCooldown > 0) {
+            this.portalUseCooldown = Math.max(0, this.portalUseCooldown - deltaTime);
+        }
+
+        const enemyManager = this.systems.get('enemies');
+        if (!enemyManager) {
+            this.playerNearPortal = false;
+            return;
+        }
+
+        const currentLevel = enemyManager.getCurrentLevel();
+        const levelConfig = GameConfig.levels[currentLevel];
+        const nextLevel = currentLevel + 1;
+        const nextLevelExists = GameConfig.levels[nextLevel];
+        const killsRequired = (levelConfig && levelConfig.killsToUnlockPortal != null) ? levelConfig.killsToUnlockPortal : 999;
+        const kills = enemyManager.getEnemiesKilledThisLevel();
+
+        this.portal.targetLevel = nextLevel;
+        this.portal.spawned = nextLevelExists && kills >= killsRequired;
+
+        if (!this.portal.spawned || !player) {
+            this.playerNearPortal = false;
+            return;
+        }
+
+        const transform = player.getComponent(Transform);
+        if (!transform) {
+            this.playerNearPortal = false;
+            return;
+        }
+
+        // Check if player is near/overlapping portal
+        const overlap = Utils.rectCollision(
+            transform.left, transform.top, transform.width, transform.height,
+            this.portal.x, this.portal.y, this.portal.width, this.portal.height
+        );
+        this.playerNearPortal = overlap;
+
+        if (!overlap || this.portalUseCooldown > 0) {
+            return;
+        }
+
+        // Handle E key press to enter portal
+        const inputSystem = this.systems.get('input');
+        if (inputSystem && inputSystem.isKeyPressed('e') && nextLevelExists) {
+            const obstacleManager = this.systems.get('obstacles');
+            const worldConfig = GameConfig.world;
+            const nextObstacles = GameConfig.levels[nextLevel].obstacles;
+            obstacleManager.clearWorld();
+            obstacleManager.generateWorld(worldConfig.width, worldConfig.height, nextObstacles, {
+                x: this.portal.x + this.portal.width / 2,
+                y: this.portal.y + this.portal.height / 2,
+                radius: 120
+            });
+            enemyManager.changeLevel(nextLevel, this.entities, obstacleManager);
+            this.portalUseCooldown = 1.5; // Prevent double-trigger
+        }
+    }
+
     updateHub(deltaTime) {
         if (this.boardOpen) return; // modal overlay; only clicks matter
 
@@ -1049,14 +898,8 @@ class Game {
             this.boardUseCooldown = Math.max(0, this.boardUseCooldown - deltaTime);
         }
 
-        const inputSystem = this.systems.get('input');
-        const cameraSystem = this.systems.get('camera');
-        const wheelDelta = inputSystem.getWheelDelta();
-        if (wheelDelta !== 0) {
-            const zoomChange = wheelDelta > 0 ? -GameConfig.camera.zoomSpeed : GameConfig.camera.zoomSpeed;
-            const newZoom = cameraSystem.targetZoom + zoomChange;
-            cameraSystem.setZoom(newZoom, inputSystem.mouseX, inputSystem.mouseY, this.canvas.width, this.canvas.height);
-        }
+        // Handle camera zoom while in the hub
+        this.handleCameraZoom();
 
         this.systems.update(deltaTime);
         this.entities.update(deltaTime, this.systems);
@@ -1086,6 +929,12 @@ class Game {
         } else {
             this.playerNearBoard = false;
         }
+
+        // Keep UI (health/stamina bars) in sync while in the hub/sanctuary
+        // so these values are not visually tied to combat levels only.
+        if (player) {
+            this.updateUI(player);
+        }
     }
 
     update(deltaTime) {
@@ -1099,15 +948,7 @@ class Game {
         }
 
         // Handle camera zoom with mouse wheel
-        const inputSystem = this.systems.get('input');
-        const cameraSystem = this.systems.get('camera');
-        const wheelDelta = inputSystem.getWheelDelta();
-        
-        if (wheelDelta !== 0) {
-            const zoomChange = wheelDelta > 0 ? -GameConfig.camera.zoomSpeed : GameConfig.camera.zoomSpeed;
-            const newZoom = cameraSystem.targetZoom + zoomChange;
-            cameraSystem.setZoom(newZoom, inputSystem.mouseX, inputSystem.mouseY, this.canvas.width, this.canvas.height);
-        }
+        this.handleCameraZoom();
 
         // Update player projectile cooldown
         if (this.playerProjectileCooldown > 0) {
@@ -1129,9 +970,9 @@ class Game {
             projectileManager.update(deltaTime, this.systems);
         }
 
-        const enemyManagerForPillars = this.systems.get('enemies');
-        if (enemyManagerForPillars && enemyManagerForPillars.updateFlamePillars) {
-            enemyManagerForPillars.updateFlamePillars(deltaTime, this.systems);
+        const hazardManager = this.systems.get('hazards');
+        if (hazardManager && hazardManager.updateFlamePillars) {
+            hazardManager.updateFlamePillars(deltaTime, this.systems);
         }
         
         // Update health orbs
@@ -1172,54 +1013,7 @@ class Game {
         }
 
         // Portal: update spawned state and handle E to enter
-        if (this.portal && this.portalUseCooldown > 0) {
-            this.portalUseCooldown = Math.max(0, this.portalUseCooldown - deltaTime);
-        }
-        const enemyManager = this.systems.get('enemies');
-        if (this.portal && enemyManager) {
-            const currentLevel = enemyManager.getCurrentLevel();
-            const levelConfig = GameConfig.levels[currentLevel];
-            const nextLevel = currentLevel + 1;
-            const nextLevelExists = GameConfig.levels[nextLevel];
-            const killsRequired = (levelConfig && levelConfig.killsToUnlockPortal != null) ? levelConfig.killsToUnlockPortal : 999;
-            const kills = enemyManager.getEnemiesKilledThisLevel();
-            this.portal.targetLevel = nextLevel;
-            this.portal.spawned = nextLevelExists && kills >= killsRequired;
-
-            if (this.portal.spawned && player) {
-                const transform = player.getComponent(Transform);
-                if (transform) {
-                    // Check if player is near/overlapping portal
-                    const overlap = Utils.rectCollision(
-                        transform.left, transform.top, transform.width, transform.height,
-                        this.portal.x, this.portal.y, this.portal.width, this.portal.height
-                    );
-                    this.playerNearPortal = overlap;
-                    
-                    // Handle E key press to enter portal
-                    if (overlap && this.portalUseCooldown <= 0) {
-                        const inputSystem = this.systems.get('input');
-                        if (inputSystem && inputSystem.isKeyPressed('e') && nextLevelExists) {
-                            const obstacleManager = this.systems.get('obstacles');
-                            const worldConfig = GameConfig.world;
-                            const nextObstacles = GameConfig.levels[nextLevel].obstacles;
-                            obstacleManager.clearWorld();
-                            obstacleManager.generateWorld(worldConfig.width, worldConfig.height, nextObstacles, {
-                                x: this.portal.x + this.portal.width / 2,
-                                y: this.portal.y + this.portal.height / 2,
-                                radius: 120
-                            });
-                            enemyManager.changeLevel(nextLevel, this.entities, obstacleManager);
-                            this.portalUseCooldown = 1.5; // Prevent double-trigger
-                        }
-                    }
-                } else {
-                    this.playerNearPortal = false;
-                }
-            } else {
-                this.playerNearPortal = false;
-            }
-        }
+        this.updatePortal(deltaTime, player);
         
         // Update UI
         this.updateUI(player);
@@ -1250,7 +1044,7 @@ class Game {
     render() {
         try {
             if (this.screenManager.isScreen('title') || this.screenManager.isScreen('death')) {
-                this.screenManager.render();
+                this.screenManager.render(this.settings);
                 return;
             }
 
@@ -1276,7 +1070,9 @@ class Game {
                 }
                 const hubEntities = this.entities.getAll();
                 renderSystem.renderEntities(hubEntities, cameraSystem);
-                renderSystem.renderMinimap(cameraSystem, this.entities, hubConfig.width, hubConfig.height, null, 0);
+                if (this.settings.showMinimap) {
+                    renderSystem.renderMinimap(cameraSystem, this.entities, hubConfig.width, hubConfig.height, null, 0);
+                }
                 if (this.boardOpen) {
                     this.screenManager.renderHubBoardOverlay(this.hubSelectedLevel);
                 }
@@ -1304,9 +1100,9 @@ class Game {
             if (projectileManager) {
                 projectileManager.render(this.ctx, cameraSystem);
             }
-            const enemyManagerRender = this.systems.get('enemies');
-            if (enemyManagerRender && enemyManagerRender.renderFlamePillars) {
-                enemyManagerRender.renderFlamePillars(this.ctx, cameraSystem);
+            const hazardManager = this.systems.get('hazards');
+            if (hazardManager && hazardManager.renderFlamePillars) {
+                hazardManager.renderFlamePillars(this.ctx, cameraSystem);
             }
             
             // Render damage numbers (after entities so they appear on top)
@@ -1321,10 +1117,12 @@ class Game {
                 healthOrbManager.render(this.ctx, cameraSystem);
             }
             
-            renderSystem.renderMinimap(cameraSystem, this.entities, worldConfig.width, worldConfig.height, this.portal, currentLevel);
+            if (this.settings.showMinimap) {
+                renderSystem.renderMinimap(cameraSystem, this.entities, worldConfig.width, worldConfig.height, this.portal, currentLevel);
+            }
 
-            if (this.screenManager.isScreen('pause')) {
-                this.screenManager.render();
+            if (this.screenManager.isScreen('pause') || this.screenManager.isScreen('settings')) {
+                this.screenManager.render(this.settings);
             }
         } catch (error) {
             console.error('Render error:', error);

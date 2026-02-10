@@ -116,14 +116,14 @@ class AI {
             if (dx !== 0 || dy !== 0) movement.facingAngle = Math.atan2(dy, dx);
             if (this.pillarCastTimer <= 0) {
                 this.isCastingPillar = false;
-                const enemyManager = systems ? systems.get('enemies') : null;
-                if (enemyManager && enemyManager.createPillar) {
+                const hazardManager = systems ? systems.get('hazards') : null;
+                if (hazardManager && hazardManager.createPillar) {
                     // Cast pillar near player, not directly on them (random offset of 30-80 pixels)
                     const offsetDistance = Utils.random(30, 80);
                     const offsetAngle = Math.random() * Math.PI * 2;
                     const pillarX = playerTransform.x + Math.cos(offsetAngle) * offsetDistance;
                     const pillarY = playerTransform.y + Math.sin(offsetAngle) * offsetDistance;
-                    enemyManager.createPillar(pillarX, pillarY, pillarConfig);
+                    hazardManager.createPillar(pillarX, pillarY, pillarConfig);
                 }
                 this.pillarFlameCooldown = pillarConfig.cooldown;
             }

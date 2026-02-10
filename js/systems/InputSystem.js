@@ -23,12 +23,12 @@ class InputSystem {
     setupEventListeners() {
         window.addEventListener('keydown', (e) => {
             this.keys[e.key.toLowerCase()] = true;
-            this.systems.eventBus.emit('input:keydown', e.key.toLowerCase());
+            this.systems.eventBus.emit(EventTypes.INPUT_KEYDOWN, e.key.toLowerCase());
         });
 
         window.addEventListener('keyup', (e) => {
             this.keys[e.key.toLowerCase()] = false;
-            this.systems.eventBus.emit('input:keyup', e.key.toLowerCase());
+            this.systems.eventBus.emit(EventTypes.INPUT_KEYUP, e.key.toLowerCase());
         });
 
         this.canvas.addEventListener('mousemove', (e) => {
@@ -49,7 +49,7 @@ class InputSystem {
                 this.mouseClicked = true;
                 this.isCharging = true;
                 this.chargeStartTime = performance.now();
-                this.systems.eventBus.emit('input:mousedown', { 
+                this.systems.eventBus.emit(EventTypes.INPUT_MOUSEDOWN, { 
                     x: this.mouseX, 
                     y: this.mouseY 
                 });
@@ -57,7 +57,7 @@ class InputSystem {
                 // Right click
                 this.rightMouseDown = true;
                 this.rightMouseClicked = true;
-                this.systems.eventBus.emit('input:rightclick', { 
+                this.systems.eventBus.emit(EventTypes.INPUT_RIGHTCLICK, { 
                     x: this.mouseX, 
                     y: this.mouseY 
                 });
@@ -70,7 +70,7 @@ class InputSystem {
                 const chargeDuration = this.isCharging ? (performance.now() - this.chargeStartTime) / 1000 : 0;
                 this.mouseDown = false;
                 this.isCharging = false;
-                this.systems.eventBus.emit('input:mouseup', { 
+                this.systems.eventBus.emit(EventTypes.INPUT_MOUSEUP, { 
                     x: this.mouseX, 
                     y: this.mouseY,
                     chargeDuration: chargeDuration
@@ -78,7 +78,7 @@ class InputSystem {
             } else if (e.button === 2) {
                 // Right mouse button
                 this.rightMouseDown = false;
-                this.systems.eventBus.emit('input:rightclickup', { 
+                this.systems.eventBus.emit(EventTypes.INPUT_RIGHTCLICK_UP, { 
                     x: this.mouseX, 
                     y: this.mouseY 
                 });
