@@ -58,6 +58,8 @@ class Combat {
         // Block input buffer: start block as soon as attack ends if right-click was pressed during attack
         this.blockInputBuffered = false;
         this.blockInputBufferedFacingAngle = null;
+        // Attack input buffer: at most one attack queued; further clicks ignored until current attack finishes
+        this.attackInputBuffered = null;
 
         // Current attack knockback (player only; from weapon/stage config, used when applying hit)
         this._currentAttackKnockbackForce = null;
@@ -202,6 +204,16 @@ class Combat {
 
     attack(targetX = null, targetY = null, chargeDuration = 0, options = {}) {
         if (this.isPlayer && this.playerAttack) {
+            // While already attacking: buffer at most one follow-up attack; ignore further input
+            if (this.isAttacking) {
+                if (!this.attackInputBuffered) {
+                    this.attackInputBuffered = {
+                        targetX, targetY, chargeDuration,
+                        useSpecialAttack: !!(options && options.useSpecialAttack)
+                    };
+                }
+                return false;
+            }
             // Player attack with weapon combos (or special attack if options.useSpecialAttack)
             const attackData = this.playerAttack.startAttack(targetX, targetY, this.entity, chargeDuration, options);
             if (attackData) {
@@ -238,7 +250,7 @@ class Combat {
                     combatRef._currentAttackKnockbackForce = null;
                     combatRef._currentAttackStunBuildup = null;
                     combatRef.playerAttack.endAttack();
-                    // Apply buffered block input (player pressed block during attack)
+                    // Apply buffered block first (player pressed block during attack)
                     if (combatRef.isPlayer && combatRef.blockInputBuffered) {
                         combatRef.blockInputBuffered = false;
                         if (combatRef.blockInputBufferedFacingAngle != null && combatRef.entity) {
@@ -247,6 +259,35 @@ class Combat {
                             combatRef.blockInputBufferedFacingAngle = null;
                         }
                         combatRef.startBlocking();
+                    } else if (combatRef.isPlayer && combatRef.attackInputBuffered) {
+                        // Otherwise execute buffered attack (one click during attack = next attack after this ends)
+                        const b = combatRef.attackInputBuffered;
+                        combatRef.attackInputBuffered = null;
+                        const stamina = combatRef.entity.getComponent(Stamina);
+                        const weapon = combatRef.playerAttack.weapon;
+                        if (stamina && weapon) {
+                            let staminaCost = 10;
+                            if (b.useSpecialAttack && weapon.specialAttack) {
+                                const specialProps = weapon.getSpecialAttackProperties();
+                                if (specialProps) staminaCost = specialProps.staminaCost;
+                            } else {
+                                const nextStage = combatRef.playerAttack.comboStage < weapon.maxComboStage
+                                    ? combatRef.playerAttack.comboStage + 1 : 1;
+                                const stageProps = weapon.getComboStageProperties(nextStage);
+                                const baseStaminaCost = stageProps ? stageProps.staminaCost : 10;
+                                const chargedAttackConfig = GameConfig.player.chargedAttack;
+                                staminaCost = baseStaminaCost;
+                                if (b.chargeDuration >= chargedAttackConfig.minChargeTime) {
+                                    const chargeMultiplier = Math.min(1.0, (b.chargeDuration - chargedAttackConfig.minChargeTime) /
+                                        (chargedAttackConfig.maxChargeTime - chargedAttackConfig.minChargeTime));
+                                    staminaCost = baseStaminaCost * (1.0 + (chargedAttackConfig.staminaCostMultiplier - 1.0) * chargeMultiplier);
+                                }
+                            }
+                            if (stamina.currentStamina >= staminaCost) {
+                                stamina.currentStamina -= staminaCost;
+                                combatRef.attack(b.targetX, b.targetY, b.chargeDuration, b.useSpecialAttack ? { useSpecialAttack: true } : {});
+                            }
+                        }
                     }
                 }, attackData.duration);
                 

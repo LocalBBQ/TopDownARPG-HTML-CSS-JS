@@ -28,7 +28,7 @@ class ObjectFactory {
             tree: {
                 minSize: 30,
                 maxSize: 90,
-                defaultSpritePath: 'assets/tree.png',
+                defaultSpritePath: 'assets/sprites/environment/Trees.png',
                 color: '#2d5016'
             },
             rock: {
@@ -737,6 +737,10 @@ class ObstacleManager {
         // Copy custom properties if provided
         if (customProps) {
             Object.assign(obstacle, customProps);
+        }
+        // Trees.png is a 3-frame strip: assign random variant when not set so each tree gets a random sprite
+        if (type === 'tree' && (obstacle.spritePath || '').includes('Trees.png') && obstacle.spriteFrameIndex == null) {
+            obstacle.spriteFrameIndex = Utils.randomInt(0, 2);
         }
         this.obstacles.push(obstacle);
         return obstacle;

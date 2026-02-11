@@ -27,13 +27,19 @@ class EnemyManager {
         // Get sprite manager for sprite components
         const spriteManager = this.systems ? this.systems.get('sprites') : null;
         
-        // Determine sprite path based on enemy type
+        // Determine sprite path/sheet based on enemy type (prefer 8-direction goblin sheet when available)
         let spritePath = null;
         let spriteSheetKey = null;
+        let useGoblin8D = false;
         if (type === 'goblin' && spriteManager) {
-            spritePath = 'assets/sprites/enemies/Goblin.png';
-            const found = spriteManager.findSpriteSheetByPath(spritePath);
-            spriteSheetKey = found ? found.key : spritePath;
+            if (spriteManager.goblin8DSheetKey) {
+                spriteSheetKey = spriteManager.goblin8DSheetKey;
+                useGoblin8D = true;
+            } else {
+                spritePath = 'assets/sprites/enemies/Goblin.png';
+                const found = spriteManager.findSpriteSheetByPath(spritePath);
+                spriteSheetKey = found ? found.key : spritePath;
+            }
         }
         
         const size = type === 'greaterDemon' ? 38 : 25;
@@ -49,44 +55,47 @@ class EnemyManager {
         // Add sprite components if sprite sheet is available
         if (spriteSheetKey && type === 'goblin') {
             const transform = enemy.getComponent(Transform);
-            enemy
-                .addComponent(new Sprite(spriteSheetKey, transform.width * 2, transform.height * 2))
-                .addComponent(new Animation({
+            const lungeSheetKey = spriteManager.goblin8DLungeSheetKey || null;
+            const animConfig = useGoblin8D
+                ? {
+                    spriteSheetKey: spriteSheetKey,
+                    defaultAnimation: 'idle',
+                    animations: (() => {
+                        const anims = {
+                            idle: {
+                                frames: [0],
+                                frameDuration: 0.2,
+                                useDirection: true,
+                                useDirectionAsColumn: true
+                            }
+                        };
+                        if (lungeSheetKey) {
+                            anims.lunge = {
+                                spriteSheetKey: lungeSheetKey,
+                                frames: [0],
+                                frameDuration: 0.2,
+                                useDirection: true,
+                                useDirectionAsColumn: true
+                            };
+                        }
+                        return anims;
+                    })()
+                }
+                : {
                     spriteSheetKey: spriteSheetKey,
                     defaultAnimation: 'idle',
                     animations: {
-                        idle: {
-                            row: 0, // Will be set dynamically based on direction
-                            frames: [0], // First frame
-                            frameDuration: 0.2
-                        },
-                        walkRight: {
-                            row: 0,
-                            frames: [0, 1, 2, 3],
-                            frameDuration: 0.15
-                        },
-                        walkDown: {
-                            row: 2,
-                            frames: [0, 1, 2, 3],
-                            frameDuration: 0.15
-                        },
-                        walkLeft: {
-                            row: 1,
-                            frames: [0, 1, 2, 3],
-                            frameDuration: 0.15
-                        },
-                        walkUp: {
-                            row: 3,
-                            frames: [0, 1, 2, 3],
-                            frameDuration: 0.15
-                        },
-                        walkBack: {
-                            row: 4,
-                            frames: [0, 1, 2, 3],
-                            frameDuration: 0.15
-                        }
+                        idle: { row: 0, frames: [0], frameDuration: 0.2 },
+                        walkRight: { row: 0, frames: [0, 1, 2, 3], frameDuration: 0.15 },
+                        walkDown: { row: 2, frames: [0, 1, 2, 3], frameDuration: 0.15 },
+                        walkLeft: { row: 1, frames: [0, 1, 2, 3], frameDuration: 0.15 },
+                        walkUp: { row: 3, frames: [0, 1, 2, 3], frameDuration: 0.15 },
+                        walkBack: { row: 4, frames: [0, 1, 2, 3], frameDuration: 0.15 }
                     }
-                }));
+                };
+            enemy
+                .addComponent(new Sprite(spriteSheetKey, transform.width * 2, transform.height * 2))
+                .addComponent(new Animation(animConfig));
         }
         
         // Store systems reference for components
@@ -432,13 +441,12 @@ class EnemyManager {
                         const mult = blocked ? (GameConfig.player.stun?.blockedMultiplier ?? 0.5) : 1;
                         playerStatus.addStunBuildup(baseStun * mult);
                     }
-                    if (playerMovement) {
+                    if (playerMovement && !blocked) {
                         const knockbackConfig = enemyConfig.knockback || { force: 160, decay: 0.88 };
                         const lungeKnockbackForce = enemyConfig.lunge?.knockback?.force ?? knockbackConfig.force;
-                        const knockbackForce = blocked ? lungeKnockbackForce * 0.5 : lungeKnockbackForce;
                         const dx = playerTransform.x - enemyTransform.x;
                         const dy = playerTransform.y - enemyTransform.y;
-                        playerMovement.applyKnockback(dx, dy, knockbackForce);
+                        playerMovement.applyKnockback(dx, dy, lungeKnockbackForce);
                     }
                     if (enemyCombat.goblinAttack) {
                         enemyCombat.goblinAttack.attackProcessed = true;
@@ -491,14 +499,13 @@ class EnemyManager {
                         playerStatus.addStunBuildup(baseStun * mult);
                     }
 
-                    // Always apply knockback: full when not blocked, half when blocked
-                    if (playerMovement) {
+                    // Apply knockback only when not blocked (blocking stops push entirely)
+                    if (playerMovement && !blocked) {
                         const knockbackConfig = enemyConfigForStun.knockback || { force: 160, decay: 0.88 };
                         const baseForce = knockbackConfig.force;
-                        const knockbackForce = blocked ? baseForce * 0.5 : baseForce;
                         const dx = playerTransform.x - enemyTransform.x;
                         const dy = playerTransform.y - enemyTransform.y;
-                        playerMovement.applyKnockback(dx, dy, knockbackForce);
+                        playerMovement.applyKnockback(dx, dy, baseForce);
                     }
 
                     if (enemyCombat.demonAttack) {

@@ -117,15 +117,14 @@ class ProjectileManager {
                                 playerStatus.addStunBuildup(baseStun * mult);
                             }
 
-                            // Apply knockback: full when not blocked, half when blocked
-                            if (playerMovement && playerTransform) {
+                            // Apply knockback only when not blocked (blocking stops push entirely)
+                            if (playerMovement && playerTransform && !blocked) {
                                 const dx = playerTransform.x - projectile.x;
                                 const dy = playerTransform.y - projectile.y;
                                 const enemyConfig = GameConfig.enemy.types.skeleton || GameConfig.enemy.types.goblin;
                                 const knockbackConfig = enemyConfig.knockback || { force: 160, decay: 0.88 };
                                 const baseForce = knockbackConfig.force * GameConfig.player.knockback.receivedMultiplier;
-                                const finalKnockbackForce = blocked ? baseForce * 0.5 : baseForce;
-                                playerMovement.applyKnockback(dx, dy, finalKnockbackForce);
+                                playerMovement.applyKnockback(dx, dy, baseForce);
                             }
                         }
                         

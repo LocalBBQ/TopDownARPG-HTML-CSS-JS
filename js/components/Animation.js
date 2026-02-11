@@ -88,6 +88,14 @@ class Animation {
 
         // Priority order: combat > special states > movement > idle
         
+        // 1a. Check for lunge (goblin/lesser demon) – use lunge sprite when lunging
+        if (combat && combat.isLunging && this.animations.lunge) {
+            if (this.currentAnimation !== 'lunge') {
+                this.setAnimation('lunge', false);
+            }
+            return;
+        }
+        
         // 1. Check for combat states (highest priority)
         if (combat && combat.isAttacking) {
             const animKey = combat.currentAttackAnimationKey || 'melee';

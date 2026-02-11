@@ -294,23 +294,60 @@ class Game {
         const spriteManager = this.systems.get('sprites');
         if (!spriteManager) return;
 
-        // Load goblin sprite sheet
+        // Load goblin 8-direction sprite sheet (Goblin_8D.png: 1 row × 8 cols, one frame per direction)
+        try {
+            const goblin8DPath = 'assets/sprites/enemies/Goblin_8D.png';
+            const goblin8DRows = 1;
+            const goblin8DCols = 8;
+            const goblin8DImg = await spriteManager.loadSprite(goblin8DPath);
+            const goblin8DFrameWidth = goblin8DImg.width / goblin8DCols;
+            const goblin8DFrameHeight = goblin8DImg.height / goblin8DRows;
+            await spriteManager.loadSpriteSheet(
+                goblin8DPath,
+                goblin8DFrameWidth,
+                goblin8DFrameHeight,
+                goblin8DRows,
+                goblin8DCols
+            );
+            const goblin8DKey = spriteManager.findSpriteSheetByPath(goblin8DPath);
+            spriteManager.goblin8DSheetKey = goblin8DKey ? goblin8DKey.key : null;
+            console.log('Goblin 8-direction sprite sheet (Goblin_8D.png) loaded successfully');
+        } catch (error) {
+            console.warn('Failed to load Goblin_8D.png:', error);
+            spriteManager.goblin8DSheetKey = null;
+        }
+
+        // Load goblin 8-direction lunge sprite sheet (Goblin_8D_Lunge.png: 1 row × 8 cols)
+        try {
+            const goblin8DLungePath = 'assets/sprites/enemies/Goblin_8D_Lunge.png';
+            const goblin8DLungeRows = 1;
+            const goblin8DLungeCols = 8;
+            const goblin8DLungeImg = await spriteManager.loadSprite(goblin8DLungePath);
+            const goblin8DLungeFrameWidth = goblin8DLungeImg.width / goblin8DLungeCols;
+            const goblin8DLungeFrameHeight = goblin8DLungeImg.height / goblin8DLungeRows;
+            await spriteManager.loadSpriteSheet(
+                goblin8DLungePath,
+                goblin8DLungeFrameWidth,
+                goblin8DLungeFrameHeight,
+                goblin8DLungeRows,
+                goblin8DLungeCols
+            );
+            const goblin8DLungeKey = spriteManager.findSpriteSheetByPath(goblin8DLungePath);
+            spriteManager.goblin8DLungeSheetKey = goblin8DLungeKey ? goblin8DLungeKey.key : null;
+            console.log('Goblin 8-direction lunge sprite sheet (Goblin_8D_Lunge.png) loaded successfully');
+        } catch (error) {
+            console.warn('Failed to load Goblin_8D_Lunge.png:', error);
+            spriteManager.goblin8DLungeSheetKey = null;
+        }
+
+        // Load legacy goblin sprite sheet (5×4) as fallback when 8D is not used
         try {
             const goblinSpritePath = 'assets/sprites/enemies/Goblin.png';
             const goblinRows = 5;
             const goblinCols = 4;
-            
-            // Load the image first to get dimensions
             const goblinImg = await spriteManager.loadSprite(goblinSpritePath);
-            
-            // Calculate frame dimensions from image size
-            // Use exact division to avoid rounding errors that cause bleeding
             const goblinFrameWidth = goblinImg.width / goblinCols;
             const goblinFrameHeight = goblinImg.height / goblinRows;
-            
-            console.log(`Goblin sprite sheet dimensions: ${goblinImg.width}x${goblinImg.height}`);
-            console.log(`Goblin frame dimensions: ${goblinFrameWidth}x${goblinFrameHeight} (${goblinRows} rows x ${goblinCols} cols)`);
-            
             await spriteManager.loadSpriteSheet(
                 goblinSpritePath,
                 goblinFrameWidth,
@@ -318,10 +355,9 @@ class Game {
                 goblinRows,
                 goblinCols
             );
-            console.log('Goblin sprite sheet loaded successfully');
+            console.log('Goblin sprite sheet (Goblin.png) loaded as fallback');
         } catch (error) {
             console.warn('Failed to load goblin sprite sheet:', error);
-            console.log('Goblins will use fallback rendering');
         }
     }
 
@@ -820,6 +856,11 @@ class Game {
         if (cameraSystem) {
             if (selectedLevel === 0 && hubLevel) {
                 cameraSystem.setWorldBounds(hubLevel.width, hubLevel.height);
+                // Center sanctuary in the canvas (avoid top-left load)
+                const effectiveW = this.canvas.width / cameraSystem.zoom;
+                const effectiveH = this.canvas.height / cameraSystem.zoom;
+                cameraSystem.x = Math.max(0, Math.min(hubLevel.width - effectiveW, hubLevel.width / 2 - effectiveW / 2));
+                cameraSystem.y = Math.max(0, Math.min(hubLevel.height - effectiveH, hubLevel.height / 2 - effectiveH / 2));
             } else {
                 cameraSystem.setWorldBounds(worldConfig.width, worldConfig.height);
             }
@@ -966,12 +1007,33 @@ class Game {
 
         this.handleCameraZoom();
 
+        // Crossbow reload and state sync (so reload UI shows in sanctuary)
+        const player = this.entities.get('player');
+        if (player) {
+            const combat = player.getComponent(Combat);
+            const weapon = combat && combat.playerAttack ? combat.playerAttack.weapon : null;
+            const isCrossbow = weapon && weapon.isRanged === true;
+            const crossbowConfig = GameConfig.player.crossbow;
+            if (isCrossbow && crossbowConfig && this.crossbowReloadInProgress && this.crossbowReloadProgress < 1) {
+                this.crossbowReloadProgress = Math.min(1, this.crossbowReloadProgress + deltaTime / crossbowConfig.reloadTime);
+                if (this.crossbowReloadProgress >= 1) this.crossbowReloadInProgress = false;
+            }
+            if (combat && !isCrossbow) {
+                this.crossbowReloadProgress = 1;
+                this.crossbowReloadInProgress = false;
+                this.crossbowPerfectReloadNext = false;
+            }
+            if (isCrossbow) {
+                player.crossbowReloadProgress = this.crossbowReloadProgress;
+                player.crossbowReloadInProgress = this.crossbowReloadInProgress;
+            }
+        }
+
         this.systems.update(deltaTime);
         this.entities.update(deltaTime, this.systems);
 
         const cameraSystem = this.systems.get('camera');
         const inputSystem = this.systems.get('input');
-        const player = this.entities.get('player');
         if (player) {
             const transform = player.getComponent(Transform);
             if (transform && cameraSystem) {
@@ -1154,71 +1216,75 @@ class Game {
 
             if (this.screenManager.isScreen('hub')) {
                 const hubConfig = GameConfig.hub;
-                renderSystem.clear();
-                renderSystem.renderWorld(cameraSystem, obstacleManager, 0, hubConfig.width, hubConfig.height);
-                if (this.board) {
-                    renderSystem.renderBoard(this.board, cameraSystem);
-                    if (this.playerNearBoard) {
-                        renderSystem.renderBoardInteractionPrompt(this.board, cameraSystem, true);
+                try {
+                    renderSystem.clear();
+                    renderSystem.renderWorld(cameraSystem, obstacleManager, 0, hubConfig.width, hubConfig.height);
+                    if (this.board) {
+                        renderSystem.renderBoard(this.board, cameraSystem);
+                        if (this.playerNearBoard) {
+                            renderSystem.renderBoardInteractionPrompt(this.board, cameraSystem, true);
+                        }
                     }
-                }
-                const hubEntities = this.entities.getAll();
-                renderSystem.renderEntities(hubEntities, cameraSystem);
-                if (this.settings.showMinimap) {
-                    renderSystem.renderMinimap(cameraSystem, this.entities, hubConfig.width, hubConfig.height, null, 0);
-                }
-                if (this.boardOpen) {
-                    this.screenManager.renderHubBoardOverlay(this.hubSelectedLevel);
+                    const hubEntities = this.entities.getAll();
+                    renderSystem.renderEntities(hubEntities, cameraSystem);
+                } finally {
+                    // Always reset context and draw UI so minimap/level select work even if entity render threw
+                    this.ctx.globalAlpha = 1;
+                    this.ctx.setTransform(1, 0, 0, 1, 0, 0);
+                    if (this.settings.showMinimap) {
+                        renderSystem.renderMinimap(cameraSystem, this.entities, hubConfig.width, hubConfig.height, null, 0);
+                    }
+                    if (this.boardOpen) {
+                        this.screenManager.renderHubBoardOverlay(this.hubSelectedLevel);
+                    }
                 }
                 return;
             }
 
             // Game world and entities (draw for both 'playing' and 'pause' so pause shows over frozen frame)
-            renderSystem.clear();
             const currentLevel = this.systems.get('enemies') ? this.systems.get('enemies').getCurrentLevel() : 1;
-            renderSystem.renderWorld(cameraSystem, obstacleManager, currentLevel);
-            if (this.portal) {
-                renderSystem.renderPortal(this.portal, cameraSystem);
-                if (this.playerNearPortal) {
-                    renderSystem.renderPortalInteractionPrompt(this.portal, cameraSystem, this.playerNearPortal);
+            try {
+                renderSystem.clear();
+                renderSystem.renderWorld(cameraSystem, obstacleManager, currentLevel);
+                if (this.portal) {
+                    renderSystem.renderPortal(this.portal, cameraSystem);
+                    if (this.playerNearPortal) {
+                        renderSystem.renderPortalInteractionPrompt(this.portal, cameraSystem, this.playerNearPortal);
+                    }
                 }
-            }
-            const entities = this.entities.getAll();
-            if (entities.length === 0) {
-                console.warn('No entities to render');
-            }
-            renderSystem.renderEntities(entities, cameraSystem);
-            
-            // Render projectiles (after entities, before damage numbers)
-            const projectileManager = this.systems.get('projectiles');
-            if (projectileManager) {
-                projectileManager.render(this.ctx, cameraSystem);
-            }
-            const hazardManager = this.systems.get('hazards');
-            if (hazardManager && hazardManager.renderFlamePillars) {
-                hazardManager.renderFlamePillars(this.ctx, cameraSystem);
-            }
-            
-            // Render damage numbers (after entities so they appear on top)
-            const damageNumberManager = this.systems.get('damageNumbers');
-            if (damageNumberManager) {
-                damageNumberManager.render(this.ctx, cameraSystem);
-            }
-            
-            // Render health orbs
-            const healthOrbManager = this.systems.get('healthOrbs');
-            if (healthOrbManager) {
-                healthOrbManager.render(this.ctx, cameraSystem);
-            }
-            
-            if (this.settings.showMinimap) {
-                const w = this._currentWorldWidth != null ? this._currentWorldWidth : worldConfig.width;
-                const h = this._currentWorldHeight != null ? this._currentWorldHeight : worldConfig.height;
-                renderSystem.renderMinimap(cameraSystem, this.entities, w, h, this.portal, currentLevel);
-            }
-
-            if (this.screenManager.isScreen('pause') || this.screenManager.isScreen('settings')) {
-                this.screenManager.render(this.settings);
+                const entities = this.entities.getAll();
+                if (entities.length === 0) {
+                    console.warn('No entities to render');
+                }
+                renderSystem.renderEntities(entities, cameraSystem);
+                const projectileManager = this.systems.get('projectiles');
+                if (projectileManager) {
+                    projectileManager.render(this.ctx, cameraSystem);
+                }
+                const hazardManager = this.systems.get('hazards');
+                if (hazardManager && hazardManager.renderFlamePillars) {
+                    hazardManager.renderFlamePillars(this.ctx, cameraSystem);
+                }
+                const damageNumberManager = this.systems.get('damageNumbers');
+                if (damageNumberManager) {
+                    damageNumberManager.render(this.ctx, cameraSystem);
+                }
+                const healthOrbManager = this.systems.get('healthOrbs');
+                if (healthOrbManager) {
+                    healthOrbManager.render(this.ctx, cameraSystem);
+                }
+            } finally {
+                // Always reset context and draw UI so minimap/pause work even if entity render threw
+                this.ctx.globalAlpha = 1;
+                this.ctx.setTransform(1, 0, 0, 1, 0, 0);
+                if (this.settings.showMinimap) {
+                    const w = this._currentWorldWidth != null ? this._currentWorldWidth : worldConfig.width;
+                    const h = this._currentWorldHeight != null ? this._currentWorldHeight : worldConfig.height;
+                    renderSystem.renderMinimap(cameraSystem, this.entities, w, h, this.portal, currentLevel);
+                }
+                if (this.screenManager.isScreen('pause') || this.screenManager.isScreen('settings')) {
+                    this.screenManager.render(this.settings);
+                }
             }
         } catch (error) {
             console.error('Render error:', error);

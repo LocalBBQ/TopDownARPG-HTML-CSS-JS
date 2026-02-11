@@ -169,9 +169,9 @@ const PlayerCombatRenderer = {
         ctx.rotate(movement.facingAngle);
 
         const stockLen = 28 * zoom;
-        const limbHalf = 10 * zoom;
+        const limbHalf = 22 * zoom;
         const stockW = 5 * zoom;
-        const limbW = 3 * zoom;
+        const limbW = 7 * zoom;
 
         // Stock (body) – dark wood
         ctx.fillStyle = '#3d2817';
