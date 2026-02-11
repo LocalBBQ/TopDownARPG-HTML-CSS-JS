@@ -25,11 +25,29 @@ class PlayerInputController {
 
         this.bindAttackControls();
         this.bindBlockControls();
+        this.bindHealControls();
         this.bindProjectileControls();
         this.bindDodgeControls();
         this.bindSprintControls();
         this.bindWeaponSwitchControls();
         this.bindMovementControls();
+    }
+
+    bindHealControls() {
+        const inputSystem = this.systems.get('input');
+
+        this.eventBus.on(EventTypes.INPUT_KEYDOWN, (key) => {
+            if (key !== 'q' && key !== 'Q') return;
+            if (!this.game.screenManager || !(this.game.screenManager.isScreen('playing') || this.game.screenManager.isScreen('hub'))) return;
+            const player = this.player;
+            if (!player || !inputSystem) return;
+
+            const statusEffects = player.getComponent(StatusEffects);
+            if (statusEffects && statusEffects.isStunned) return;
+
+            const healing = player.getComponent(PlayerHealing);
+            if (healing) healing.startDrinking();
+        });
     }
 
     bindAttackControls() {
@@ -49,7 +67,9 @@ class PlayerInputController {
             // Can't act while stunned
             const statusEffects = player.getComponent(StatusEffects);
             if (statusEffects && statusEffects.isStunned) return;
-            // Can't charge while blocking or already attacking
+            // Can't charge while blocking, already attacking, or healing
+            const healing = player.getComponent(PlayerHealing);
+            if (healing && healing.isHealing) return;
             if (combat && (combat.isBlocking || combat.isAttacking)) {
                 return;
             }
@@ -75,6 +95,12 @@ class PlayerInputController {
 
             const statusEffects = player.getComponent(StatusEffects);
             if (statusEffects && statusEffects.isStunned) return;
+
+            const healing = player.getComponent(PlayerHealing);
+            if (healing && healing.isHealing) {
+                this.isChargingAttack = false;
+                return;
+            }
             
             // While blocking: left-click = shield bash (if weapon has it), else ignore
             if (combat && combat.isBlocking) {
@@ -134,34 +160,22 @@ class PlayerInputController {
                     }
                     return;
                 }
+                // Attack input while attacking is buffered and fires when current attack ends
                 const useSpecial = data.shiftKey && weapon.specialAttack;
+                const staminaCost = combat.playerAttack.getNextAttackStaminaCost(
+                    useSpecial ? 0 : chargeDuration,
+                    useSpecial ? { useSpecialAttack: true } : {}
+                );
+                if (stamina.currentStamina < staminaCost) return;
 
                 if (useSpecial) {
                     const specialProps = weapon.getSpecialAttackProperties();
-                    if (specialProps && stamina.currentStamina >= specialProps.staminaCost) {
-                        stamina.currentStamina -= specialProps.staminaCost;
+                    if (specialProps) {
                         combat.attack(worldPos.x, worldPos.y, 0, { useSpecialAttack: true });
                         this.eventBus.emit(EventTypes.PLAYER_SPECIAL_ATTACK);
                     }
                 } else {
-                    const nextStage = combat.playerAttack.comboStage < weapon.maxComboStage
-                        ? combat.playerAttack.comboStage + 1 : 1;
-                    const stageProps = weapon.getComboStageProperties(nextStage);
-
-                    const baseStaminaCost = stageProps ? stageProps.staminaCost : 10;
-                    const chargedAttackConfig = GameConfig.player.chargedAttack;
-                    let staminaCost = baseStaminaCost;
-
-                    if (chargeDuration >= chargedAttackConfig.minChargeTime) {
-                        const chargeMultiplier = Math.min(1.0, (chargeDuration - chargedAttackConfig.minChargeTime) /
-                            (chargedAttackConfig.maxChargeTime - chargedAttackConfig.minChargeTime));
-                        staminaCost = baseStaminaCost * (1.0 + (chargedAttackConfig.staminaCostMultiplier - 1.0) * chargeMultiplier);
-                    }
-
-                    if (stageProps && stamina.currentStamina >= staminaCost) {
-                        stamina.currentStamina -= staminaCost;
-                        combat.attack(worldPos.x, worldPos.y, chargeDuration);
-                    }
+                    combat.attack(worldPos.x, worldPos.y, chargeDuration);
                 }
             }
         });
@@ -177,6 +191,9 @@ class PlayerInputController {
 
             const statusEffects = player.getComponent(StatusEffects);
             if (statusEffects && statusEffects.isStunned) return;
+
+            const healing = player.getComponent(PlayerHealing);
+            if (healing && healing.isHealing) return;
 
             const combat = player.getComponent(Combat);
             const movement = player.getComponent(Movement);
@@ -304,6 +321,9 @@ class PlayerInputController {
             const statusEffects = player.getComponent(StatusEffects);
             if (statusEffects && statusEffects.isStunned) return;
 
+            const healing = player.getComponent(PlayerHealing);
+            if (healing && healing.isHealing) return;
+
             const movement = player.getComponent(Movement);
             const stamina = player.getComponent(Stamina);
             
@@ -392,30 +412,7 @@ class PlayerInputController {
     }
 
     bindWeaponSwitchControls() {
-        // TEMPORARY: weapon switch for testing (1 = sword & shield, 2 = greatsword, 3 = broadsword)
-        this.eventBus.on(EventTypes.INPUT_KEYDOWN, (key) => {
-            // Only allow weapon switching while actively playing (combat levels or hub)
-            if (!this.game.screenManager || !(this.game.screenManager.isScreen('playing') || this.game.screenManager.isScreen('hub'))) return;
-            const player = this.player;
-            if (!player) return;
-
-            const combat = player.getComponent(Combat);
-            if (!combat || !combat.isPlayer) return;
-
-            if (key === '1' && Weapons.swordAndShield) {
-                combat.stopBlocking();
-                combat.setWeapon(Weapons.swordAndShield);
-            } else if (key === '2' && Weapons.greatsword) {
-                combat.stopBlocking();
-                combat.setWeapon(Weapons.greatsword);
-            } else if (key === '3' && Weapons.crossbow) {
-                combat.stopBlocking();
-                combat.setWeapon(Weapons.crossbow);
-                this.game.crossbowReloadProgress = 1;
-                this.game.crossbowReloadInProgress = false;
-                this.game.crossbowPerfectReloadNext = false;
-            }
-        });
+        // Weapon switching only in sanctuary (hub board overlay). No in-game hotkeys.
     }
 
     bindMovementControls() {

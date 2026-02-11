@@ -3,7 +3,7 @@ class ScreenManager {
     constructor(canvas, ctx) {
         this.canvas = canvas;
         this.ctx = ctx;
-        // 'title', 'hub', 'playing', 'death', 'pause', 'settings'
+        // 'title', 'hub', 'playing', 'death', 'pause', 'settings', 'settings-controls'
         this.currentScreen = 'title';
         this.selectedStartLevel = 1; // 1, 2, or 3 for level select
     }
@@ -41,6 +41,36 @@ class ScreenManager {
             const top = row.y - b.rowH / 2;
             const bottom = row.y + b.rowH / 2;
             if (x >= left && x <= right && y >= top && y <= bottom) return row.level;
+        }
+        return null;
+    }
+
+    getWeaponSelectBounds() {
+        const width = this.canvas.width;
+        const height = this.canvas.height;
+        const cx = width / 2;
+        const rowH = 28;
+        const rowW = 260;
+        const startY = height / 2 + 52;
+        return {
+            cx, rowW, rowH, startY,
+            rows: [
+                { key: 'swordAndShield', label: 'Sword & Shield', y: startY },
+                { key: 'greatsword', label: 'Greatsword', y: startY + rowH },
+                { key: 'crossbow', label: 'Crossbow', y: startY + rowH * 2 },
+                { key: 'mace', label: 'Mace', y: startY + rowH * 3 }
+            ]
+        };
+    }
+
+    getWeaponSelectAt(x, y) {
+        const b = this.getWeaponSelectBounds();
+        const left = b.cx - b.rowW / 2;
+        const right = b.cx + b.rowW / 2;
+        for (const row of b.rows) {
+            const top = row.y - b.rowH / 2;
+            const bottom = row.y + b.rowH / 2;
+            if (x >= left && x <= right && y >= top && y <= bottom) return row.key;
         }
         return null;
     }
@@ -102,12 +132,13 @@ class ScreenManager {
         this.ctx.font = '700 38px Cinzel, Georgia, serif';
         this.ctx.fillText('Paused', cx, height / 2 - 120);
 
-        // Resume / Settings / Quit buttons
+        // Resume / Settings / Help / Quit buttons
         const buttonWidth = 200;
         const buttonHeight = 44;
-        const resumeY = height / 2 - 60;
-        const settingsY = height / 2 - 10;
-        const quitY = height / 2 + 40;
+        const resumeY = height / 2 - 95;
+        const settingsY = height / 2 - 45;
+        const helpY = height / 2 + 5;
+        const quitY = height / 2 + 55;
 
         // Resume button
         this.ctx.fillStyle = '#1a1008';
@@ -129,6 +160,16 @@ class ScreenManager {
         this.ctx.font = '600 15px Cinzel, Georgia, serif';
         this.ctx.fillText('Settings', cx, settingsY);
 
+        // Help button
+        this.ctx.fillStyle = '#1a1008';
+        this.ctx.fillRect(cx - buttonWidth / 2, helpY - buttonHeight / 2, buttonWidth, buttonHeight);
+        this.ctx.strokeStyle = '#4a3020';
+        this.ctx.lineWidth = 2;
+        this.ctx.strokeRect(cx - buttonWidth / 2, helpY - buttonHeight / 2, buttonWidth, buttonHeight);
+        this.ctx.fillStyle = '#e8dcc8';
+        this.ctx.font = '600 15px Cinzel, Georgia, serif';
+        this.ctx.fillText('Help — Pack modifiers', cx, helpY);
+
         // Quit button
         this.ctx.fillStyle = '#1a1008';
         this.ctx.fillRect(cx - buttonWidth / 2, quitY - buttonHeight / 2, buttonWidth, buttonHeight);
@@ -141,7 +182,7 @@ class ScreenManager {
 
         this.ctx.fillStyle = '#a08060';
         this.ctx.font = '500 13px Cinzel, Georgia, serif';
-        this.ctx.fillText('Press ESC to resume', cx, height / 2 + 180);
+        this.ctx.fillText('Press ESC to resume', cx, height / 2 + 200);
     }
 
     getPauseButtonAt(x, y) {
@@ -150,15 +191,117 @@ class ScreenManager {
         const buttonWidth = 200;
         const buttonHeight = 44;
         const cx = width / 2;
-        const resumeY = height / 2 - 60;
-        const settingsY = height / 2 - 10;
-        const quitY = height / 2 + 40;
+        const resumeY = height / 2 - 95;
+        const settingsY = height / 2 - 45;
+        const helpY = height / 2 + 5;
+        const quitY = height / 2 + 55;
         const left = cx - buttonWidth / 2;
         const right = cx + buttonWidth / 2;
         if (x >= left && x <= right && y >= resumeY - buttonHeight / 2 && y <= resumeY + buttonHeight / 2) return 'resume';
         if (x >= left && x <= right && y >= settingsY - buttonHeight / 2 && y <= settingsY + buttonHeight / 2) return 'settings';
+        if (x >= left && x <= right && y >= helpY - buttonHeight / 2 && y <= helpY + buttonHeight / 2) return 'help';
         if (x >= left && x <= right && y >= quitY - buttonHeight / 2 && y <= quitY + buttonHeight / 2) return 'quit';
         return null;
+    }
+
+    /** Build a short description line for a pack modifier from its config. */
+    getPackModifierDescription(name, def) {
+        if (!def) return '';
+        const parts = [];
+        if (def.speedMultiplier != null && def.speedMultiplier !== 1) {
+            const pct = Math.round((def.speedMultiplier - 1) * 100);
+            parts.push(pct > 0 ? `+${pct}% speed` : `${pct}% speed`);
+        }
+        if (def.damageMultiplier != null && def.damageMultiplier !== 1) {
+            const pct = Math.round((def.damageMultiplier - 1) * 100);
+            parts.push(pct > 0 ? `+${pct}% damage` : `${pct}% damage`);
+        }
+        if (def.knockbackResist != null && def.knockbackResist > 0) {
+            parts.push(`+${Math.round(def.knockbackResist * 100)}% knockback resist`);
+        }
+        if (def.attackCooldownMultiplier != null && def.attackCooldownMultiplier !== 1) {
+            const pct = Math.round((1 - def.attackCooldownMultiplier) * 100);
+            parts.push(`${pct}% faster attacks`);
+        }
+        if (def.stunBuildupPerHitMultiplier != null && def.stunBuildupPerHitMultiplier !== 1) {
+            const pct = Math.round((def.stunBuildupPerHitMultiplier - 1) * 100);
+            parts.push(`+${pct}% stun buildup`);
+        }
+        if (def.detectionRangeMultiplier != null && def.detectionRangeMultiplier !== 1) {
+            const pct = Math.round((def.detectionRangeMultiplier - 1) * 100);
+            parts.push(`+${pct}% detection range`);
+        }
+        if (def.speedPerAlly != null) {
+            parts.push('speed scales with allies in pack');
+        }
+        return parts.length ? parts.join(', ') : '—';
+    }
+
+    renderHelpScreen() {
+        const width = this.canvas.width;
+        const height = this.canvas.height;
+        const cx = width / 2;
+
+        // Dim overlay but leave top-left cutout so health/stamina UI stays visible
+        const statsCutoutW = 340;
+        const statsCutoutH = 165;
+        this.ctx.fillStyle = 'rgba(10, 8, 6, 0.88)';
+        this.ctx.fillRect(statsCutoutW, 0, width - statsCutoutW, height);
+        this.ctx.fillRect(0, statsCutoutH, statsCutoutW, height - statsCutoutH);
+
+        this.ctx.textAlign = 'center';
+        this.ctx.textBaseline = 'middle';
+
+        this.ctx.fillStyle = '#c9a227';
+        this.ctx.font = '700 36px Cinzel, Georgia, serif';
+        this.ctx.fillText('Pack modifiers', cx, 72);
+
+        this.ctx.fillStyle = '#a08060';
+        this.ctx.font = '500 15px Cinzel, Georgia, serif';
+        this.ctx.fillText('Enemies in a pack (same type, nearby) get one random modifier. Tag appears above them when buff is active.', cx, 112);
+
+        const packModifiers = GameConfig.packModifiers || {};
+        const names = Object.keys(packModifiers);
+        const lineHeight = 28;
+        const startY = 142;
+
+        for (let i = 0; i < names.length; i++) {
+            const name = names[i];
+            const def = packModifiers[name];
+            const capName = name.charAt(0).toUpperCase() + name.slice(1);
+            const desc = this.getPackModifierDescription(name, def);
+            const line = desc ? `${capName} — ${desc}` : capName;
+            const y = startY + i * lineHeight;
+
+            this.ctx.fillStyle = def && def.color ? def.color : '#e8dcc8';
+            this.ctx.font = '600 16px Cinzel, Georgia, serif';
+            this.ctx.fillText(line, cx, y);
+        }
+
+        const backY = height - 56;
+        const buttonWidth = 120;
+        const buttonHeight = 40;
+        this.ctx.fillStyle = '#1a1008';
+        this.ctx.fillRect(cx - buttonWidth / 2, backY - buttonHeight / 2, buttonWidth, buttonHeight);
+        this.ctx.strokeStyle = '#4a3020';
+        this.ctx.lineWidth = 2;
+        this.ctx.strokeRect(cx - buttonWidth / 2, backY - buttonHeight / 2, buttonWidth, buttonHeight);
+        this.ctx.fillStyle = '#e8dcc8';
+        this.ctx.font = '600 16px Cinzel, Georgia, serif';
+        this.ctx.fillText('Back', cx, backY);
+    }
+
+    getHelpBackButtonAt(x, y) {
+        const width = this.canvas.width;
+        const height = this.canvas.height;
+        const cx = width / 2;
+        const backY = height - 56;
+        const buttonWidth = 120;
+        const buttonHeight = 40;
+        const left = cx - buttonWidth / 2;
+        const right = cx + buttonWidth / 2;
+        if (x >= left && x <= right && y >= backY - buttonHeight / 2 && y <= backY + buttonHeight / 2) return true;
+        return false;
     }
 
     renderDeathScreen() {
@@ -236,6 +379,7 @@ class ScreenManager {
         this.ctx.setTransform(1, 0, 0, 1, 0, 0);
         const width = this.canvas.width;
         const height = this.canvas.height;
+        const cx = width / 2;
 
         this.ctx.fillStyle = 'rgba(10, 8, 6, 0.75)';
         this.ctx.fillRect(0, 0, width, height);
@@ -244,12 +388,11 @@ class ScreenManager {
         this.ctx.textBaseline = 'middle';
         this.ctx.fillStyle = '#c9a227';
         this.ctx.font = '700 28px Cinzel, Georgia, serif';
-        this.ctx.fillText('Select level', width / 2, height / 2 - 100);
+        this.ctx.fillText('Select level', cx, height / 2 - 100);
 
         const b = this.getLevelSelectBounds();
         const rowH = 32;
         const rowW = 280;
-        const startY = height / 2 - 48;
         for (let i = 0; i < b.rows.length; i++) {
             const row = b.rows[i];
             const isSelected = selectedLevel === row.level;
@@ -263,7 +406,6 @@ class ScreenManager {
             this.ctx.fillText(`${row.level}. ${row.name}`, b.cx, row.y);
         }
 
-        const cx = width / 2;
         const buttonWidth = 120;
         const buttonHeight = 40;
         const startY_btn = height / 2 + 52;
@@ -288,6 +430,88 @@ class ScreenManager {
         this.ctx.fillText('Back', cx, backY);
     }
 
+    getWeaponChestOverlayBounds() {
+        const width = this.canvas.width;
+        const height = this.canvas.height;
+        const cx = width / 2;
+        const rowH = 28;
+        const rowW = 260;
+        const startY = height / 2 - 30;
+        return {
+            cx, rowW, rowH, startY,
+            backY: height / 2 + 120,
+            rows: [
+                { key: 'swordAndShield', label: 'Sword & Shield', y: startY },
+                { key: 'greatsword', label: 'Greatsword', y: startY + rowH },
+                { key: 'crossbow', label: 'Crossbow', y: startY + rowH * 2 },
+                { key: 'mace', label: 'Mace', y: startY + rowH * 3 }
+            ]
+        };
+    }
+
+    getWeaponChestWeaponAt(x, y) {
+        const b = this.getWeaponChestOverlayBounds();
+        const left = b.cx - b.rowW / 2;
+        const right = b.cx + b.rowW / 2;
+        for (const row of b.rows) {
+            const top = row.y - b.rowH / 2;
+            const bottom = row.y + b.rowH / 2;
+            if (x >= left && x <= right && y >= top && y <= bottom) return row.key;
+        }
+        return null;
+    }
+
+    getWeaponChestBackAt(x, y) {
+        const b = this.getWeaponChestOverlayBounds();
+        const buttonWidth = 120;
+        const buttonHeight = 40;
+        const left = b.cx - buttonWidth / 2;
+        const right = b.cx + buttonWidth / 2;
+        const top = b.backY - buttonHeight / 2;
+        const bottom = b.backY + buttonHeight / 2;
+        return x >= left && x <= right && y >= top && y <= bottom;
+    }
+
+    renderWeaponChestOverlay(equippedWeaponKey) {
+        this.ctx.setTransform(1, 0, 0, 1, 0, 0);
+        const width = this.canvas.width;
+        const height = this.canvas.height;
+        const cx = width / 2;
+
+        this.ctx.fillStyle = 'rgba(10, 8, 6, 0.75)';
+        this.ctx.fillRect(0, 0, width, height);
+
+        this.ctx.textAlign = 'center';
+        this.ctx.textBaseline = 'middle';
+        this.ctx.fillStyle = '#c9a227';
+        this.ctx.font = '700 26px Cinzel, Georgia, serif';
+        this.ctx.fillText('Choose weapon', cx, height / 2 - 90);
+
+        const b = this.getWeaponChestOverlayBounds();
+        for (const row of b.rows) {
+            const isEquipped = equippedWeaponKey === row.key;
+            this.ctx.fillStyle = isEquipped ? 'rgba(201, 162, 39, 0.25)' : 'rgba(20, 16, 8, 0.6)';
+            this.ctx.fillRect(b.cx - b.rowW / 2, row.y - b.rowH / 2, b.rowW, b.rowH);
+            this.ctx.strokeStyle = isEquipped ? '#c9a227' : '#4a3020';
+            this.ctx.lineWidth = isEquipped ? 2 : 1;
+            this.ctx.strokeRect(b.cx - b.rowW / 2, row.y - b.rowH / 2, b.rowW, b.rowH);
+            this.ctx.fillStyle = isEquipped ? '#e8dcc8' : '#a08060';
+            this.ctx.font = isEquipped ? '600 13px Cinzel, Georgia, serif' : '500 12px Cinzel, Georgia, serif';
+            this.ctx.fillText(row.label, b.cx, row.y);
+        }
+
+        const buttonWidth = 120;
+        const buttonHeight = 40;
+        this.ctx.fillStyle = '#1a1008';
+        this.ctx.fillRect(cx - buttonWidth / 2, b.backY - buttonHeight / 2, buttonWidth, buttonHeight);
+        this.ctx.strokeStyle = '#4a3020';
+        this.ctx.lineWidth = 2;
+        this.ctx.strokeRect(cx - buttonWidth / 2, b.backY - buttonHeight / 2, buttonWidth, buttonHeight);
+        this.ctx.fillStyle = '#a08060';
+        this.ctx.font = '600 13px Cinzel, Georgia, serif';
+        this.ctx.fillText('Back', cx, b.backY);
+    }
+
     getSettingsLayout(settings) {
         const width = this.canvas.width;
         const height = this.canvas.height;
@@ -302,6 +526,7 @@ class ScreenManager {
                 key: 'music',
                 label: 'Music',
                 value: settings.musicEnabled,
+                type: 'toggle',
                 x: cx - rowWidth / 2,
                 y: startY + 0 * 40
             },
@@ -309,6 +534,7 @@ class ScreenManager {
                 key: 'sfx',
                 label: 'Sound Effects',
                 value: settings.sfxEnabled,
+                type: 'toggle',
                 x: cx - rowWidth / 2,
                 y: startY + 1 * 40
             },
@@ -316,6 +542,7 @@ class ScreenManager {
                 key: 'minimap',
                 label: 'Minimap',
                 value: settings.showMinimap,
+                type: 'toggle',
                 x: cx - rowWidth / 2,
                 y: startY + 2 * 40
             },
@@ -323,6 +550,7 @@ class ScreenManager {
                 key: 'characterSprites',
                 label: 'Character Sprites',
                 value: settings.useCharacterSprites,
+                type: 'toggle',
                 x: cx - rowWidth / 2,
                 y: startY + 3 * 40
             },
@@ -330,8 +558,16 @@ class ScreenManager {
                 key: 'environmentSprites',
                 label: 'Environment Sprites',
                 value: settings.useEnvironmentSprites,
+                type: 'toggle',
                 x: cx - rowWidth / 2,
                 y: startY + 4 * 40
+            },
+            {
+                key: 'controls',
+                label: 'Controls',
+                type: 'link',
+                x: cx - rowWidth / 2,
+                y: startY + 5 * 40
             }
         ];
 
@@ -372,8 +608,6 @@ class ScreenManager {
 
         // Setting rows as buttons
         layout.rows.forEach((row) => {
-            const isOn = row.value;
-
             // Button rect
             this.ctx.fillStyle = 'rgba(20, 16, 8, 0.8)';
             this.ctx.fillRect(row.x, row.y - layout.rowHeight / 2, layout.rowWidth, layout.rowHeight);
@@ -382,14 +616,11 @@ class ScreenManager {
             this.ctx.lineWidth = 1;
             this.ctx.strokeRect(row.x, row.y - layout.rowHeight / 2, layout.rowWidth, layout.rowHeight);
 
-            // Text
+            // Text (toggle: "Label: On/Off", link: "Label")
             this.ctx.fillStyle = '#e8dcc8';
             this.ctx.font = '500 15px Cinzel, Georgia, serif';
-            this.ctx.fillText(
-                `${row.label}: ${isOn ? 'On' : 'Off'}`,
-                cx,
-                row.y
-            );
+            const text = row.type === 'link' ? row.label : `${row.label}: ${row.value ? 'On' : 'Off'}`;
+            this.ctx.fillText(text, cx, row.y);
         });
 
         // Back button
@@ -434,6 +665,77 @@ class ScreenManager {
         return null;
     }
 
+    getControlsBackButton() {
+        const width = this.canvas.width;
+        const height = this.canvas.height;
+        const cx = width / 2;
+        return {
+            x: cx - 80,
+            y: height / 2 + 180,
+            width: 160,
+            height: 40
+        };
+    }
+
+    getControlsItemAt(x, y) {
+        const back = this.getControlsBackButton();
+        if (x >= back.x && x <= back.x + back.width &&
+            y >= back.y - back.height / 2 && y <= back.y + back.height / 2) {
+            return 'back';
+        }
+        return null;
+    }
+
+    renderControlsScreen() {
+        const width = this.canvas.width;
+        const height = this.canvas.height;
+        const cx = width / 2;
+
+        this.ctx.fillStyle = 'rgba(10, 8, 6, 0.90)';
+        this.ctx.fillRect(0, 0, width, height);
+
+        this.ctx.textAlign = 'center';
+        this.ctx.textBaseline = 'middle';
+
+        // Title
+        this.ctx.fillStyle = '#c9a227';
+        this.ctx.font = '700 34px Cinzel, Georgia, serif';
+        this.ctx.fillText('Controls', cx, height / 2 - 200);
+
+        // Control text (moved from in-game overlay)
+        const lines = [
+            'WASD — Move',
+            'Shift — Sprint',
+            'Space — Dodge',
+            'Left click — Attack',
+            'Right click — Block',
+            'Q — Heal (tap to drink, then regen)',
+            'Shift + Left click — 360° slash (greatsword)',
+            'E — Portal to next area',
+            'B — Return to Sanctuary',
+            'In Sanctuary: E at board — Level select · E at chest — Change weapon'
+        ];
+        this.ctx.fillStyle = '#e8dcc8';
+        this.ctx.font = '500 15px Cinzel, Georgia, serif';
+        this.ctx.textAlign = 'center';
+        const lineHeight = 24;
+        const startY = height / 2 - 140;
+        lines.forEach((line, i) => {
+            this.ctx.fillText(line, cx, startY + i * lineHeight);
+        });
+
+        // Back button
+        const back = this.getControlsBackButton();
+        this.ctx.fillStyle = '#1a1008';
+        this.ctx.fillRect(back.x, back.y - back.height / 2, back.width, back.height);
+        this.ctx.strokeStyle = '#4a3020';
+        this.ctx.lineWidth = 2;
+        this.ctx.strokeRect(back.x, back.y - back.height / 2, back.width, back.height);
+        this.ctx.fillStyle = '#a08060';
+        this.ctx.font = '600 15px Cinzel, Georgia, serif';
+        this.ctx.fillText('Back', cx, back.y);
+    }
+
     render(settings) {
         // #region agent log
         fetch('http://127.0.0.1:7242/ingest/e535072a-96e6-4390-b673-9e50f66af7db',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'ScreenManager.js:render',message:'render entered',data:{currentScreen:this.currentScreen},timestamp:Date.now(),hypothesisId:'H2'})}).catch(()=>{});
@@ -447,6 +749,10 @@ class ScreenManager {
             this.renderPauseScreen();
         } else if (this.currentScreen === 'settings') {
             this.renderSettingsScreen(settings);
+        } else if (this.currentScreen === 'settings-controls') {
+            this.renderControlsScreen();
+        } else if (this.currentScreen === 'help') {
+            this.renderHelpScreen();
         }
         // 'hub' and 'playing' screens are handled by the normal game rendering
     }

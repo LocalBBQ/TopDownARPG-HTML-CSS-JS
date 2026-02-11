@@ -29,6 +29,9 @@ class AI {
         this.pillarFlameCooldown = 0;
         this.isCastingPillar = false;
         this.pillarCastTimer = 0;
+
+        // Goblin Chieftain war cry (buff nearby goblins)
+        this.warCryCooldown = 0;
         
         // Attack initiation tracking (prevents multiple attack calls in same frame)
         this.attackInitiatedThisFrame = false;
@@ -87,15 +90,51 @@ class AI {
             this.pillarFlameCooldown = Math.max(0, this.pillarFlameCooldown - deltaTime);
         }
 
+        if (this.warCryCooldown > 0) {
+            this.warCryCooldown = Math.max(0, this.warCryCooldown - deltaTime);
+        }
+
         // Calculate distance to player
         const distToPlayer = Utils.distance(
             transform.x, transform.y,
             playerTransform.x, playerTransform.y
         );
+        const effectiveDetectionRange = this.detectionRange * (statusEffects && statusEffects.packDetectionRangeMultiplier != null ? statusEffects.packDetectionRangeMultiplier : 1);
 
         // Get enemy config once (used for lunge, projectile, and pillar checks)
         const enemyConfig = this.enemyType ? GameConfig.enemy.types[this.enemyType] : null;
         const pillarConfig = this.enemyType === 'greaterDemon' && enemyConfig && enemyConfig.pillarFlame ? enemyConfig.pillarFlame : null;
+
+        // Goblin Chieftain war cry: buff nearby goblins when in chase range and not attacking
+        const warCryConfig = this.enemyType === 'goblinChieftain' && enemyConfig && enemyConfig.warCry ? enemyConfig.warCry : null;
+        if (warCryConfig && warCryConfig.enabled && this.warCryCooldown === 0 && !combat.isAttacking) {
+            const inChaseRange = distToPlayer < effectiveDetectionRange && distToPlayer > this.attackRange;
+            if (inChaseRange) {
+                const enemyManager = systems ? systems.get('enemies') : null;
+                if (enemyManager && enemyManager.enemies) {
+                    const radius = warCryConfig.radius || 180;
+                    let buffedAny = false;
+                    for (const other of enemyManager.enemies) {
+                        if (other === this.entity) continue;
+                        const otherAI = other.getComponent(AI);
+                        const otherHealth = other.getComponent(Health);
+                        const otherTransform = other.getComponent(Transform);
+                        const otherStatus = other.getComponent(StatusEffects);
+                        if (!otherAI || otherAI.enemyType !== 'goblin' || !otherHealth || otherHealth.isDead || !otherTransform || !otherStatus) continue;
+                        const dist = Utils.distance(transform.x, transform.y, otherTransform.x, otherTransform.y);
+                        if (dist <= radius) {
+                            otherStatus.applyWarCryBuff(
+                                warCryConfig.buffDuration || 5,
+                                warCryConfig.speedMultiplier || 1.2,
+                                warCryConfig.damageMultiplier || 1.2
+                            );
+                            buffedAny = true;
+                        }
+                    }
+                    if (buffedAny) this.warCryCooldown = warCryConfig.cooldown || 12;
+                }
+            }
+        }
         
         // Check for lunge attack (goblin and lesser demon specific)
         const isGoblin = this.enemyType === 'goblin';
@@ -223,8 +262,10 @@ class AI {
             }
         }
         // Normal attack (melee)
-        // Demons use combo system, goblins use swipe attacks, skeletons don't melee
+        // Demons use combo system, chieftain uses heavy smash, titan boss uses sweep/stomp, goblins use swipe attacks, skeletons don't melee
         const hasDemonAttack = combat && combat.demonAttack !== null && combat.demonAttack !== undefined;
+        const hasChieftainAttack = combat && combat.chieftainAttack !== null && combat.chieftainAttack !== undefined;
+        const hasFinalBossAttack = combat && combat.finalBossAttack !== null && combat.finalBossAttack !== undefined;
         const hasGoblinAttack = combat && combat.goblinAttack !== null && combat.goblinAttack !== undefined;
         const isSkeleton = this.enemyType === 'skeleton';
         
@@ -232,6 +273,8 @@ class AI {
         if (!isSkeleton && !this.isCastingPillar) {
             const canAttack = combat && !this.attackInitiatedThisFrame && (
                 (hasDemonAttack && combat.demonAttack.canAttack() && !combat.isAttacking) ||
+                (hasChieftainAttack && combat.chieftainAttack.canAttack() && !combat.isAttacking) ||
+                (hasFinalBossAttack && combat.finalBossAttack.canAttack() && !combat.isAttacking) ||
                 (hasGoblinAttack && combat.cooldown === 0 && !combat.isWindingUp && !combat.isLunging)
             );
             
@@ -261,7 +304,7 @@ class AI {
                     movement.facingAngle = Math.atan2(dy, dx);
                 }
             }
-        } else if (distToPlayer < this.detectionRange) {
+        } else if (distToPlayer < effectiveDetectionRange) {
             // Chase player (this includes when lunge is on cooldown)
             this.state = 'chase';
             this.chasePlayer(playerTransform, movement, systems);

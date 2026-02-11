@@ -8,13 +8,14 @@ class EnemyManager {
         this.currentLevel = 1;
         this.enemiesSpawned = false;
         this.enemiesKilledThisLevel = 0;
+        this.finalBossSpawned = false;
     }
 
     init(systems) {
         this.systems = systems;
     }
 
-    spawnEnemy(x, y, type = 'goblin', entityManager, patrolConfig = null) {
+    spawnEnemy(x, y, type = 'goblin', entityManager, patrolConfig = null, packModifierOverride = null) {
         const config = GameConfig.enemy.types[type] || GameConfig.enemy.types.goblin;
         
         const enemy = new Entity(x, y, `enemy_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`);
@@ -23,6 +24,15 @@ class EnemyManager {
         if (!AIClass) throw new Error('AI component (AI.js) must load before EnemyManager. Check script order in index.html.');
         const ai = new AIClass(config.detectionRange, config.attackRange, patrolConfig);
         ai.enemyType = type; // Store enemy type for lunge detection
+        // Pack modifier: use pack-assigned modifier when provided, otherwise random from pool
+        if (packModifierOverride != null && GameConfig.packModifiers && GameConfig.packModifiers[packModifierOverride]) {
+            ai.packModifierName = packModifierOverride;
+        } else {
+            const allModifierNames = Object.keys(GameConfig.packModifiers || {});
+            ai.packModifierName = allModifierNames.length > 0
+                ? allModifierNames[Utils.randomInt(0, allModifierNames.length - 1)]
+                : null;
+        }
         
         // Get sprite manager for sprite components
         const spriteManager = this.systems ? this.systems.get('sprites') : null;
@@ -42,7 +52,8 @@ class EnemyManager {
             }
         }
         
-        const size = type === 'greaterDemon' ? 38 : 25;
+        // Titan uses smaller hitbox (50) so it can path through terrain; drawn at 3.4x scale for presence
+        const size = type === 'titanBoss' ? 50 : (type === 'greaterDemon' ? 38 : (type === 'goblinChieftain' ? 34 : 25));
         enemy
             .addComponent(new Transform(x, y, size, size))
             .addComponent(new Health(config.maxHealth))
@@ -51,6 +62,9 @@ class EnemyManager {
             .addComponent(new Combat(config.attackRange, config.attackDamage, Utils.degToRad(config.attackArcDegrees ?? 90), config.attackCooldown, config.windUpTime || 0.5, false, null, type)) // isPlayer=false, weapon=null, enemyType=type
             .addComponent(ai)
             .addComponent(new Renderable('enemy', { color: config.color }));
+        
+        const statusEffects = enemy.getComponent(StatusEffects);
+        if (statusEffects) statusEffects.knockbackResist = config.knockbackResist ?? 0;
         
         // Add sprite components if sprite sheet is available
         if (spriteSheetKey && type === 'goblin') {
@@ -112,9 +126,10 @@ class EnemyManager {
         return enemy;
     }
 
-    generateEnemyPacks(worldWidth, worldHeight, packDensity = 0.008, packSize = { min: 2, max: 5 }, entityManager, obstacleManager, enemyTypes = null) {
+    generateEnemyPacks(worldWidth, worldHeight, packDensity = 0.008, packSize = { min: 2, max: 5 }, entityManager, obstacleManager, enemyTypes = null, options = null) {
         const tileSize = GameConfig.world.tileSize;
         const numPacks = Math.floor(worldWidth * worldHeight * packDensity / (tileSize * tileSize));
+        const usePatrol = options && options.patrol === true;
 
         const excludeArea = {
             x: worldWidth / 2,
@@ -140,6 +155,16 @@ class EnemyManager {
             const enemiesInPack = Utils.randomInt(packSize.min, packSize.max);
             const packRadius = 35; // How spread out enemies are within a pack
 
+            const patrolConfig = usePatrol && typeof PatrolBehavior !== 'undefined'
+                ? PatrolBehavior.createPatrolConfigForPack(packCenterX, packCenterY, packRadius)
+                : null;
+
+            // One modifier per pack, chosen from the full pool
+            const allModifierNames = Object.keys(GameConfig.packModifiers || {});
+            const packModifier = allModifierNames.length > 0
+                ? allModifierNames[Utils.randomInt(0, allModifierNames.length - 1)]
+                : null;
+
             let enemiesSpawnedInPack = 0;
             const packMaxAttempts = enemiesInPack * 5;
             let packAttempts = 0;
@@ -158,7 +183,7 @@ class EnemyManager {
                 if (!obstacleManager || obstacleManager.canMoveTo(clampedX, clampedY, 25, 25)) {
                     const types = enemyTypes && enemyTypes.length > 0 ? enemyTypes : ['goblin', 'goblin', 'skeleton', 'greaterDemon'];
                     const randomType = types[Utils.randomInt(0, types.length - 1)];
-                    this.spawnEnemy(clampedX, clampedY, randomType, entityManager);
+                    this.spawnEnemy(clampedX, clampedY, randomType, entityManager, patrolConfig, packModifier);
                     enemiesSpawnedInPack++;
                 }
             }
@@ -171,12 +196,21 @@ class EnemyManager {
 
     /**
      * Spawn a single pack at a given center (for scene-tile spawn hints).
+     * @param {Object} [options] - Optional. { patrol: true } to give this pack a shared patrol path.
      */
-    spawnPackAt(centerX, centerY, radius, packSize, entityManager, obstacleManager, enemyTypes) {
+    spawnPackAt(centerX, centerY, radius, packSize, entityManager, obstacleManager, enemyTypes, options = null) {
         const size = typeof packSize === 'object'
             ? Utils.randomInt(packSize.min || 2, packSize.max || 4)
             : Math.max(1, packSize);
         const packRadius = Math.min(radius, 80);
+        const usePatrol = options && options.patrol === true;
+        const patrolConfig = usePatrol && typeof PatrolBehavior !== 'undefined'
+            ? PatrolBehavior.createPatrolConfigForPack(centerX, centerY, packRadius)
+            : null;
+        const allModifierNames = Object.keys(GameConfig.packModifiers || {});
+        const packModifier = allModifierNames.length > 0
+            ? allModifierNames[Utils.randomInt(0, allModifierNames.length - 1)]
+            : null;
         let spawned = 0;
         const maxAttempts = size * 8;
         for (let a = 0; a < maxAttempts && spawned < size; a++) {
@@ -187,7 +221,7 @@ class EnemyManager {
             if (!obstacleManager || obstacleManager.canMoveTo(x, y, 25, 25)) {
                 const types = enemyTypes && enemyTypes.length > 0 ? enemyTypes : ['goblin'];
                 const type = types[Utils.randomInt(0, types.length - 1)];
-                this.spawnEnemy(x, y, type, entityManager);
+                this.spawnEnemy(x, y, type, entityManager, patrolConfig, packModifier);
                 spawned++;
             }
         }
@@ -209,6 +243,7 @@ class EnemyManager {
         const worldHeight = (levelConfig.worldHeight != null) ? levelConfig.worldHeight : worldConfig.height;
         const packConfig = levelConfig.packSpawn;
         const enemyTypes = levelConfig.enemyTypes || null;
+        const packOptions = packConfig.patrol ? { patrol: true } : null;
         this.generateEnemyPacks(
             worldWidth,
             worldHeight,
@@ -216,7 +251,8 @@ class EnemyManager {
             packConfig.packSize,
             entityManager,
             obstacleManager,
-            enemyTypes
+            enemyTypes,
+            packOptions
         );
 
         // Scene-tile spawn hints: extra packs on tiles that define spawn (e.g. goblinCamp, banditAmbush)
@@ -231,6 +267,7 @@ class EnemyManager {
                 const centerX = cell.originX + tileSize / 2;
                 const centerY = cell.originY + tileSize / 2;
                 const count = (tile.spawn.count != null && tile.spawn.count > 0) ? tile.spawn.count : 1;
+                const packOptions = packConfig.patrol ? { patrol: true } : null;
                 for (let i = 0; i < count; i++) {
                     this.spawnPackAt(
                         centerX, centerY,
@@ -238,7 +275,8 @@ class EnemyManager {
                         packConfig.packSize,
                         entityManager,
                         obstacleManager,
-                        enemyTypes
+                        enemyTypes,
+                        packOptions
                     );
                 }
             }
@@ -248,11 +286,15 @@ class EnemyManager {
     update(deltaTime, systems) {
         const entityManager = systems.get('entities');
         const obstacleManager = systems.get('obstacles');
-        
+        const packConfig = GameConfig.enemy.pack || { radius: 180, minAllies: 2 };
+        const packRadius = packConfig.radius;
+        const minAllies = packConfig.minAllies;
+        const packModifiers = GameConfig.packModifiers || {};
+
         // Update all enemies
         for (let i = this.enemies.length - 1; i >= 0; i--) {
             const enemy = this.enemies[i];
-            
+
             const health = enemy.getComponent(Health);
             if (health && health.isDead) {
                 this.enemiesKilledThisLevel++;
@@ -261,6 +303,44 @@ class EnemyManager {
                 }
                 this.enemies.splice(i, 1);
                 continue;
+            }
+
+            // Pack modifier: count same-type allies in radius; apply or clear pack buff
+            const ai = enemy.getComponent(AI);
+            const statusEffects = enemy.getComponent(StatusEffects);
+            const transform = enemy.getComponent(Transform);
+            const modifierName = ai && ai.packModifierName ? ai.packModifierName : null;
+            if (modifierName && statusEffects && transform && packModifiers[modifierName]) {
+                let sameTypeCount = 0;
+                for (const other of this.enemies) {
+                    if (other === enemy) continue;
+                    const otherHealth = other.getComponent(Health);
+                    if (otherHealth && otherHealth.isDead) continue;
+                    const otherAI = other.getComponent(AI);
+                    const otherTransform = other.getComponent(Transform);
+                    if (!otherAI || otherAI.enemyType !== ai.enemyType || !otherTransform) continue;
+                    const dist = Utils.distance(transform.x, transform.y, otherTransform.x, otherTransform.y);
+                    if (dist <= packRadius) sameTypeCount++;
+                }
+                if (sameTypeCount >= minAllies) {
+                    const def = packModifiers[modifierName];
+                    const stats = {
+                        speedMultiplier: def.speedMultiplier,
+                        damageMultiplier: def.damageMultiplier,
+                        knockbackResist: def.knockbackResist,
+                        attackCooldownMultiplier: def.attackCooldownMultiplier,
+                        stunBuildupPerHitMultiplier: def.stunBuildupPerHitMultiplier,
+                        detectionRangeMultiplier: def.detectionRangeMultiplier
+                    };
+                    if (modifierName === 'frenzied' && def.speedPerAlly != null) {
+                        stats.speedMultiplier = 1 + sameTypeCount * (def.speedPerAlly || 0);
+                    }
+                    statusEffects.setPackBuff(modifierName, stats);
+                } else {
+                    statusEffects.clearPackBuff();
+                }
+            } else if (statusEffects && statusEffects.packModifierName) {
+                statusEffects.clearPackBuff();
             }
         }
     }
@@ -421,6 +501,8 @@ class EnemyManager {
                         ? enemyCombat.goblinAttack.lungeDamage
                         : (enemyCombat.enemyAttack ? enemyCombat.enemyAttack.lungeDamage : enemyCombat.attackDamage);
                     let finalDamage = lungeDamage;
+                    const attackerStatusLunge = enemy.getComponent(StatusEffects);
+                    if (attackerStatusLunge && attackerStatusLunge.packDamageMultiplier != null) finalDamage *= attackerStatusLunge.packDamageMultiplier;
                     let blocked = false;
                     if (playerCombat && playerCombat.isBlocking && playerMovement) {
                         const attackAngle = Utils.angleTo(
@@ -437,7 +519,9 @@ class EnemyManager {
                     playerHealth.takeDamage(finalDamage, blocked);
                     const playerStatus = player.getComponent(StatusEffects);
                     if (playerStatus) {
-                        const baseStun = enemyConfig.stunBuildupPerHit ?? 0;
+                        let baseStun = enemyConfig.stunBuildupPerHit ?? 0;
+                        const packStunMult = attackerStatusLunge && attackerStatusLunge.packStunBuildupMultiplier != null ? attackerStatusLunge.packStunBuildupMultiplier : 1;
+                        baseStun *= packStunMult;
                         const mult = blocked ? (GameConfig.player.stun?.blockedMultiplier ?? 0.5) : 1;
                         playerStatus.addStunBuildup(baseStun * mult);
                     }
@@ -462,16 +546,28 @@ class EnemyManager {
                     enemyTransform.x, enemyTransform.y,
                     playerTransform.x, playerTransform.y
                 );
-                // Demon uses arc from combo stage; others use distance only
+                // Demon, chieftain, and final boss use arc/release phase or AOE; others use distance only
                 const isDemon = enemyCombat.demonAttack != null;
-                const inRange = currentDist < enemyCombat.attackRange;
-                const inArc = isDemon && enemyMovement
+                const isChieftain = enemyCombat.chieftainAttack != null;
+                const isFinalBoss = enemyCombat.finalBossAttack != null;
+                const inRange = isFinalBoss && enemyCombat.finalBossAttack.isCircularAttack
+                    ? currentDist < (enemyCombat.finalBossAttack.stompRadius || 180)
+                    : currentDist < enemyCombat.attackRange;
+                const inArc = (isDemon || isChieftain) && enemyMovement
+                    ? Utils.pointInArc(playerTransform.x, playerTransform.y, enemyTransform.x, enemyTransform.y, enemyMovement.facingAngle, enemyCombat.attackArc, enemyCombat.attackRange)
+                    : (isFinalBoss && !enemyCombat.finalBossAttack.isCircularAttack) && enemyMovement
                     ? Utils.pointInArc(playerTransform.x, playerTransform.y, enemyTransform.x, enemyTransform.y, enemyMovement.facingAngle, enemyCombat.attackArc, enemyCombat.attackRange)
                     : inRange;
-                // Demon claw only hits during the release phase (after charge-up)
                 const demonCanHit = !isDemon || enemyCombat.demonAttack.isInReleasePhase;
-                if (inRange && inArc && demonCanHit) {
+                const chieftainCanHit = !isChieftain || enemyCombat.chieftainAttack.isInReleasePhase;
+                const finalBossCanHit = !isFinalBoss || enemyCombat.finalBossAttack.isInReleasePhase;
+                if (inRange && inArc && demonCanHit && chieftainCanHit && finalBossCanHit) {
                     let finalDamage = enemyCombat.attackDamage;
+                    const attackerStatus = enemy.getComponent(StatusEffects);
+                    if (attackerStatus && (performance.now() / 1000) < attackerStatus.buffedUntil) {
+                        finalDamage *= (attackerStatus.damageMultiplier || 1);
+                    }
+                    if (attackerStatus && attackerStatus.packDamageMultiplier != null) finalDamage *= attackerStatus.packDamageMultiplier;
                     let blocked = false;
 
                     // Check if player is blocking and can block this attack
@@ -494,7 +590,11 @@ class EnemyManager {
                     const enemyConfigForStun = GameConfig.enemy.types[enemyTypeForStun] || GameConfig.enemy.types.goblin;
                     const playerStatus = player.getComponent(StatusEffects);
                     if (playerStatus) {
-                        const baseStun = enemyConfigForStun.stunBuildupPerHit ?? 0;
+                        let baseStun = enemyConfigForStun.stunBuildupPerHit ?? 0;
+                        if (attackerStatus && attackerStatus.packStunBuildupMultiplier != null) baseStun *= attackerStatus.packStunBuildupMultiplier;
+                        if (enemyCombat.finalBossAttack && enemyCombat.finalBossAttack.roarStunBuildup) {
+                            baseStun += enemyCombat.finalBossAttack.roarStunBuildup;
+                        }
                         const mult = blocked ? (GameConfig.player.stun?.blockedMultiplier ?? 0.5) : 1;
                         playerStatus.addStunBuildup(baseStun * mult);
                     }
@@ -502,7 +602,7 @@ class EnemyManager {
                     // Apply knockback only when not blocked (blocking stops push entirely)
                     if (playerMovement && !blocked) {
                         const knockbackConfig = enemyConfigForStun.knockback || { force: 160, decay: 0.88 };
-                        const baseForce = knockbackConfig.force;
+                        const baseForce = enemyCombat.currentAttackKnockbackForce ?? knockbackConfig.force;
                         const dx = playerTransform.x - enemyTransform.x;
                         const dy = playerTransform.y - enemyTransform.y;
                         playerMovement.applyKnockback(dx, dy, baseForce);
@@ -510,13 +610,17 @@ class EnemyManager {
 
                     if (enemyCombat.demonAttack) {
                         enemyCombat.demonAttack.markEnemyHit('player');
+                    } else if (enemyCombat.chieftainAttack) {
+                        enemyCombat.chieftainAttack.markEnemyHit('player');
+                    } else if (enemyCombat.finalBossAttack) {
+                        enemyCombat.finalBossAttack.markEnemyHit('player');
                     } else if (enemyCombat.goblinAttack) {
                         enemyCombat.goblinAttack.attackProcessed = true;
                     } else if (enemyCombat.enemyAttack) {
                         enemyCombat.enemyAttack.attackProcessed = true;
                     }
                 }
-                // Mark attack processed so this branch runs once per attack (for non-demon)
+                // Mark attack processed so this branch runs once per attack (for non-demon, non-chieftain)
                 if (enemyCombat.goblinAttack) {
                     enemyCombat.goblinAttack.attackProcessed = true;
                 } else if (enemyCombat.enemyAttack) {
@@ -549,8 +653,17 @@ class EnemyManager {
         }
         this.enemies = [];
         
+        this.finalBossSpawned = false;
         // Spawn enemies for the new level
         this.spawnLevelEnemies(level, entityManager, obstacleManager);
+    }
+
+    /** Spawn the final boss once (e.g. when objective complete on last level). Caller should set finalBossSpawned = true after. */
+    spawnFinalBoss(centerX, centerY, entityManager) {
+        if (this.finalBossSpawned) return null;
+        const boss = this.spawnEnemy(centerX, centerY, 'titanBoss', entityManager, null, null);
+        this.finalBossSpawned = true;
+        return boss;
     }
 
     getCurrentLevel() {

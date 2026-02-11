@@ -155,19 +155,33 @@ class PlayerMovement extends Movement {
                     }
                 }
             } else {
-                // Handle blocking - reduce speed while blocking
-                const combat = this.entity.getComponent(Combat);
-                if (combat && combat.isBlocking) {
-                    this.speed = this.baseSpeed * 0.5; // 50% speed while blocking
+                // Handle healing - 50% speed while drinking/regening
+                const healing = this.entity.getComponent(PlayerHealing);
+                if (healing && healing.isHealing) {
+                    this.speed = this.baseSpeed * 0.5;
+                    // Re-apply speed to current velocity (velocity is only set on key events, so cap it every frame)
+                    const mag = Math.sqrt(this.velocityX * this.velocityX + this.velocityY * this.velocityY);
+                    if (mag > 0.01) {
+                        const scale = this.speed / mag;
+                        this.velocityX *= scale;
+                        this.velocityY *= scale;
+                    }
                 }
-                // Handle sprinting - set speed first, then check stamina after movement is updated
+                // Handle blocking - reduce speed while blocking
                 else {
+                    const combat = this.entity.getComponent(Combat);
+                    if (combat && combat.isBlocking) {
+                        this.speed = this.baseSpeed * 0.5; // 50% speed while blocking
+                    }
+                    // Handle sprinting - set speed first, then check stamina after movement is updated
+                    else {
                     const stamina = this.entity.getComponent(Stamina);
                     if (this.isSprinting && stamina) {
                         // Set sprint speed (will be used by updateMovement)
                         this.speed = this.baseSpeed * this.sprintMultiplier;
                     } else if (!this.isSprinting) {
                         this.speed = this.baseSpeed;
+                    }
                     }
                 }
             }
@@ -181,7 +195,8 @@ class PlayerMovement extends Movement {
             if (!this.isDodging && !this.isAttackDashing && !this.isKnockedBack) {
                 const stamina = this.entity.getComponent(Stamina);
                 const combat = this.entity.getComponent(Combat);
-                if (this.isSprinting && stamina && (!combat || !combat.isBlocking)) {
+                const healing = this.entity.getComponent(PlayerHealing);
+                if (this.isSprinting && stamina && (!combat || !combat.isBlocking) && (!healing || !healing.isHealing)) {
                     // Check if player is actually moving (has non-zero velocity)
                     const isMoving = Math.abs(this.velocityX) > 0.1 || Math.abs(this.velocityY) > 0.1;
                     

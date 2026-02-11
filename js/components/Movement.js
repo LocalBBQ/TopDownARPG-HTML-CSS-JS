@@ -50,6 +50,14 @@ class Movement {
             } else {
                 this.speed = this.baseSpeed;
             }
+            // War cry buff (enemies): temporary speed multiplier from goblin chieftain
+            const statusEffects = this.entity.getComponent(StatusEffects);
+            if (statusEffects && (performance.now() / 1000) < statusEffects.buffedUntil) {
+                this.speed *= (statusEffects.speedMultiplier || 1);
+            }
+            if (statusEffects && statusEffects.packSpeedMultiplier != null && statusEffects.packSpeedMultiplier !== 1) {
+                this.speed *= statusEffects.packSpeedMultiplier;
+            }
         }
 
         // Let subclasses handle their specific movement logic
@@ -251,6 +259,17 @@ class Movement {
     }
 
     applyKnockback(forceX, forceY, force = 200) {
+        // Percentage-based knockback resistance (0 = none, 1 = immune)
+        let effectiveForce = force;
+        const statusEffects = this.entity ? this.entity.getComponent(StatusEffects) : null;
+        if (statusEffects) {
+            let resist = statusEffects.knockbackResist != null ? statusEffects.knockbackResist : 0;
+            if (statusEffects.packKnockbackResist != null) resist += statusEffects.packKnockbackResist;
+            resist = Math.max(0, Math.min(1, resist));
+            effectiveForce = force * (1 - resist);
+        }
+        if (effectiveForce <= 0) return;
+
         // Normalize direction and apply force
         const distance = Math.sqrt(forceX * forceX + forceY * forceY);
         if (distance > 0) {
@@ -258,8 +277,8 @@ class Movement {
             const normalizedY = forceY / distance;
             
             this.isKnockedBack = true;
-            this.knockbackVelocityX = normalizedX * force;
-            this.knockbackVelocityY = normalizedY * force;
+            this.knockbackVelocityX = normalizedX * effectiveForce;
+            this.knockbackVelocityY = normalizedY * effectiveForce;
             
             // Cancel any existing movement
             this.cancelPath();

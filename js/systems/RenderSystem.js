@@ -256,32 +256,38 @@ class RenderSystem {
         
         const cx = screenX + w / 2;
         const cy = screenY + h / 2;
-        const promptY = cy - h / 2 - 30; // Position above the portal
-        
-        // Draw background for text (semi-transparent dark background)
-        const text = 'Press E to interact';
         this.ctx.font = 'bold 18px Arial';
         this.ctx.textAlign = 'center';
         this.ctx.textBaseline = 'middle';
-        const textMetrics = this.ctx.measureText(text);
         const padding = 12;
-        const bgWidth = textMetrics.width + padding * 2;
-        const bgHeight = 28;
+        const lineHeight = 24;
+        const hasNext = portal.hasNextLevel === true;
+        const lines = [];
+        if (hasNext) lines.push('E Next area');
+        lines.push('B Return to Sanctuary');
+        const textMetrics = lines.map(t => this.ctx.measureText(t));
+        const bgWidth = Math.max(...textMetrics.map(m => m.width)) + padding * 2;
+        const bgHeight = lines.length * lineHeight + padding;
+        const promptY = cy - h / 2 - 20 - (lines.length * lineHeight) / 2;
         const bgX = cx - bgWidth / 2;
-        const bgY = promptY - bgHeight / 2;
+        const bgY = promptY - padding;
         
-        // Draw background with rounded corners effect
         this.ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
         this.ctx.fillRect(bgX, bgY, bgWidth, bgHeight);
         this.ctx.strokeStyle = 'rgba(180, 140, 255, 0.9)';
         this.ctx.lineWidth = 2;
         this.ctx.strokeRect(bgX, bgY, bgWidth, bgHeight);
         
-        // Draw text with shadow for visibility
         this.ctx.fillStyle = 'rgba(0, 0, 0, 0.8)';
-        this.ctx.fillText(text, cx + 1, promptY + 1);
+        lines.forEach((text, i) => {
+            const y = promptY + i * lineHeight;
+            this.ctx.fillText(text, cx + 1, y + 1);
+        });
         this.ctx.fillStyle = '#e8dcc8';
-        this.ctx.fillText(text, cx, promptY);
+        lines.forEach((text, i) => {
+            const y = promptY + i * lineHeight;
+            this.ctx.fillText(text, cx, y);
+        });
     }
 
     renderBoard(board, camera) {
@@ -329,6 +335,59 @@ class RenderSystem {
         this.ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
         this.ctx.fillRect(bgX, bgY, bgWidth, bgHeight);
         this.ctx.strokeStyle = '#c9a227';
+        this.ctx.lineWidth = 2;
+        this.ctx.strokeRect(bgX, bgY, bgWidth, bgHeight);
+        this.ctx.fillStyle = '#e8dcc8';
+        this.ctx.fillText(text, cx, promptY);
+    }
+
+    renderChest(chest, camera) {
+        if (!chest) return;
+        const screenX = camera.toScreenX(chest.x);
+        const screenY = camera.toScreenY(chest.y);
+        const w = chest.width * camera.zoom;
+        const h = chest.height * camera.zoom;
+        if (screenX + w < 0 || screenX > this.canvas.width || screenY + h < 0 || screenY > this.canvas.height) return;
+        this.ctx.fillStyle = '#3d2914';
+        this.ctx.fillRect(screenX, screenY, w, h);
+        this.ctx.strokeStyle = '#8b6914';
+        this.ctx.lineWidth = 3 / camera.zoom;
+        this.ctx.strokeRect(screenX, screenY, w, h);
+        this.ctx.fillStyle = '#5c3d1e';
+        this.ctx.fillRect(screenX + 4, screenY + 4, w - 8, h * 0.4);
+        this.ctx.strokeStyle = '#c9a227';
+        this.ctx.lineWidth = 2 / camera.zoom;
+        this.ctx.strokeRect(screenX + 4, screenY + 4, w - 8, h * 0.4);
+        this.ctx.fillStyle = '#e8dcc8';
+        this.ctx.font = '600 12px Cinzel, Georgia, serif';
+        this.ctx.textAlign = 'center';
+        this.ctx.textBaseline = 'middle';
+        this.ctx.fillText('Weapons', screenX + w / 2, screenY + h / 2);
+    }
+
+    renderChestInteractionPrompt(chest, camera, playerNearChest) {
+        if (!chest || !playerNearChest) return;
+        const screenX = camera.toScreenX(chest.x);
+        const screenY = camera.toScreenY(chest.y);
+        const w = chest.width * camera.zoom;
+        const h = chest.height * camera.zoom;
+        if (screenX + w < 0 || screenX > this.canvas.width || screenY + h < 0 || screenY > this.canvas.height) return;
+        const cx = screenX + w / 2;
+        const cy = screenY + h / 2;
+        const promptY = cy - h / 2 - 28;
+        const text = 'Press E to change weapon';
+        this.ctx.font = 'bold 16px Arial';
+        this.ctx.textAlign = 'center';
+        this.ctx.textBaseline = 'middle';
+        const textMetrics = this.ctx.measureText(text);
+        const padding = 10;
+        const bgWidth = textMetrics.width + padding * 2;
+        const bgHeight = 24;
+        const bgX = cx - bgWidth / 2;
+        const bgY = promptY - bgHeight / 2;
+        this.ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+        this.ctx.fillRect(bgX, bgY, bgWidth, bgHeight);
+        this.ctx.strokeStyle = '#8b6914';
         this.ctx.lineWidth = 2;
         this.ctx.strokeRect(bgX, bgY, bgWidth, bgHeight);
         this.ctx.fillStyle = '#e8dcc8';
@@ -563,6 +622,79 @@ class RenderSystem {
         this.renderEntityEffects(entity, camera, screenX, screenY);
     }
 
+    // Draw healing vial for player when drinking/regening (used by both sprite path and renderPlayer path)
+    // Position and rotation follow the player's facing so the potion stays in front.
+    drawHealingVialIfActive(entity, camera, screenX, screenY, transform) {
+        const renderable = entity.getComponent(Renderable);
+        const healing = entity.getComponent(PlayerHealing);
+        const movement = entity.getComponent(Movement);
+        if (!transform || !(entity.id === 'player' || (renderable && renderable.type === 'player')) || !healing || !healing.isHealing) return;
+        const z = camera.zoom;
+        const vialW = 8 * z;
+        const vialH = 14 * z;
+        const facingAngle = movement ? movement.facingAngle : 0;
+        const offsetDist = (transform.height / 2 + 12) * z;
+        const vialCenterX = screenX + Math.cos(facingAngle) * offsetDist;
+        const vialCenterY = screenY + Math.sin(facingAngle) * offsetDist;
+        this.ctx.save();
+        this.ctx.translate(vialCenterX, vialCenterY);
+        this.ctx.rotate(facingAngle);
+        const left = -vialW / 2;
+        const top = -vialH / 2;
+        this.ctx.strokeStyle = '#3d1a1a';
+        this.ctx.lineWidth = Math.max(1, 1.5 * z);
+        this.ctx.fillStyle = '#2a0a0a';
+        this.ctx.fillRect(left, top, vialW, vialH);
+        this.ctx.strokeRect(left, top, vialW, vialH);
+        this.ctx.fillStyle = '#c03030';
+        const fillInset = 1.5 * z;
+        this.ctx.fillRect(left + fillInset, top + fillInset, vialW - 2 * fillInset, vialH - 2 * fillInset);
+        this.ctx.restore();
+    }
+
+    /** Draw a single modifier tag (pill background + colored text) above an enemy. */
+    drawModifierTag(screenX, textBaselineY, text, color, camera) {
+        const fontSize = 11;
+        const paddingH = 6;
+        const paddingV = 3;
+        this.ctx.font = `${fontSize}px sans-serif`;
+        const tw = this.ctx.measureText(text).width;
+        const pillW = tw + paddingH * 2;
+        const pillH = fontSize + paddingV * 2;
+        const pillX = screenX - pillW / 2;
+        const pillY = textBaselineY - pillH;
+        const radius = Math.min(pillH / 2, 8);
+        this.ctx.save();
+        this.ctx.fillStyle = 'rgba(0, 0, 0, 0.8)';
+        this.ctx.strokeStyle = color;
+        this.ctx.lineWidth = 1.5;
+        if (this.ctx.roundRect) {
+            this.ctx.beginPath();
+            this.ctx.roundRect(pillX, pillY, pillW, pillH, radius);
+            this.ctx.fill();
+            this.ctx.stroke();
+        } else {
+            this.ctx.beginPath();
+            this.ctx.moveTo(pillX + radius, pillY);
+            this.ctx.lineTo(pillX + pillW - radius, pillY);
+            this.ctx.quadraticCurveTo(pillX + pillW, pillY, pillX + pillW, pillY + radius);
+            this.ctx.lineTo(pillX + pillW, pillY + pillH - radius);
+            this.ctx.quadraticCurveTo(pillX + pillW, pillY + pillH, pillX + pillW - radius, pillY + pillH);
+            this.ctx.lineTo(pillX + radius, pillY + pillH);
+            this.ctx.quadraticCurveTo(pillX, pillY + pillH, pillX, pillY + pillH - radius);
+            this.ctx.lineTo(pillX, pillY + radius);
+            this.ctx.quadraticCurveTo(pillX, pillY, pillX + radius, pillY);
+            this.ctx.closePath();
+            this.ctx.fill();
+            this.ctx.stroke();
+        }
+        this.ctx.fillStyle = color;
+        this.ctx.textAlign = 'center';
+        this.ctx.textBaseline = 'bottom';
+        this.ctx.fillText(text, screenX, textBaselineY);
+        this.ctx.restore();
+    }
+
     // Render additional effects for entities (shadows, health bars, etc.)
     renderEntityEffects(entity, camera, screenX, screenY) {
         const transform = entity.getComponent(Transform);
@@ -570,6 +702,8 @@ class RenderSystem {
         const combat = entity.getComponent(Combat);
         const movement = entity.getComponent(Movement);
         const renderable = entity.getComponent(Renderable);
+        const healing = entity.getComponent(PlayerHealing);
+        const statusEffects = entity.getComponent(StatusEffects);
 
         // Draw shadow
         this.ctx.fillStyle = 'rgba(0, 0, 0, 0.3)';
@@ -583,12 +717,38 @@ class RenderSystem {
         );
         this.ctx.fill();
 
-        // Draw health bar if health is not full (and for player, always show bar area for stun below)
+        // Draw healing vial (player drinking) — after shadow so it appears in front
+        this.drawHealingVialIfActive(entity, camera, screenX, screenY, transform);
+
+        // Draw health bar (player stun buildup is in corner UI under SP)
         const isPlayer = renderable && renderable.type === 'player';
         const barWidth = isPlayer ? 40 * camera.zoom : 30 * camera.zoom;
         const barHeight = isPlayer ? 5 * camera.zoom : 4 * camera.zoom;
         const barX = screenX - barWidth / 2;
         const barY = screenY - (transform.height + (isPlayer ? 10 : 8)) * camera.zoom;
+
+        // Modifier labels above head for enemies (pack modifier, war cry, etc.) — sprite path
+        if (!isPlayer && statusEffects) {
+            const modifierLabels = [];
+            if (statusEffects.packModifierName) {
+                const packModifiers = GameConfig.packModifiers || {};
+                const modDef = packModifiers[statusEffects.packModifierName];
+                const color = modDef && modDef.color ? modDef.color : '#ffffff';
+                const text = statusEffects.packModifierName.charAt(0).toUpperCase() + statusEffects.packModifierName.slice(1);
+                modifierLabels.push({ text, color });
+            }
+            const now = performance.now() / 1000;
+            if (statusEffects.buffedUntil != null && now < statusEffects.buffedUntil) {
+                modifierLabels.push({ text: 'War Cry', color: '#ffaa00' });
+            }
+            if (modifierLabels.length > 0) {
+                const lineHeight = 16;
+                modifierLabels.forEach((item, i) => {
+                    const labelY = barY - 2 * camera.zoom - i * lineHeight;
+                    this.drawModifierTag(screenX, labelY, item.text, item.color, camera);
+                });
+            }
+        }
 
         if (health && health.percent < 1) {
             this.ctx.fillStyle = '#333';
@@ -605,7 +765,6 @@ class RenderSystem {
         }
 
         // Under health: stamina bar for player, stun bar for enemies
-        const statusEffects = entity.getComponent(StatusEffects);
         const stamina = entity.getComponent(Stamina);
         if (isPlayer && stamina) {
             const gap = 2 * camera.zoom;
@@ -648,12 +807,14 @@ class RenderSystem {
             this.ctx.restore();
         }
 
-        // Player: attack arc, crossbow, sword, shield (only when character sprites are OFF — when ON, sprite art includes the weapon)
+        // Player: attack arc, crossbow, sword, shield (only when character sprites are OFF and not healing — when ON, sprite art includes the weapon)
         if (renderable && renderable.type === 'player') {
             const useCharacterSprites = !this.settings || this.settings.useCharacterSprites !== false;
             const weapon = combat && combat.playerAttack ? combat.playerAttack.weapon : null;
             const isCrossbow = weapon && weapon.isRanged === true;
-            if (!useCharacterSprites) {
+            const isMace = weapon && weapon.name === 'mace';
+            const showWeapon = !healing || !healing.isHealing;
+            if (!useCharacterSprites && showWeapon) {
                 const isMeleeSpin = combat && combat.isAttacking && combat.currentAttackAnimationKey === 'meleeSpin';
                 if (isMeleeSpin) {
                     this.ctx.save();
@@ -666,6 +827,8 @@ class RenderSystem {
                         }
                         if (isCrossbow && combat && movement && transform) {
                             PlayerCombatRenderer.drawCrossbow(this.ctx, screenX, screenY, transform, movement, combat, camera);
+                        } else if (isMace && combat && movement && transform) {
+                            PlayerCombatRenderer.drawMace(this.ctx, screenX, screenY, transform, movement, combat, camera);
                         } else if (combat && movement && transform) {
                             PlayerCombatRenderer.drawSword(this.ctx, screenX, screenY, transform, movement, combat, camera);
                             PlayerCombatRenderer.drawShield(this.ctx, screenX, screenY, transform, movement, combat, camera);
@@ -679,6 +842,8 @@ class RenderSystem {
                     }
                     if (isCrossbow && combat && movement && transform) {
                         PlayerCombatRenderer.drawCrossbow(this.ctx, screenX, screenY, transform, movement, combat, camera);
+                    } else if (isMace && combat && movement && transform) {
+                        PlayerCombatRenderer.drawMace(this.ctx, screenX, screenY, transform, movement, combat, camera);
                     } else if (combat && movement && transform) {
                         PlayerCombatRenderer.drawSword(this.ctx, screenX, screenY, transform, movement, combat, camera);
                         PlayerCombatRenderer.drawShield(this.ctx, screenX, screenY, transform, movement, combat, camera);
@@ -713,26 +878,7 @@ class RenderSystem {
                 this.ctx.fillStyle = '#4a6040';
                 this.ctx.fillRect(pBarX, reloadBarY, pBarWidth * progress, reloadBarHeight);
             }
-            // Stun duration bar (sprite path): below stamina / reload when stunned
-            if (statusEffects && statusEffects.isStunned) {
-                const gap = 3 * camera.zoom;
-                const pBarY = screenY - (transform.height + 10) * camera.zoom;
-                const pBarHeight = 5 * camera.zoom;
-                let stunDurBarY = pBarY + pBarHeight + gap;
-                if (stamina) stunDurBarY += (4 * camera.zoom) + gap;
-                if (isCrossbow && crossbowConfig) stunDurBarY += (4 * camera.zoom) + gap;
-                const stunDurBarHeight = 3 * camera.zoom;
-                const stunDurBarW = 40 * camera.zoom;
-                const stunDurBarX = screenX - stunDurBarW / 2;
-                this.ctx.fillStyle = '#2a1a0a';
-                this.ctx.fillRect(stunDurBarX, stunDurBarY, stunDurBarW, stunDurBarHeight);
-                this.ctx.strokeStyle = '#4a3020';
-                this.ctx.lineWidth = 1 / camera.zoom;
-                this.ctx.strokeRect(stunDurBarX, stunDurBarY, stunDurBarW, stunDurBarHeight);
-                const stunRemain = statusEffects.stunDurationPercentRemaining;
-                this.ctx.fillStyle = '#ffaa00';
-                this.ctx.fillRect(stunDurBarX, stunDurBarY, stunDurBarW * stunRemain, stunDurBarHeight);
-            }
+            // Stun duration bar only in corner UI (under SP), not in-world
             // Charge attack meter (sprite path + sanctuary): vertical bar on left of player when holding attack
             const inputSystem = this.systems ? this.systems.get('input') : null;
             if (inputSystem && inputSystem.isCharging && transform) {
@@ -770,7 +916,12 @@ class RenderSystem {
         const combat = entity.getComponent(Combat);
         const health = entity.getComponent(Health);
         const renderable = entity.getComponent(Renderable);
+        const healing = entity.getComponent(PlayerHealing);
+        const showWeapon = !healing || !healing.isHealing;
         const inputSystem = this.systems ? this.systems.get('input') : null;
+        const weapon = combat && combat.playerAttack ? combat.playerAttack.weapon : null;
+        const isCrossbow = weapon && weapon.isRanged === true;
+        const isMace = weapon && weapon.name === 'mace';
 
         // Draw path if following one
         if (movement && movement.path.length > 0) {
@@ -873,13 +1024,15 @@ class RenderSystem {
         this.ctx.restore();
         this.ctx.globalAlpha = 1.0;
 
-        const weapon = combat && combat.playerAttack ? combat.playerAttack.weapon : null;
-        const isCrossbow = weapon && weapon.isRanged === true;
-        if (isCrossbow) {
-            PlayerCombatRenderer.drawCrossbow(this.ctx, screenX, screenY, transform, movement, combat, camera);
-        } else {
-            PlayerCombatRenderer.drawSword(this.ctx, screenX, screenY, transform, movement, combat, camera);
-            PlayerCombatRenderer.drawShield(this.ctx, screenX, screenY, transform, movement, combat, camera);
+        if (showWeapon) {
+            if (isCrossbow) {
+                PlayerCombatRenderer.drawCrossbow(this.ctx, screenX, screenY, transform, movement, combat, camera);
+            } else if (isMace) {
+                PlayerCombatRenderer.drawMace(this.ctx, screenX, screenY, transform, movement, combat, camera);
+            } else {
+                PlayerCombatRenderer.drawSword(this.ctx, screenX, screenY, transform, movement, combat, camera);
+                PlayerCombatRenderer.drawShield(this.ctx, screenX, screenY, transform, movement, combat, camera);
+            }
         }
             } finally {
                 this.ctx.restore();
@@ -938,15 +1091,20 @@ class RenderSystem {
         this.ctx.stroke();
         this.ctx.restore();
         this.ctx.globalAlpha = 1.0;
-        const weapon = combat && combat.playerAttack ? combat.playerAttack.weapon : null;
-        const isCrossbow = weapon && weapon.isRanged === true;
-        if (isCrossbow) {
-            PlayerCombatRenderer.drawCrossbow(this.ctx, screenX, screenY, transform, movement, combat, camera);
-        } else {
-            PlayerCombatRenderer.drawSword(this.ctx, screenX, screenY, transform, movement, combat, camera);
-            PlayerCombatRenderer.drawShield(this.ctx, screenX, screenY, transform, movement, combat, camera);
+        if (showWeapon) {
+            if (isCrossbow) {
+                PlayerCombatRenderer.drawCrossbow(this.ctx, screenX, screenY, transform, movement, combat, camera);
+            } else if (isMace) {
+                PlayerCombatRenderer.drawMace(this.ctx, screenX, screenY, transform, movement, combat, camera);
+            } else {
+                PlayerCombatRenderer.drawSword(this.ctx, screenX, screenY, transform, movement, combat, camera);
+                PlayerCombatRenderer.drawShield(this.ctx, screenX, screenY, transform, movement, combat, camera);
+            }
         }
         }
+
+        // Draw healing vial when drinking (non-sprite path doesn't call renderEntityEffects)
+        this.drawHealingVialIfActive(entity, camera, screenX, screenY, transform);
 
         // Draw health bar
         if (health) {
@@ -954,6 +1112,7 @@ class RenderSystem {
             const barHeight = 5 * camera.zoom;
             const barX = screenX - barWidth / 2;
             const barY = screenY - (transform.height + 10) * camera.zoom;
+            const statusEffects = entity.getComponent(StatusEffects);
 
             this.ctx.fillStyle = '#333';
             this.ctx.fillRect(barX, barY, barWidth, barHeight);
@@ -1024,22 +1183,7 @@ class RenderSystem {
                 barsBottomY = reloadBarY + reloadBarHeight;
             }
 
-            // Stun duration bar: appears below other bars while player is stunned (drains as time left)
-            const statusEffects = entity.getComponent(StatusEffects);
-            if (statusEffects && statusEffects.isStunned) {
-                const gap = 3 * camera.zoom;
-                const stunDurBarHeight = 3 * camera.zoom;
-                const stunDurBarY = barsBottomY + gap;
-                const stunDurBarW = barWidth;
-                this.ctx.fillStyle = '#2a1a0a';
-                this.ctx.fillRect(barX, stunDurBarY, stunDurBarW, stunDurBarHeight);
-                this.ctx.strokeStyle = '#4a3020';
-                this.ctx.lineWidth = 1 / camera.zoom;
-                this.ctx.strokeRect(barX, stunDurBarY, stunDurBarW, stunDurBarHeight);
-                const stunRemain = statusEffects.stunDurationPercentRemaining;
-                this.ctx.fillStyle = '#ffaa00';
-                this.ctx.fillRect(barX, stunDurBarY, stunDurBarW * stunRemain, stunDurBarHeight);
-            }
+            // Stun duration bar only in corner UI (under SP), not in-world
         }
         
         // Render charge meter if charging (vertical bar on left side of player)
@@ -1148,6 +1292,74 @@ class RenderSystem {
             this.ctx.stroke();
         }
 
+        // Draw chieftain heavy smash cone (arc in front) – dark green / bronze
+        if (combat && combat.chieftainAttack && combat.isAttacking) {
+            const range = (combat.attackRange || 86) * camera.zoom;
+            const arc = combat.attackArc != null ? combat.attackArc : Utils.degToRad(90);
+            const facingAngle = movement ? movement.facingAngle : 0;
+            const halfArc = arc / 2;
+            const startAngle = facingAngle - halfArc;
+            const endAngle = facingAngle + halfArc;
+            const chargeProgress = combat.chieftainAttack.chargeProgress || 0;
+            this.ctx.fillStyle = `rgba(30, 45, 25, ${0.15 + chargeProgress * 0.2})`;
+            this.ctx.beginPath();
+            this.ctx.arc(screenX, screenY, range, startAngle, endAngle);
+            this.ctx.lineTo(screenX, screenY);
+            this.ctx.closePath();
+            this.ctx.fill();
+            this.ctx.strokeStyle = 'rgba(60, 80, 40, 0.8)';
+            this.ctx.lineWidth = 3 / camera.zoom;
+            this.ctx.stroke();
+            this.ctx.strokeStyle = 'rgba(120, 100, 50, 0.7)';
+            this.ctx.lineWidth = Math.max(1, 1.5 / camera.zoom);
+            this.ctx.beginPath();
+            this.ctx.arc(screenX, screenY, range - 3 / camera.zoom, startAngle, endAngle);
+            this.ctx.stroke();
+        }
+
+        // Draw final boss telegraph: cone (sweep/crush/doubleSwipe) or circle (stomp/roar)
+        if (combat && combat.finalBossAttack && combat.isAttacking) {
+            const chargeProgress = combat.finalBossAttack.chargeProgress || 0;
+            const facingAngle = movement ? movement.facingAngle : 0;
+            const isRoar = combat.finalBossAttack.currentAttack === 'roar';
+            if (combat.finalBossAttack.isCircularAttack) {
+                const radius = (combat.finalBossAttack.stompRadius || 180) * camera.zoom;
+                if (isRoar) {
+                    this.ctx.fillStyle = `rgba(30, 15, 45, ${0.25 + chargeProgress * 0.35})`;
+                    this.ctx.strokeStyle = `rgba(120, 50, 180, ${0.5 + chargeProgress * 0.4})`;
+                } else {
+                    this.ctx.fillStyle = `rgba(40, 15, 15, ${0.2 + chargeProgress * 0.35})`;
+                    this.ctx.strokeStyle = `rgba(180, 50, 40, ${0.5 + chargeProgress * 0.4})`;
+                }
+                this.ctx.beginPath();
+                this.ctx.arc(screenX, screenY, radius, 0, Math.PI * 2);
+                this.ctx.fill();
+                this.ctx.lineWidth = 6 / camera.zoom;
+                this.ctx.stroke();
+            } else {
+                const range = (combat.attackRange || 220) * camera.zoom;
+                const arc = combat.attackArc != null ? combat.attackArc : Utils.degToRad(120);
+                const halfArc = arc / 2;
+                const startAngle = facingAngle - halfArc;
+                const endAngle = facingAngle + halfArc;
+                const isCrush = combat.finalBossAttack.currentAttack === 'crush';
+                if (isCrush) {
+                    this.ctx.fillStyle = `rgba(50, 10, 10, ${0.25 + chargeProgress * 0.35})`;
+                    this.ctx.strokeStyle = `rgba(200, 40, 40, ${0.6 + chargeProgress * 0.3})`;
+                } else {
+                    this.ctx.fillStyle = `rgba(35, 15, 20, ${0.2 + chargeProgress * 0.3})`;
+                    this.ctx.strokeStyle = `rgba(160, 50, 50, ${0.6 + chargeProgress * 0.3})`;
+                }
+                this.ctx.beginPath();
+                this.ctx.arc(screenX, screenY, range, startAngle, endAngle);
+                this.ctx.lineTo(screenX, screenY);
+                this.ctx.closePath();
+                this.ctx.fill();
+                this.ctx.lineWidth = 5 / camera.zoom;
+                this.ctx.stroke();
+            }
+        }
+
         // Draw lunge charge indicator
         if (ai && ai.isChargingLunge) {
             // Get lunge config to calculate progress
@@ -1204,8 +1416,8 @@ class RenderSystem {
             this.ctx.stroke();
         }
 
-        // Draw attack indicator (when attack actually happens) – arc in front; skip demon (drawn above); medieval steel
-        if (combat && combat.isAttacking && !combat.isWindingUp && !combat.demonAttack) {
+        // Draw attack indicator (when attack actually happens) – arc in front; skip demon/chieftain/finalBoss (drawn above); medieval steel
+        if (combat && combat.isAttacking && !combat.isWindingUp && !combat.demonAttack && !combat.chieftainAttack && !combat.finalBossAttack) {
             const facingAngle = movement ? movement.facingAngle : 0;
             const arc = combat.attackArc != null ? combat.attackArc : Utils.degToRad(90);
             const halfArc = arc / 2;
@@ -1228,14 +1440,16 @@ class RenderSystem {
             this.ctx.stroke();
         }
 
-        // Draw shadow
+        // Draw shadow (scale up for titan boss)
+        const enemyTypeForShadow = ai && ai.enemyType ? ai.enemyType : 'goblin';
+        const shadowScale = enemyTypeForShadow === 'titanBoss' ? 3.4 : 1;
         this.ctx.fillStyle = 'rgba(0, 0, 0, 0.3)';
         this.ctx.beginPath();
         this.ctx.ellipse(
             screenX,
-            screenY + (transform.height / 2 + 5) * camera.zoom,
-            (transform.width / 2) * camera.zoom,
-            (transform.height / 4) * camera.zoom,
+            screenY + (transform.height / 2 + 5) * camera.zoom * shadowScale,
+            (transform.width / 2) * camera.zoom * shadowScale,
+            (transform.height / 4) * camera.zoom * shadowScale,
             0, 0, Math.PI * 2
         );
         this.ctx.fill();
@@ -1294,6 +1508,48 @@ class RenderSystem {
             this.ctx.beginPath();
             this.ctx.arc(screenX - r * 0.35, screenY - h * 0.2, eyeSize, 0, Math.PI * 2);
             this.ctx.arc(screenX + r * 0.35, screenY - h * 0.2, eyeSize, 0, Math.PI * 2);
+            this.ctx.fill();
+        } else if (enemyType === 'goblinChieftain') {
+            // Goblin Chieftain: larger goblin, darker green, crown/helmet
+            this.ctx.fillStyle = bodyColor;
+            this.ctx.beginPath();
+            this.ctx.ellipse(screenX, screenY + h * 0.12, r * 1.0, h * 1.05, 0, 0, Math.PI * 2);
+            this.ctx.fill();
+            this.ctx.stroke();
+            this.ctx.fillStyle = bodyColor;
+            this.ctx.strokeStyle = strokeColor;
+            this.ctx.beginPath();
+            this.ctx.moveTo(screenX - r * 0.55, screenY - h * 0.55);
+            this.ctx.lineTo(screenX - r * 0.9, screenY - h * 1.05);
+            this.ctx.lineTo(screenX - r * 0.3, screenY - h * 0.45);
+            this.ctx.closePath();
+            this.ctx.fill();
+            this.ctx.stroke();
+            this.ctx.beginPath();
+            this.ctx.moveTo(screenX + r * 0.55, screenY - h * 0.55);
+            this.ctx.lineTo(screenX + r * 0.9, screenY - h * 1.05);
+            this.ctx.lineTo(screenX + r * 0.3, screenY - h * 0.45);
+            this.ctx.closePath();
+            this.ctx.fill();
+            this.ctx.stroke();
+            // Crown / helmet (gold-brown)
+            this.ctx.fillStyle = '#8b7355';
+            this.ctx.strokeStyle = '#5c4a38';
+            this.ctx.lineWidth = 2 / camera.zoom;
+            this.ctx.beginPath();
+            this.ctx.moveTo(screenX - r * 0.5, screenY - h * 0.95);
+            this.ctx.lineTo(screenX - r * 0.2, screenY - h * 1.25);
+            this.ctx.lineTo(screenX, screenY - h * 1.15);
+            this.ctx.lineTo(screenX + r * 0.2, screenY - h * 1.25);
+            this.ctx.lineTo(screenX + r * 0.5, screenY - h * 0.95);
+            this.ctx.closePath();
+            this.ctx.fill();
+            this.ctx.stroke();
+            const eyeSize = 2.8 / camera.zoom;
+            this.ctx.fillStyle = ai && ai.state === 'chase' ? '#ff3300' : '#1a1a0a';
+            this.ctx.beginPath();
+            this.ctx.arc(screenX - r * 0.32, screenY - h * 0.18, eyeSize, 0, Math.PI * 2);
+            this.ctx.arc(screenX + r * 0.32, screenY - h * 0.18, eyeSize, 0, Math.PI * 2);
             this.ctx.fill();
         } else if (enemyType === 'lesserDemon') {
             // Lesser demon: similar to goblin but darker/more demonic
@@ -1388,6 +1644,39 @@ class RenderSystem {
             this.ctx.arc(screenX + dr * 0.3, screenY - dh * 0.12, eyeSize, 0, Math.PI * 2);
             this.ctx.fill();
             this.ctx.shadowBlur = 0;
+        } else if (enemyType === 'titanBoss') {
+            // Final boss: ~10x chieftain scale (Monster Hunter–style) – massive silhouette
+            const scale = 3.4;
+            const R = r * scale;
+            const H = h * scale;
+            this.ctx.fillStyle = '#0d0508';
+            this.ctx.strokeStyle = strokeColor;
+            this.ctx.lineWidth = 4 / camera.zoom;
+            this.ctx.beginPath();
+            this.ctx.ellipse(screenX, screenY + H * 0.1, R * 1.2, H * 1.1, 0, 0, Math.PI * 2);
+            this.ctx.fill();
+            this.ctx.stroke();
+            this.ctx.fillStyle = '#1a0a0f';
+            this.ctx.beginPath();
+            this.ctx.moveTo(screenX - R * 0.5, screenY - H * 0.4);
+            this.ctx.lineTo(screenX - R * 1.0, screenY - H * 1.2);
+            this.ctx.lineTo(screenX - R * 0.35, screenY - H * 0.3);
+            this.ctx.closePath();
+            this.ctx.fill();
+            this.ctx.stroke();
+            this.ctx.beginPath();
+            this.ctx.moveTo(screenX + R * 0.5, screenY - H * 0.4);
+            this.ctx.lineTo(screenX + R * 1.0, screenY - H * 1.2);
+            this.ctx.lineTo(screenX + R * 0.35, screenY - H * 0.3);
+            this.ctx.closePath();
+            this.ctx.fill();
+            this.ctx.stroke();
+            this.ctx.fillStyle = combat && combat.isAttacking ? '#ff2222' : (ai && ai.state === 'chase' ? '#cc1111' : '#330a0a');
+            const eyeSize = 12 / camera.zoom;
+            this.ctx.beginPath();
+            this.ctx.arc(screenX - R * 0.28, screenY - H * 0.08, eyeSize, 0, Math.PI * 2);
+            this.ctx.arc(screenX + R * 0.28, screenY - H * 0.08, eyeSize, 0, Math.PI * 2);
+            this.ctx.fill();
         } else {
             this.ctx.fillStyle = bodyColor;
             this.ctx.beginPath();
@@ -1409,12 +1698,36 @@ class RenderSystem {
         const barX = screenX - barWidth / 2;
         const barY = screenY - (transform.height + 8) * camera.zoom;
 
+        // Modifier labels above head (pack modifier, war cry, etc.)
+        const statusEffectsForLabels = entity.getComponent(StatusEffects);
+        const modifierLabels = [];
+        if (statusEffectsForLabels) {
+            if (statusEffectsForLabels.packModifierName) {
+                const packModifiers = GameConfig.packModifiers || {};
+                const modDef = packModifiers[statusEffectsForLabels.packModifierName];
+                const color = modDef && modDef.color ? modDef.color : '#ffffff';
+                const text = statusEffectsForLabels.packModifierName.charAt(0).toUpperCase() + statusEffectsForLabels.packModifierName.slice(1);
+                modifierLabels.push({ text, color });
+            }
+            const now = performance.now() / 1000;
+            if (statusEffectsForLabels.buffedUntil != null && now < statusEffectsForLabels.buffedUntil) {
+                modifierLabels.push({ text: 'War Cry', color: '#ffaa00' });
+            }
+        }
+        if (modifierLabels.length > 0) {
+            const lineHeight = 16;
+            modifierLabels.forEach((item, i) => {
+                const labelY = barY - 2 * camera.zoom - i * lineHeight;
+                this.drawModifierTag(screenX, labelY, item.text, item.color, camera);
+            });
+        }
+
         if (health && health.percent < 1) {
             this.ctx.fillStyle = '#333';
             this.ctx.fillRect(barX, barY, barWidth, barHeight);
 
             const healthPercent = health.percent;
-            this.ctx.fillStyle = healthPercent > 0.5 ? '#44ff44' : 
+            this.ctx.fillStyle = healthPercent > 0.5 ? '#44ff44' :
                                 healthPercent > 0.25 ? '#ffff44' : '#ff4444';
             this.ctx.fillRect(barX, barY, barWidth * healthPercent, barHeight);
 
@@ -1547,23 +1860,19 @@ class RenderSystem {
             this.ctx.lineWidth = 2 / scale;
             this.ctx.stroke();
         }
-        
-        // Camera viewport: gold tint
-        const effectiveWidth = this.canvas.width / camera.zoom;
-        const effectiveHeight = this.canvas.height / camera.zoom;
-        this.ctx.strokeStyle = 'rgba(201, 162, 39, 0.4)';
-        this.ctx.lineWidth = 2 / scale;
-        this.ctx.strokeRect(camera.x, camera.y, effectiveWidth, effectiveHeight);
 
         this.ctx.restore();
 
         // Objective underneath minimap
         const objectiveText = isHub ? 'Approach the board and press E to select a level' : (() => {
+            if (portal && portal.spawned) {
+                return portal.hasNextLevel ? 'E Next area · B Return to Sanctuary' : 'B Return to Sanctuary';
+            }
             const enemyManager = this.systems ? this.systems.get('enemies') : null;
             const kills = enemyManager ? enemyManager.getEnemiesKilledThisLevel() : 0;
             const levelCfg = GameConfig.levels && GameConfig.levels[currentLevel];
             const required = (levelCfg && levelCfg.killsToUnlockPortal != null) ? levelCfg.killsToUnlockPortal : 0;
-            const hasPortalGoal = required > 0 && (GameConfig.levels[currentLevel + 1]);
+            const hasPortalGoal = required > 0;
             return hasPortalGoal
                 ? `Slay ${required} foes to open the portal (${kills}/${required})`
                 : (required > 0 ? `Foes felled: ${kills}` : '');

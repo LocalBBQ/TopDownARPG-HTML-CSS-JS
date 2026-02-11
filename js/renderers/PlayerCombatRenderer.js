@@ -157,6 +157,95 @@ const PlayerCombatRenderer = {
         ctx.restore();
     },
 
+    drawMace(ctx, screenX, screenY, transform, movement, combat, camera) {
+        if (!movement || !combat || !transform) return;
+        const zoom = camera.zoom;
+        const maceLength = (combat.attackRange || 100) * 0.5 * zoom * 1.5;
+        const sideOffset = (transform.width / 2 + 4) * zoom;
+        const gripX = screenX + Math.cos(movement.facingAngle + Math.PI / 2) * sideOffset;
+        const gripY = screenY + Math.sin(movement.facingAngle + Math.PI / 2) * sideOffset;
+        const animKey = combat.currentAttackAnimationKey || 'melee';
+        const isMeleeSpinWithPlayer = animKey === 'meleeSpin';
+        let maceAngle = movement.facingAngle;
+        if (combat.isAttacking && combat.attackDuration > 0 && !isMeleeSpinWithPlayer) {
+            const sweepProgress = this.getSweepProgress(combat);
+            if (combat.currentAttackIsCircular) {
+                maceAngle = movement.facingAngle + sweepProgress * Math.PI * 2;
+            } else {
+                const halfArc = (combat.attackArc || Math.PI / 3) / 2;
+                maceAngle = movement.facingAngle - halfArc + sweepProgress * (combat.attackArc || Math.PI / 3);
+            }
+        }
+        if (isMeleeSpinWithPlayer) {
+            maceAngle = movement.facingAngle + Math.PI / 2;
+        }
+        ctx.save();
+        ctx.translate(gripX, gripY);
+        ctx.rotate(maceAngle);
+        const lw = Math.max(1, 1 / zoom);
+
+        // Pommel / end cap (behind grip, -X)
+        const pommelX = -16 * zoom;
+        const pommelR = 4 * zoom;
+        ctx.fillStyle = '#4a4a52';
+        ctx.strokeStyle = '#3a3a42';
+        ctx.lineWidth = lw;
+        ctx.beginPath();
+        ctx.arc(pommelX, 0, pommelR, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+
+        // Grip (leather wrap)
+        const gripLen = 18 * zoom;
+        const gripW = 5 * zoom;
+        ctx.fillStyle = '#6b4423';
+        ctx.strokeStyle = '#4a2e14';
+        ctx.fillRect(pommelX, -gripW / 2, gripLen, gripW);
+        ctx.strokeRect(pommelX, -gripW / 2, gripLen, gripW);
+
+        // Shaft (metal), from grip to head
+        const shaftStart = pommelX + gripLen;
+        const shaftLen = maceLength * 0.5;
+        const shaftW = 4 * zoom;
+        ctx.fillStyle = '#5a5a62';
+        ctx.strokeStyle = '#3a3a42';
+        ctx.fillRect(shaftStart, -shaftW / 2, shaftLen, shaftW);
+        ctx.strokeRect(shaftStart, -shaftW / 2, shaftLen, shaftW);
+
+        // Mace head: flanged metal ball at end of shaft
+        const headCenterX = shaftStart + shaftLen;
+        const headR = 12 * zoom;
+        const flangeCount = 6;
+        const flangeOut = 3 * zoom;
+        ctx.fillStyle = '#4a4a52';
+        ctx.strokeStyle = '#2a2a32';
+        ctx.lineWidth = lw;
+        ctx.beginPath();
+        for (let i = 0; i <= flangeCount; i++) {
+            const a = (i / flangeCount) * Math.PI * 2;
+            const x = headCenterX + Math.cos(a) * (headR + flangeOut);
+            const y = Math.sin(a) * (headR + flangeOut);
+            if (i === 0) ctx.moveTo(x, y);
+            else ctx.lineTo(x, y);
+        }
+        ctx.closePath();
+        ctx.fill();
+        ctx.stroke();
+        ctx.fillStyle = '#5a5a62';
+        ctx.strokeStyle = '#3a3a42';
+        ctx.beginPath();
+        ctx.arc(headCenterX, 0, headR, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+        ctx.strokeStyle = 'rgba(180, 175, 165, 0.4)';
+        ctx.lineWidth = lw * 0.5;
+        ctx.beginPath();
+        ctx.arc(headCenterX, 0, headR - 2 * zoom, 0, Math.PI * 2);
+        ctx.stroke();
+
+        ctx.restore();
+    },
+
     drawCrossbow(ctx, screenX, screenY, transform, movement, combat, camera) {
         if (!movement || !combat || !transform) return;
         const zoom = camera.zoom;

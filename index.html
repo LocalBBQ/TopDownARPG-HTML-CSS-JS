@@ -25,9 +25,22 @@
                     </div>
                     <span id="stamina-text">50/50</span>
                 </div>
-            </div>
-            <div id="controls">
-                <p>WASD move · Shift sprint · Space dodge · L/R click attack · block · Shift+L click 360 slash · 1/2/3 weapon (1 sword&shield, 2 greatsword, 3 crossbow: L shoot, R reload) · E portal</p>
+                <div class="stat-bar stun-buildup">
+                    <label>Stun</label>
+                    <div class="bar-container">
+                        <div id="stun-bar" class="bar stun"></div>
+                    </div>
+                </div>
+                <div id="stun-duration-row" class="stat-bar stun-duration" style="display: none;">
+                    <label>Stunned</label>
+                    <div class="bar-container">
+                        <div id="stun-duration-bar" class="bar stun-duration-bar"></div>
+                    </div>
+                </div>
+                <div class="stat-bar heal-charges">
+                    <label>Heal</label>
+                    <span id="heal-charges">3/3</span>
+                </div>
             </div>
         </div>
     </div>
@@ -47,6 +60,7 @@
     <script src="js/weapons/Weapon.js"></script>
     <script src="js/weapons/SwordAndShield.js"></script>
     <script src="js/weapons/GreatswordWeapon.js"></script>
+    <script src="js/weapons/MaceWeapon.js"></script>
     <script src="js/weapons/CrossbowWeapon.js"></script>
     <script src="js/weapons/WeaponsRegistry.js"></script>
     <script src="js/weapons/PlayerAttack.js"></script>
@@ -54,12 +68,15 @@
     <script src="js/weapons/GoblinAttack.js"></script>
     <script src="js/weapons/SkeletonAttack.js"></script>
     <script src="js/weapons/DemonAttack.js"></script>
+    <script src="js/weapons/ChieftainAttack.js"></script>
+    <script src="js/weapons/TitanBossAttack.js"></script>
     
     <!-- Components -->
     <script src="js/components/Transform.js"></script>
     <script src="js/components/Health.js"></script>
     <script src="js/components/StatusEffects.js"></script>
     <script src="js/components/Stamina.js"></script>
+    <script src="js/components/PlayerHealing.js"></script>
     <script src="js/components/Movement.js"></script>
     <script src="js/components/PlayerMovement.js"></script>
     <script src="js/components/EnemyMovement.js"></script>

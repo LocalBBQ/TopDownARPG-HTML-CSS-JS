@@ -27,12 +27,19 @@ class Game {
             this.portal = null;
             this.portalUseCooldown = 0;
             this.playerNearPortal = false;
-            // Hub: level-select board (safe area, no enemies)
+            // Hub: level-select board and weapon chest (safe area, no enemies)
             this.board = null;
             this.boardOpen = false;
             this.boardUseCooldown = 0;
             this.playerNearBoard = false;
+            this.chest = null;
+            this.chestOpen = false;
+            this.chestUseCooldown = 0;
+            this.playerNearChest = false;
             this.hubSelectedLevel = 1;
+            this.screenBeforePause = null; // 'playing' | 'hub' when in pause/settings, for resume
+            // One weapon equipped at a time; switch only in sanctuary (hub board overlay)
+            this.equippedWeaponKey = (GameConfig.player && GameConfig.player.defaultWeapon) ? GameConfig.player.defaultWeapon : 'swordAndShield';
 
             // Game-wide settings (toggled from pause/settings screen)
             this.settings = {
@@ -604,8 +611,9 @@ class Game {
             .addComponent(new Health(config.maxHealth))
             .addComponent(new StatusEffects(true))
             .addComponent(new Stamina(config.maxStamina, config.staminaRegen))
+            .addComponent(new PlayerHealing())
             .addComponent(new PlayerMovement(config.speed))
-            .addComponent(new Combat(config.attackRange, config.attackDamage, Utils.degToRad(config.attackArcDegrees), config.attackCooldown, 0, true, Weapons[config.defaultWeapon] || Weapons.swordAndShield)) // isPlayer=true, weapon from config
+            .addComponent(new Combat(config.attackRange, config.attackDamage, Utils.degToRad(config.attackArcDegrees), config.attackCooldown, 0, true, Weapons[this.equippedWeaponKey] || Weapons.swordAndShield)) // isPlayer=true, single equipped weapon (switch in sanctuary)
             .addComponent(new Renderable('player', { color: config.color }))
             .addComponent(new Sprite(defaultSheetKey, config.width * 3, config.height * 3))
             .addComponent(new Animation(animationConfig));
@@ -641,6 +649,22 @@ class Game {
                     this.screenManager.selectedStartLevel = 0;
                     this.startGame();
                 }
+            } else if (this.screenManager.isScreen('hub') && this.chestOpen) {
+                const weaponKey = this.screenManager.getWeaponChestWeaponAt(x, y);
+                if (weaponKey !== null) {
+                    this.equippedWeaponKey = weaponKey;
+                    const player = this.entities.get('player');
+                    if (player && Weapons[weaponKey]) {
+                        const combat = player.getComponent(Combat);
+                        if (combat && combat.isPlayer) {
+                            combat.stopBlocking();
+                            combat.setWeapon(Weapons[weaponKey]);
+                        }
+                    }
+                } else if (this.screenManager.getWeaponChestBackAt(x, y)) {
+                    this.chestOpen = false;
+                    this.chestUseCooldown = 0; // allow opening again immediately
+                }
             } else if (this.screenManager.isScreen('hub') && this.boardOpen) {
                 const levelAt = this.screenManager.getLevelSelectAt(x, y);
                 if (levelAt !== null) {
@@ -662,11 +686,17 @@ class Game {
             } else if (this.screenManager.isScreen('pause')) {
                 const pauseBtn = this.screenManager.getPauseButtonAt(x, y);
                 if (pauseBtn === 'resume') {
-                    this.screenManager.setScreen('playing');
+                    this.screenManager.setScreen(this.screenBeforePause || 'playing');
                 } else if (pauseBtn === 'quit') {
                     this.quitToMainMenu();
                 } else if (pauseBtn === 'settings') {
                     this.screenManager.setScreen('settings');
+                } else if (pauseBtn === 'help') {
+                    this.screenManager.setScreen('help');
+                }
+            } else if (this.screenManager.isScreen('help')) {
+                if (this.screenManager.getHelpBackButtonAt(x, y)) {
+                    this.screenManager.setScreen('pause');
                 }
             } else if (this.screenManager.isScreen('settings')) {
                 const item = this.screenManager.getSettingsItemAt(x, y, this.settings);
@@ -680,9 +710,15 @@ class Game {
                     this.settings.useCharacterSprites = !this.settings.useCharacterSprites;
                 } else if (item === 'environmentSprites') {
                     this.settings.useEnvironmentSprites = !this.settings.useEnvironmentSprites;
+                } else if (item === 'controls') {
+                    this.screenManager.setScreen('settings-controls');
                 } else if (item === 'back') {
-                    // Return to pause menu
                     this.screenManager.setScreen('pause');
+                }
+            } else if (this.screenManager.isScreen('settings-controls')) {
+                const item = this.screenManager.getControlsItemAt(x, y);
+                if (item === 'back') {
+                    this.screenManager.setScreen('settings');
                 }
             }
         });
@@ -711,16 +747,28 @@ class Game {
                     this.startGame();
                 }
             } else if (isEscapeKey) {
-                // Toggle pause when in-game, or close overlays
+                // Toggle pause when in-game or in sanctuary (hub), or close overlays
                 if (this.screenManager.isScreen('playing')) {
+                    this.screenBeforePause = 'playing';
                     this.screenManager.setScreen('pause');
                 } else if (this.screenManager.isScreen('pause')) {
-                    this.screenManager.setScreen('playing');
+                    this.screenManager.setScreen(this.screenBeforePause || 'playing');
                 } else if (this.screenManager.isScreen('settings')) {
-                    // From settings, go back to pause
                     this.screenManager.setScreen('pause');
-                } else if (this.screenManager.isScreen('hub') && this.boardOpen) {
-                    this.boardOpen = false;
+                } else if (this.screenManager.isScreen('settings-controls')) {
+                    this.screenManager.setScreen('settings');
+                } else if (this.screenManager.isScreen('help')) {
+                    this.screenManager.setScreen('pause');
+                } else if (this.screenManager.isScreen('hub')) {
+                    if (this.chestOpen) {
+                        this.chestOpen = false;
+                        this.chestUseCooldown = 0; // allow opening again immediately
+                    } else if (this.boardOpen) {
+                        this.boardOpen = false;
+                    } else {
+                        this.screenBeforePause = 'hub';
+                        this.screenManager.setScreen('pause');
+                    }
                 }
             }
         });
@@ -872,10 +920,14 @@ class Game {
 
         if (selectedLevel === 0 && hubLevel) {
             this.portal = null;
-            this.board = { ...hubLevel.board };
+            this.board = hubLevel.board ? { ...hubLevel.board } : null;
             this.boardOpen = false;
             this.boardUseCooldown = 0;
             this.playerNearBoard = false;
+            this.chest = hubLevel.weaponChest ? { ...hubLevel.weaponChest } : null;
+            this.chestOpen = false;
+            this.chestUseCooldown = 0;
+            this.playerNearChest = false;
             this.hubSelectedLevel = 1;
             this.screenManager.setScreen('hub');
         } else {
@@ -948,7 +1000,17 @@ class Game {
         const kills = enemyManager.getEnemiesKilledThisLevel();
 
         this.portal.targetLevel = nextLevel;
-        this.portal.spawned = nextLevelExists && kills >= killsRequired;
+        // Spawn when objective complete so player can go to next level or return to Sanctuary
+        const objectiveJustCompleted = !this.portal.spawned && kills >= killsRequired;
+        this.portal.spawned = kills >= killsRequired;
+        this.portal.hasNextLevel = !!nextLevelExists;
+
+        // On level 1, spawning the portal also spawns the massive final boss (Monster Hunter–style)
+        if (this.portal.spawned && objectiveJustCompleted && currentLevel === 1 && !enemyManager.finalBossSpawned) {
+            const portalCenterX = this.portal.x + this.portal.width / 2;
+            const portalCenterY = this.portal.y + this.portal.height / 2;
+            enemyManager.spawnFinalBoss(portalCenterX, portalCenterY, this.entities);
+        }
 
         if (!this.portal.spawned || !player) {
             this.playerNearPortal = false;
@@ -972,9 +1034,19 @@ class Game {
             return;
         }
 
-        // Handle E key press to enter portal
         const inputSystem = this.systems.get('input');
-        if (inputSystem && inputSystem.isKeyPressed('e') && nextLevelExists) {
+        if (!inputSystem) return;
+
+        // B: return to Sanctuary (hub)
+        if (inputSystem.isKeyPressed('b')) {
+            this.screenManager.selectedStartLevel = 0;
+            this.startGame();
+            this.portalUseCooldown = 1.5;
+            return;
+        }
+
+        // E: enter portal to next level
+        if (inputSystem.isKeyPressed('e') && nextLevelExists) {
             const obstacleManager = this.systems.get('obstacles');
             const worldConfig = GameConfig.world;
             const nextLevelConfig = GameConfig.levels[nextLevel];
@@ -999,11 +1071,14 @@ class Game {
     }
 
     updateHub(deltaTime) {
-        if (this.boardOpen) return; // modal overlay; only clicks matter
-
+        // Decrement cooldowns even when overlay is open so reopening works after closing
         if (this.boardUseCooldown > 0) {
             this.boardUseCooldown = Math.max(0, this.boardUseCooldown - deltaTime);
         }
+        if (this.chestUseCooldown > 0) {
+            this.chestUseCooldown = Math.max(0, this.chestUseCooldown - deltaTime);
+        }
+        if (this.boardOpen || this.chestOpen) return; // modal overlay; only clicks matter
 
         this.handleCameraZoom();
 
@@ -1057,6 +1132,24 @@ class Game {
             }
         } else {
             this.playerNearBoard = false;
+        }
+        if (player && this.chest) {
+            const transform = player.getComponent(Transform);
+            if (transform) {
+                const overlap = Utils.rectCollision(
+                    transform.left, transform.top, transform.width, transform.height,
+                    this.chest.x, this.chest.y, this.chest.width, this.chest.height
+                );
+                this.playerNearChest = overlap;
+                if (overlap && this.chestUseCooldown <= 0 && inputSystem && inputSystem.isKeyPressed('e')) {
+                    this.chestOpen = true;
+                    this.chestUseCooldown = 0.4;
+                }
+            } else {
+                this.playerNearChest = false;
+            }
+        } else {
+            this.playerNearChest = false;
         }
 
         // Keep UI (health/stamina bars) in sync while in the hub/sanctuary
@@ -1144,6 +1237,10 @@ class Game {
             // Handle enemy attacks on player
             enemyManager.checkEnemyAttacks(player);
             
+            // Update player healing (drinking/regen timers, charge regen)
+            const healing = player.getComponent(PlayerHealing);
+            if (healing) healing.update(deltaTime);
+
             // Check for player death
             const health = player.getComponent(Health);
             if (health && health.isDead && this.screenManager.isScreen('playing')) {
@@ -1195,6 +1292,32 @@ class Game {
             }
         }
 
+        const healing = player.getComponent(PlayerHealing);
+        const healChargesEl = document.getElementById('heal-charges');
+        if (healing && healChargesEl) {
+            healChargesEl.textContent = healing.charges + '/' + healing.maxCharges;
+        }
+
+        // Stun buildup bar (under SP): always show fill by percent
+        const statusEffects = player.getComponent(StatusEffects);
+        const stunBarEl = document.getElementById('stun-bar');
+        if (statusEffects && stunBarEl) {
+            const pct = Math.min(100, statusEffects.stunMeterPercent * 100);
+            stunBarEl.style.width = pct + '%';
+        }
+
+        // Stun duration bar: only visible after the player has been stunned (while isStunned)
+        const stunDurationRow = document.getElementById('stun-duration-row');
+        const stunDurationBar = document.getElementById('stun-duration-bar');
+        if (statusEffects && stunDurationRow && stunDurationBar) {
+            if (statusEffects.isStunned) {
+                stunDurationRow.style.display = '';
+                const remain = statusEffects.stunDurationPercentRemaining * 100;
+                stunDurationBar.style.width = remain + '%';
+            } else {
+                stunDurationRow.style.display = 'none';
+            }
+        }
     }
 
     render() {
@@ -1214,7 +1337,9 @@ class Game {
                 return;
             }
 
-            if (this.screenManager.isScreen('hub')) {
+            const inHubContext = this.screenManager.isScreen('hub') ||
+                ((this.screenManager.isScreen('pause') || this.screenManager.isScreen('settings') || this.screenManager.isScreen('settings-controls')) && this.screenBeforePause === 'hub');
+            if (inHubContext) {
                 const hubConfig = GameConfig.hub;
                 try {
                     renderSystem.clear();
@@ -1223,6 +1348,12 @@ class Game {
                         renderSystem.renderBoard(this.board, cameraSystem);
                         if (this.playerNearBoard) {
                             renderSystem.renderBoardInteractionPrompt(this.board, cameraSystem, true);
+                        }
+                    }
+                    if (this.chest) {
+                        renderSystem.renderChest(this.chest, cameraSystem);
+                        if (this.playerNearChest) {
+                            renderSystem.renderChestInteractionPrompt(this.chest, cameraSystem, true);
                         }
                     }
                     const hubEntities = this.entities.getAll();
@@ -1236,6 +1367,12 @@ class Game {
                     }
                     if (this.boardOpen) {
                         this.screenManager.renderHubBoardOverlay(this.hubSelectedLevel);
+                    }
+                    if (this.chestOpen) {
+                        this.screenManager.renderWeaponChestOverlay(this.equippedWeaponKey);
+                    }
+                    if (this.screenManager.isScreen('pause') || this.screenManager.isScreen('settings') || this.screenManager.isScreen('settings-controls')) {
+                        this.screenManager.render(this.settings);
                     }
                 }
                 return;
@@ -1282,7 +1419,7 @@ class Game {
                     const h = this._currentWorldHeight != null ? this._currentWorldHeight : worldConfig.height;
                     renderSystem.renderMinimap(cameraSystem, this.entities, w, h, this.portal, currentLevel);
                 }
-                if (this.screenManager.isScreen('pause') || this.screenManager.isScreen('settings')) {
+                if (this.screenManager.isScreen('pause') || this.screenManager.isScreen('settings') || this.screenManager.isScreen('settings-controls') || this.screenManager.isScreen('help')) {
                     this.screenManager.render(this.settings);
                 }
             }

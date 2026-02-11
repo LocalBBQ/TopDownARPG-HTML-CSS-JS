@@ -2,5 +2,6 @@
 var Weapons = {
     swordAndShield: window.SwordAndShieldWeapon,
     greatsword: window.GreatswordWeaponInstance,
-    crossbow: window.CrossbowWeaponInstance
+    crossbow: window.CrossbowWeaponInstance,
+    mace: window.MaceWeaponInstance
 };

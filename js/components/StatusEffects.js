@@ -12,6 +12,42 @@ class StatusEffects {
         this.stunBuildup = 0;
         // Last time (seconds) we received stun buildup — used for player decay cooldown
         this.lastStunBuildupTime = 0;
+        // War cry buff (enemies only): temporary speed/damage boost from goblin chieftain
+        this.buffedUntil = 0;
+        this.speedMultiplier = 1;
+        this.damageMultiplier = 1;
+        // Knockback resistance 0–1 (percentage; 0 = none, 0.3 = 30% less, 1 = immune). Set from config or buffs.
+        this.knockbackResist = isPlayer ? (typeof GameConfig !== 'undefined' ? (GameConfig.player?.knockback?.knockbackResist ?? 0) : 0) : 0;
+        // Pack modifier buff (enemies only): applied when in pack with same-type allies
+        this.packModifierName = null;
+        this.packSpeedMultiplier = 1;
+        this.packDamageMultiplier = 1;
+        this.packKnockbackResist = 0;
+        this.packAttackCooldownMultiplier = 1;
+        this.packStunBuildupMultiplier = 1;
+        this.packDetectionRangeMultiplier = 1;
+    }
+
+    /** Set pack buff from modifier definition (called by EnemyManager when in pack). */
+    setPackBuff(modifierName, stats) {
+        this.packModifierName = modifierName;
+        this.packSpeedMultiplier = stats.speedMultiplier != null ? stats.speedMultiplier : 1;
+        this.packDamageMultiplier = stats.damageMultiplier != null ? stats.damageMultiplier : 1;
+        this.packKnockbackResist = Math.max(0, Math.min(1, stats.knockbackResist || 0));
+        this.packAttackCooldownMultiplier = stats.attackCooldownMultiplier != null ? stats.attackCooldownMultiplier : 1;
+        this.packStunBuildupMultiplier = stats.stunBuildupPerHitMultiplier != null ? stats.stunBuildupPerHitMultiplier : 1;
+        this.packDetectionRangeMultiplier = stats.detectionRangeMultiplier != null ? stats.detectionRangeMultiplier : 1;
+    }
+
+    /** Clear pack buff (when no longer in pack). */
+    clearPackBuff() {
+        this.packModifierName = null;
+        this.packSpeedMultiplier = 1;
+        this.packDamageMultiplier = 1;
+        this.packKnockbackResist = 0;
+        this.packAttackCooldownMultiplier = 1;
+        this.packStunBuildupMultiplier = 1;
+        this.packDetectionRangeMultiplier = 1;
     }
 
     get isStunned() {
@@ -30,6 +66,15 @@ class StatusEffects {
         if (this.isPlayer) {
             const cfg = GameConfig.player.stun || {};
             return cfg.threshold ?? 100;
+        }
+        // Per-enemy-type override (e.g. goblin, goblinChieftain have lower threshold)
+        if (this.entity && this.entity.components) {
+            for (const comp of this.entity.components.values()) {
+                if (comp.enemyType != null && GameConfig.enemy && GameConfig.enemy.types && GameConfig.enemy.types[comp.enemyType]) {
+                    const typeCfg = GameConfig.enemy.types[comp.enemyType];
+                    if (typeCfg.stunThreshold != null) return typeCfg.stunThreshold;
+                }
+            }
         }
         const cfg = GameConfig.statusEffects || {};
         return cfg.enemyStunThreshold ?? 100;
@@ -53,11 +98,14 @@ class StatusEffects {
         return cfg.enemyStunDecayPerSecond ?? 0;
     }
 
-    /** Seconds after last buildup before decay starts (player only). */
+    /** Seconds after last buildup before decay starts (player or enemy). */
     _getStunDecayCooldown() {
-        if (!this.isPlayer) return 0;
-        const cfg = GameConfig.player.stun || {};
-        return cfg.decayCooldown ?? 0;
+        if (this.isPlayer) {
+            const cfg = GameConfig.player.stun || {};
+            return cfg.decayCooldown ?? 0;
+        }
+        const cfg = GameConfig.statusEffects || {};
+        return cfg.enemyStunDecayCooldown ?? 0;
     }
 
     /** Apply stun for the given duration (seconds). */
@@ -93,16 +141,26 @@ class StatusEffects {
         }
     }
 
+    /** Apply war cry buff from goblin chieftain (enemies only). */
+    applyWarCryBuff(durationSeconds, speedMultiplier, damageMultiplier) {
+        const now = performance.now() / 1000;
+        this.buffedUntil = now + durationSeconds;
+        this.speedMultiplier = speedMultiplier != null ? speedMultiplier : 1;
+        this.damageMultiplier = damageMultiplier != null ? damageMultiplier : 1;
+    }
+
     update(deltaTime, systems) {
         const now = performance.now() / 1000;
+        if (now >= this.buffedUntil) {
+            this.speedMultiplier = 1;
+            this.damageMultiplier = 1;
+        }
         if (now < this.stunnedUntil) return; // no decay while stunned
         const decay = this._getStunDecayPerSecond();
         if (decay <= 0 || this.stunBuildup <= 0) return;
-        // Player: wait for decay cooldown after last stun buildup before decaying
-        if (this.isPlayer) {
-            const cooldown = this._getStunDecayCooldown();
-            if (cooldown > 0 && now - this.lastStunBuildupTime < cooldown) return;
-        }
+        // Wait for decay cooldown after last stun buildup before decaying (player and enemies)
+        const cooldown = this._getStunDecayCooldown();
+        if (cooldown > 0 && now - this.lastStunBuildupTime < cooldown) return;
         this.stunBuildup = Math.max(0, this.stunBuildup - decay * deltaTime);
     }
 }

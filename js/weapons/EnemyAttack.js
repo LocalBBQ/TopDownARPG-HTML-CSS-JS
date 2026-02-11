@@ -53,19 +53,19 @@ class EnemyAttack {
         this.attackProcessed = false;
     }
     
-    endLunge() {
+    endLunge(cooldownMultiplier = 1) {
         this.isLunging = false;
         this.isAttacking = false;
         this.attackProcessed = false;
-        this.cooldown = this.maxCooldown;
+        this.cooldown = this.maxCooldown * (cooldownMultiplier != null ? cooldownMultiplier : 1);
     }
     
-    attack() {
+    attack(cooldownMultiplier = 1) {
         if (this.cooldown > 0 || this.isWindingUp) return false;
         
         this.isWindingUp = true;
         this.windUpTimer = this.windUpTime;
-        this.cooldown = this.maxCooldown;
+        this.cooldown = this.maxCooldown * (cooldownMultiplier != null ? cooldownMultiplier : 1);
         
         return true;
     }

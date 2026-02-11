@@ -241,7 +241,7 @@ class EnemyMovement extends Movement {
         // Notify combat component that lunge ended (goblin-specific)
         const combat = this.entity.getComponent(Combat);
         if (combat && combat.goblinAttack) {
-            combat.goblinAttack.endLunge();
+            combat.goblinAttack.endLunge(combat.getPackCooldownMultiplier());
         }
         
         // Goblin: 50% chance to hop back after lunge

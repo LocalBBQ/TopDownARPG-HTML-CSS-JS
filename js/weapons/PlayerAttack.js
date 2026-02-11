@@ -41,7 +41,29 @@ class PlayerAttack {
     canAttack() {
         return this.attackBuffer <= 0;
     }
-    
+
+    /** Returns stamina cost for the next attack without advancing state (for pre-check and buffered attacks). */
+    getNextAttackStaminaCost(chargeDuration = 0, options = {}) {
+        const useSpecialAttack = options.useSpecialAttack && this.weapon.specialAttack;
+        const chargedAttackConfig = GameConfig.player.chargedAttack;
+        let stageProps;
+        if (useSpecialAttack) {
+            stageProps = this.weapon.getSpecialAttackProperties();
+        } else {
+            const isCharged = chargeDuration >= chargedAttackConfig.minChargeTime;
+            const nextStage = isCharged ? 1 : (this.comboStage < this.weapon.maxComboStage ? this.comboStage + 1 : 1);
+            stageProps = this.weapon.getComboStageProperties(nextStage);
+        }
+        if (!stageProps) return 0;
+        let cost = stageProps.staminaCost;
+        if (!useSpecialAttack && chargeDuration >= chargedAttackConfig.minChargeTime) {
+            const chargeMultiplier = Math.min(1.0, (chargeDuration - chargedAttackConfig.minChargeTime) /
+                (chargedAttackConfig.maxChargeTime - chargedAttackConfig.minChargeTime));
+            cost *= (1.0 + (chargedAttackConfig.staminaCostMultiplier - 1.0) * chargeMultiplier);
+        }
+        return cost;
+    }
+
     startAttack(targetX, targetY, entity, chargeDuration = 0, options = {}) {
         if (!this.canAttack()) {
             return false;
@@ -146,6 +168,14 @@ class PlayerAttack {
     }
     
     get isAttacking() {
+        // Must stay true until endAttack() runs (setTimeout callback). If we used
+        // "attackTimer < attackDuration", the update loop would set isAttacking false
+        // a frame or more before the callback runs, allowing a new attack to start and chain.
+        return this.attackTimer > 0;
+    }
+
+    /** True when the active hitbox/release phase is in progress (for visuals/hit detection). */
+    get isAttackActive() {
         return this.attackTimer > 0 && this.attackTimer < this.attackDuration;
     }
 }

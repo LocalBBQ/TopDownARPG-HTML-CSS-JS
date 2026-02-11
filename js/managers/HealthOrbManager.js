@@ -57,8 +57,11 @@ class HealthOrbManager {
             const pickupRadius = orb.radius + playerTransform.width / 2;
             
             if (distance < pickupRadius) {
-                // Player picked up the orb
-                playerHealth.heal(orb.healthAmount);
+                // Player picked up the orb — fill the vial (add heal charge)
+                const playerHealing = player.getComponent(PlayerHealing);
+                if (playerHealing) {
+                    playerHealing.charges = Math.min(playerHealing.maxCharges, playerHealing.charges + 1);
+                }
                 this.orbs.splice(i, 1);
                 continue;
             }
