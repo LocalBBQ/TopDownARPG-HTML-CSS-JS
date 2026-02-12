@@ -80,8 +80,8 @@ const GameConfig = {
         heal: {
             maxCharges: 3,
             drinkTime: 2,           // seconds of "drinking" before regen starts
-            regenRate: 50,         // HP per second during regen
-            regenDuration: 2,      // seconds of regen per charge (total 100 HP per charge)
+            regenRate: 25,         // HP per second during regen
+            regenDuration: 2,      // seconds of regen per charge (total 50 HP per charge)
             chargeRegenTime: 30    // seconds to regain one charge (when not at max)
         },
         stun: {
@@ -248,62 +248,6 @@ const GameConfig = {
                     damageMultiplier: 1.2
                 },
                 packModifier: 'inspiring'
-            },
-            titanBoss: {
-                // Final boss: ~10x chieftain scale (Monster Hunter–style drawn-out fight)
-                maxHealth: 2500,
-                speed: 14,
-                attackRange: 220,
-                attackDamage: 45,
-                attackArcDegrees: 120,
-                detectionRange: 600,
-                color: '#1a0a0a',
-                attackCooldown: 2.5,
-                windUpTime: 2.0,
-                stunBuildupPerHit: 8,
-                knockbackResist: 0.8,
-                knockback: { force: 400, decay: 0.82 },
-                sweep: {
-                    chargeTime: 2.2,
-                    releaseDuration: 0.35,
-                    range: 220,
-                    arcDegrees: 120,
-                    damage: 45,
-                    knockbackForce: 400
-                },
-                stomp: {
-                    chargeTime: 1.8,
-                    releaseDuration: 0.25,
-                    radius: 180,
-                    damage: 40,
-                    knockbackForce: 380
-                },
-                crush: {
-                    chargeTime: 2.5,
-                    releaseDuration: 0.3,
-                    range: 200,
-                    arcDegrees: 80,
-                    damage: 55,
-                    knockbackForce: 450
-                },
-                roar: {
-                    chargeTime: 2.0,
-                    releaseDuration: 0.4,
-                    radius: 200,
-                    damage: 15,
-                    knockbackForce: 200,
-                    stunBuildup: 60
-                },
-                doubleSwipe: {
-                    chargeTime1: 0.7,
-                    release1: 0.2,
-                    chargeTime2: 0.5,
-                    release2: 0.2,
-                    range: 180,
-                    arcDegrees: 100,
-                    damagePerSwipe: 25,
-                    knockbackForce: 320
-                }
             }
         },
         /** Pack detection: same-type allies within radius; need at least minAllies to count as "in pack". */

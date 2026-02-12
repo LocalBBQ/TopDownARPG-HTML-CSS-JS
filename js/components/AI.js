@@ -265,7 +265,6 @@ class AI {
         // Demons use combo system, chieftain uses heavy smash, titan boss uses sweep/stomp, goblins use swipe attacks, skeletons don't melee
         const hasDemonAttack = combat && combat.demonAttack !== null && combat.demonAttack !== undefined;
         const hasChieftainAttack = combat && combat.chieftainAttack !== null && combat.chieftainAttack !== undefined;
-        const hasFinalBossAttack = combat && combat.finalBossAttack !== null && combat.finalBossAttack !== undefined;
         const hasGoblinAttack = combat && combat.goblinAttack !== null && combat.goblinAttack !== undefined;
         const isSkeleton = this.enemyType === 'skeleton';
         
@@ -274,7 +273,6 @@ class AI {
             const canAttack = combat && !this.attackInitiatedThisFrame && (
                 (hasDemonAttack && combat.demonAttack.canAttack() && !combat.isAttacking) ||
                 (hasChieftainAttack && combat.chieftainAttack.canAttack() && !combat.isAttacking) ||
-                (hasFinalBossAttack && combat.finalBossAttack.canAttack() && !combat.isAttacking) ||
                 (hasGoblinAttack && combat.cooldown === 0 && !combat.isWindingUp && !combat.isLunging)
             );
             

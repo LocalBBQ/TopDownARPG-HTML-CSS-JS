@@ -422,8 +422,9 @@ class Game {
         }
 
         const obstacleManager = this.systems.get('obstacles');
+        const playerSpawn = transform ? { x: transform.x, y: transform.y } : null;
         if (enemyManager && obstacleManager) {
-            enemyManager.spawnLevelEnemies(initialLevel, this.entities, obstacleManager);
+            enemyManager.spawnLevelEnemies(initialLevel, this.entities, obstacleManager, playerSpawn);
         }
 
         if (!isHub) {
@@ -1001,16 +1002,8 @@ class Game {
 
         this.portal.targetLevel = nextLevel;
         // Spawn when objective complete so player can go to next level or return to Sanctuary
-        const objectiveJustCompleted = !this.portal.spawned && kills >= killsRequired;
         this.portal.spawned = kills >= killsRequired;
         this.portal.hasNextLevel = !!nextLevelExists;
-
-        // On level 1, spawning the portal also spawns the massive final boss (Monster Hunter–style)
-        if (this.portal.spawned && objectiveJustCompleted && currentLevel === 1 && !enemyManager.finalBossSpawned) {
-            const portalCenterX = this.portal.x + this.portal.width / 2;
-            const portalCenterY = this.portal.y + this.portal.height / 2;
-            enemyManager.spawnFinalBoss(portalCenterX, portalCenterY, this.entities);
-        }
 
         if (!this.portal.spawned || !player) {
             this.playerNearPortal = false;
@@ -1065,7 +1058,8 @@ class Game {
             const pathfindingSystem = this.systems.get('pathfinding');
             if (cameraSystem && cameraSystem.setWorldBounds) cameraSystem.setWorldBounds(nextWorldWidth, nextWorldHeight);
             if (pathfindingSystem && pathfindingSystem.setWorldBounds) pathfindingSystem.setWorldBounds(nextWorldWidth, nextWorldHeight);
-            enemyManager.changeLevel(nextLevel, this.entities, obstacleManager);
+            const playerSpawnForLevel = transform ? { x: transform.x, y: transform.y } : null;
+            enemyManager.changeLevel(nextLevel, this.entities, obstacleManager, playerSpawnForLevel);
             this.portalUseCooldown = 1.5; // Prevent double-trigger
         }
     }

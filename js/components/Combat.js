@@ -21,7 +21,6 @@ class Combat {
             this.chieftainAttack = null;
             this.goblinAttack = null;
             this.skeletonAttack = null;
-            this.finalBossAttack = null;
             this.enemyAttack = null;
             this.playerAttack = null;
         } else if (enemyType === 'goblinChieftain') {
@@ -30,7 +29,6 @@ class Combat {
             this.demonAttack = null;
             this.goblinAttack = null;
             this.skeletonAttack = null;
-            this.finalBossAttack = null;
             this.enemyAttack = null;
             this.playerAttack = null;
         } else if (enemyType === 'goblin' || enemyType === 'lesserDemon') {
@@ -39,7 +37,6 @@ class Combat {
             this.chieftainAttack = null;
             this.skeletonAttack = null;
             this.demonAttack = null;
-            this.finalBossAttack = null;
             this.enemyAttack = null;
             this.playerAttack = null;
         } else if (enemyType === 'skeleton') {
@@ -48,15 +45,6 @@ class Combat {
             this.goblinAttack = null;
             this.chieftainAttack = null;
             this.demonAttack = null;
-            this.finalBossAttack = null;
-            this.enemyAttack = null;
-            this.playerAttack = null;
-        } else if (enemyType === 'titanBoss') {
-            this.finalBossAttack = new TitanBossAttack();
-            this.chieftainAttack = null;
-            this.demonAttack = null;
-            this.goblinAttack = null;
-            this.skeletonAttack = null;
             this.enemyAttack = null;
             this.playerAttack = null;
         } else {
@@ -66,7 +54,6 @@ class Combat {
             this.chieftainAttack = null;
             this.skeletonAttack = null;
             this.demonAttack = null;
-            this.finalBossAttack = null;
             this.playerAttack = null;
         }
         
@@ -120,8 +107,6 @@ class Combat {
             this.demonAttack.update(deltaTime);
         } else if (this.chieftainAttack) {
             this.chieftainAttack.update(deltaTime);
-        } else if (this.finalBossAttack) {
-            this.finalBossAttack.update(deltaTime);
         } else if (this.goblinAttack) {
             this.goblinAttack.update(deltaTime);
         } else if (this.skeletonAttack) {
@@ -368,35 +353,6 @@ class Combat {
                 return attackData;
             }
             return false;
-        } else if (this.finalBossAttack) {
-            if (this.finalBossAttack.isAttacking || !this.finalBossAttack.canAttack()) {
-                return false;
-            }
-            const attackData = this.finalBossAttack.startAttack(targetX, targetY, this.entity);
-            if (attackData) {
-                this._currentAttackKnockbackForce = attackData.knockbackForce ?? null;
-                this.attackRange = attackData.range;
-                this.attackDamage = attackData.damage;
-                this.attackArc = attackData.arc;
-                this.currentAttackIsCircular = attackData.isCircular === true;
-                this.currentAttackAnimationKey = attackData.animationKey || null;
-                const durationMs = attackData.duration;
-                const combatRef = this;
-                setTimeout(() => {
-                    if (combatRef.finalBossAttack && combatRef.finalBossAttack.isAttacking) {
-                        combatRef.currentAttackIsCircular = false;
-                        combatRef.currentAttackAnimationKey = null;
-                        combatRef._currentAttackKnockbackForce = null;
-                        combatRef.finalBossAttack.endAttack();
-                    } else {
-                        combatRef.currentAttackIsCircular = false;
-                        combatRef.currentAttackAnimationKey = null;
-                        combatRef._currentAttackKnockbackForce = null;
-                    }
-                }, durationMs);
-                return attackData;
-            }
-            return false;
         } else if (this.goblinAttack) {
             // Goblin attack (swipe)
             return this.goblinAttack.attack(this.getPackCooldownMultiplier());
@@ -418,8 +374,6 @@ class Combat {
             return this.demonAttack.isAttacking;
         } else if (this.chieftainAttack) {
             return this.chieftainAttack.isAttacking;
-        } else if (this.finalBossAttack) {
-            return this.finalBossAttack.isAttacking;
         } else if (this.goblinAttack) {
             return this.goblinAttack.isAttacking;
         } else if (this.skeletonAttack) {
@@ -435,8 +389,6 @@ class Combat {
             return this.goblinAttack.isWindingUp;
         } else if (this.chieftainAttack && this.chieftainAttack.isAttacking && !this.chieftainAttack.isInReleasePhase) {
             return true; // charge phase = wind-up for visuals
-        } else if (this.finalBossAttack && this.finalBossAttack.isAttacking && !this.finalBossAttack.isInReleasePhase) {
-            return true;
         } else if (this.skeletonAttack) {
             return this.skeletonAttack.isWindingUp;
         } else if (this.enemyAttack) {
@@ -451,8 +403,6 @@ class Combat {
             return this.demonAttack.hasHitEnemy('player');
         } else if (this.chieftainAttack) {
             return this.chieftainAttack.hasHitEnemy('player');
-        } else if (this.finalBossAttack) {
-            return this.finalBossAttack.hasHitEnemy('player');
         } else if (this.goblinAttack) {
             return this.goblinAttack.attackProcessed;
         } else if (this.skeletonAttack) {
@@ -479,8 +429,6 @@ class Combat {
             return this.demonAttack.attackTimer;
         } else if (this.chieftainAttack) {
             return this.chieftainAttack.attackTimer;
-        } else if (this.finalBossAttack) {
-            return this.finalBossAttack.attackTimer;
         }
         return 0;
     }
@@ -492,8 +440,6 @@ class Combat {
             return this.demonAttack.attackDuration;
         } else if (this.chieftainAttack) {
             return this.chieftainAttack.attackDuration;
-        } else if (this.finalBossAttack) {
-            return this.finalBossAttack.attackDuration;
         }
         return 0;
     }
@@ -505,8 +451,6 @@ class Combat {
             return this.demonAttack.hitEnemies;
         } else if (this.chieftainAttack) {
             return this.chieftainAttack.hitEnemies;
-        } else if (this.finalBossAttack) {
-            return this.finalBossAttack.hitEnemies;
         }
         return new Set();
     }
@@ -524,8 +468,6 @@ class Combat {
             return this.goblinAttack.windUpProgress;
         } else if (this.chieftainAttack) {
             return this.chieftainAttack.chargeProgress;
-        } else if (this.finalBossAttack) {
-            return this.finalBossAttack.chargeProgress;
         } else if (this.skeletonAttack) {
             return this.skeletonAttack.windUpProgress;
         } else if (this.enemyAttack) {
@@ -546,8 +488,6 @@ class Combat {
             return this.demonAttack.canAttack() ? 0 : 0.1;
         } else if (this.chieftainAttack) {
             return this.chieftainAttack.canAttack() ? 0 : 0.1;
-        } else if (this.finalBossAttack) {
-            return this.finalBossAttack.canAttack() ? 0 : 0.1;
         }
         // For player attacks, return 0 (cooldown is managed by PlayerAttack)
         return 0;

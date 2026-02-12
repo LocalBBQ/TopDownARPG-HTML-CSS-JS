@@ -572,13 +572,16 @@ class RenderSystem {
         // Apply transformations (try/finally ensures we always restore so transform never leaks to next frame)
         const combat = entity.getComponent(Combat);
         const renderable = entity.getComponent(Renderable);
-        const appliedMeleeSpin = !!(renderable && renderable.type === 'player' && combat && combat.isAttacking && combat.currentAttackAnimationKey === 'meleeSpin');
+        // Only apply spin rotation when we're actually drawing the meleeSpin animation (avoids one frame where wrong sprite is rotated and player appears to disappear)
+        const appliedMeleeSpin = !!(renderable && renderable.type === 'player' && combat && combat.isAttacking && combat.currentAttackAnimationKey === 'meleeSpin' && animation && animation.currentAnimation === 'meleeSpin');
         this.ctx.save();
         try {
             this.ctx.translate(drawX, drawY);
             if (appliedMeleeSpin) {
                 const sweepProgress = PlayerCombatRenderer.getSweepProgress(combat);
-                this.ctx.rotate(sweepProgress * Math.PI * 2);
+                const pullBack = PlayerCombatRenderer.getAnticipationPullBack(combat);
+                // Spin starts from the left; pull-back adds anticipation (12 principles)
+                this.ctx.rotate(Math.PI + pullBack + sweepProgress * Math.PI * 2);
             }
             this.ctx.scale(sprite.scaleX * (sprite.flipX ? -1 : 1), sprite.scaleY);
             this.ctx.rotate(sprite.rotation);
@@ -750,6 +753,21 @@ class RenderSystem {
             }
         }
 
+        // Stun duration bar (enemies only): white bar above health, depletes as stun runs out
+        if (!isPlayer && statusEffects && statusEffects.stunDurationPercentRemaining > 0) {
+            const gap = 2 * camera.zoom;
+            const stunDurationBarHeight = 3 * camera.zoom;
+            const stunDurationBarY = barY - stunDurationBarHeight - gap;
+            this.ctx.fillStyle = '#333';
+            this.ctx.fillRect(barX, stunDurationBarY, barWidth, stunDurationBarHeight);
+            this.ctx.strokeStyle = '#555';
+            this.ctx.lineWidth = 1 / camera.zoom;
+            this.ctx.strokeRect(barX, stunDurationBarY, barWidth, stunDurationBarHeight);
+            const remain = statusEffects.stunDurationPercentRemaining;
+            this.ctx.fillStyle = '#ffffff';
+            this.ctx.fillRect(barX, stunDurationBarY, barWidth * remain, stunDurationBarHeight);
+        }
+
         if (health && health.percent < 1) {
             this.ctx.fillStyle = '#333';
             this.ctx.fillRect(barX, barY, barWidth, barHeight);
@@ -820,7 +838,9 @@ class RenderSystem {
                     this.ctx.save();
                     try {
                         this.ctx.translate(screenX, screenY);
-                        this.ctx.rotate(PlayerCombatRenderer.getSweepProgress(combat) * Math.PI * 2);
+                        const spinProgress = PlayerCombatRenderer.getSweepProgress(combat);
+                        const pullBack = PlayerCombatRenderer.getAnticipationPullBack(combat);
+                        this.ctx.rotate(Math.PI + pullBack + spinProgress * Math.PI * 2);
                         this.ctx.translate(-screenX, -screenY);
                         if (combat && combat.isAttacking && movement) {
                             PlayerCombatRenderer.drawAttackArc(this.ctx, screenX, screenY, combat, movement, camera, { comboColors: false });
@@ -944,7 +964,9 @@ class RenderSystem {
             this.ctx.save();
             try {
                 this.ctx.translate(screenX, screenY);
-                this.ctx.rotate(PlayerCombatRenderer.getSweepProgress(combat) * Math.PI * 2);
+                const spinProgress = PlayerCombatRenderer.getSweepProgress(combat);
+                const pullBack = PlayerCombatRenderer.getAnticipationPullBack(combat);
+                this.ctx.rotate(Math.PI + pullBack + spinProgress * Math.PI * 2);
                 this.ctx.translate(-screenX, -screenY);
         if (combat && combat.isAttacking) {
             PlayerCombatRenderer.drawAttackArc(this.ctx, screenX, screenY, combat, movement, camera, { comboColors: true });
@@ -1317,49 +1339,6 @@ class RenderSystem {
             this.ctx.stroke();
         }
 
-        // Draw final boss telegraph: cone (sweep/crush/doubleSwipe) or circle (stomp/roar)
-        if (combat && combat.finalBossAttack && combat.isAttacking) {
-            const chargeProgress = combat.finalBossAttack.chargeProgress || 0;
-            const facingAngle = movement ? movement.facingAngle : 0;
-            const isRoar = combat.finalBossAttack.currentAttack === 'roar';
-            if (combat.finalBossAttack.isCircularAttack) {
-                const radius = (combat.finalBossAttack.stompRadius || 180) * camera.zoom;
-                if (isRoar) {
-                    this.ctx.fillStyle = `rgba(30, 15, 45, ${0.25 + chargeProgress * 0.35})`;
-                    this.ctx.strokeStyle = `rgba(120, 50, 180, ${0.5 + chargeProgress * 0.4})`;
-                } else {
-                    this.ctx.fillStyle = `rgba(40, 15, 15, ${0.2 + chargeProgress * 0.35})`;
-                    this.ctx.strokeStyle = `rgba(180, 50, 40, ${0.5 + chargeProgress * 0.4})`;
-                }
-                this.ctx.beginPath();
-                this.ctx.arc(screenX, screenY, radius, 0, Math.PI * 2);
-                this.ctx.fill();
-                this.ctx.lineWidth = 6 / camera.zoom;
-                this.ctx.stroke();
-            } else {
-                const range = (combat.attackRange || 220) * camera.zoom;
-                const arc = combat.attackArc != null ? combat.attackArc : Utils.degToRad(120);
-                const halfArc = arc / 2;
-                const startAngle = facingAngle - halfArc;
-                const endAngle = facingAngle + halfArc;
-                const isCrush = combat.finalBossAttack.currentAttack === 'crush';
-                if (isCrush) {
-                    this.ctx.fillStyle = `rgba(50, 10, 10, ${0.25 + chargeProgress * 0.35})`;
-                    this.ctx.strokeStyle = `rgba(200, 40, 40, ${0.6 + chargeProgress * 0.3})`;
-                } else {
-                    this.ctx.fillStyle = `rgba(35, 15, 20, ${0.2 + chargeProgress * 0.3})`;
-                    this.ctx.strokeStyle = `rgba(160, 50, 50, ${0.6 + chargeProgress * 0.3})`;
-                }
-                this.ctx.beginPath();
-                this.ctx.arc(screenX, screenY, range, startAngle, endAngle);
-                this.ctx.lineTo(screenX, screenY);
-                this.ctx.closePath();
-                this.ctx.fill();
-                this.ctx.lineWidth = 5 / camera.zoom;
-                this.ctx.stroke();
-            }
-        }
-
         // Draw lunge charge indicator
         if (ai && ai.isChargingLunge) {
             // Get lunge config to calculate progress
@@ -1385,71 +1364,82 @@ class RenderSystem {
             }
         }
 
-        // Draw wind-up indicator (goblin etc. – arc in front)
+        // Draw wind-up indicator (12 principles: anticipation, staging, timing)
         if (combat && combat.isWindingUp) {
-            const windUpProgress = combat.windUpProgress;
-            const pulseSize = (transform.width / 2 + 5) * camera.zoom * (1 + windUpProgress * 0.3);
-            const alpha = 0.6 - windUpProgress * 0.4;
+            const visualProgress = EnemyCombatRenderer.getWindUpVisualProgress(combat);
+            const dangerPhase = EnemyCombatRenderer.getWindUpDangerPhase(combat);
             const facingAngle = movement ? movement.facingAngle : 0;
             const arc = combat.attackArc != null ? combat.attackArc : Utils.degToRad(90);
             const halfArc = arc / 2;
+            const range = combat.attackRange * camera.zoom;
+            const startAngle = facingAngle - halfArc;
+            const endAngle = facingAngle + halfArc;
 
-            // Pulsing circle during wind-up – amber/bronze
-            this.ctx.strokeStyle = `rgba(140, 100, 50, ${alpha})`;
-            this.ctx.lineWidth = 3 / camera.zoom;
+            // Pulsing circle: eased so it grows more in the last part of wind-up (anticipation)
+            const pulseSize = (transform.width / 2 + 5) * camera.zoom * (1 + visualProgress * 0.4);
+            const alpha = 0.5 - visualProgress * 0.35;
+            this.ctx.strokeStyle = dangerPhase > 0
+                ? `rgba(200, 80, 50, ${0.5 + dangerPhase * 0.5})`
+                : `rgba(140, 100, 50, ${alpha})`;
+            this.ctx.lineWidth = dangerPhase > 0 ? (3 + dangerPhase * 2) / camera.zoom : 3 / camera.zoom;
             this.ctx.beginPath();
             this.ctx.arc(screenX, screenY, pulseSize, 0, Math.PI * 2);
             this.ctx.stroke();
 
-            // Attack range indicator – cone in front (fades in during wind-up), wrought-iron look
-            const range = combat.attackRange * camera.zoom;
-            const startAngle = facingAngle - halfArc;
-            const endAngle = facingAngle + halfArc;
-            this.ctx.fillStyle = `rgba(35, 30, 28, ${windUpProgress * 0.2})`;
+            // Attack cone: eased fade-in so danger zone becomes obvious late (staging)
+            this.ctx.fillStyle = `rgba(35, 30, 28, ${visualProgress * 0.28})`;
             this.ctx.beginPath();
             this.ctx.arc(screenX, screenY, range, startAngle, endAngle);
             this.ctx.lineTo(screenX, screenY);
             this.ctx.closePath();
             this.ctx.fill();
-            this.ctx.strokeStyle = `rgba(80, 70, 60, ${windUpProgress * 0.7})`;
-            this.ctx.lineWidth = 2 / camera.zoom;
+            this.ctx.strokeStyle = dangerPhase > 0
+                ? `rgba(180, 70, 50, ${0.5 + dangerPhase * 0.5})`
+                : `rgba(80, 70, 60, ${visualProgress * 0.8})`;
+            this.ctx.lineWidth = dangerPhase > 0 ? (2 + dangerPhase * 1.5) / camera.zoom : 2 / camera.zoom;
             this.ctx.stroke();
+            // Danger phase: red rim inside cone so "about to strike" is unmistakable
+            if (dangerPhase > 0) {
+                this.ctx.strokeStyle = `rgba(220, 60, 40, ${dangerPhase * 0.9})`;
+                this.ctx.lineWidth = Math.max(1, 2.5 / camera.zoom);
+                this.ctx.beginPath();
+                this.ctx.arc(screenX, screenY, range - 4 / camera.zoom, startAngle, endAngle);
+                this.ctx.stroke();
+            }
         }
 
-        // Draw attack indicator (when attack actually happens) – arc in front; skip demon/chieftain/finalBoss (drawn above); medieval steel
-        if (combat && combat.isAttacking && !combat.isWindingUp && !combat.demonAttack && !combat.chieftainAttack && !combat.finalBossAttack) {
+        // Draw attack indicator (strike moment – clear "attack out" so timing is readable)
+        if (combat && combat.isAttacking && !combat.isWindingUp && !combat.demonAttack && !combat.chieftainAttack) {
             const facingAngle = movement ? movement.facingAngle : 0;
             const arc = combat.attackArc != null ? combat.attackArc : Utils.degToRad(90);
             const halfArc = arc / 2;
             const range = combat.attackRange * camera.zoom;
             const startAngle = facingAngle - halfArc;
             const endAngle = facingAngle + halfArc;
-            this.ctx.fillStyle = 'rgba(40, 35, 30, 0.24)';
+            this.ctx.fillStyle = 'rgba(50, 40, 35, 0.32)';
             this.ctx.beginPath();
             this.ctx.arc(screenX, screenY, range, startAngle, endAngle);
             this.ctx.lineTo(screenX, screenY);
             this.ctx.closePath();
             this.ctx.fill();
-            this.ctx.strokeStyle = '#4a4a52';
-            this.ctx.lineWidth = 3 / camera.zoom;
+            this.ctx.strokeStyle = '#5a4a52';
+            this.ctx.lineWidth = 4 / camera.zoom;
             this.ctx.stroke();
-            this.ctx.strokeStyle = 'rgba(140, 130, 120, 0.65)';
-            this.ctx.lineWidth = Math.max(1, 1.5 / camera.zoom);
+            this.ctx.strokeStyle = 'rgba(200, 140, 100, 0.85)';
+            this.ctx.lineWidth = Math.max(1, 2 / camera.zoom);
             this.ctx.beginPath();
             this.ctx.arc(screenX, screenY, range - 3 / camera.zoom, startAngle, endAngle);
             this.ctx.stroke();
         }
 
-        // Draw shadow (scale up for titan boss)
-        const enemyTypeForShadow = ai && ai.enemyType ? ai.enemyType : 'goblin';
-        const shadowScale = enemyTypeForShadow === 'titanBoss' ? 3.4 : 1;
+        // Draw shadow
         this.ctx.fillStyle = 'rgba(0, 0, 0, 0.3)';
         this.ctx.beginPath();
         this.ctx.ellipse(
             screenX,
-            screenY + (transform.height / 2 + 5) * camera.zoom * shadowScale,
-            (transform.width / 2) * camera.zoom * shadowScale,
-            (transform.height / 4) * camera.zoom * shadowScale,
+            screenY + (transform.height / 2 + 5) * camera.zoom,
+            (transform.width / 2) * camera.zoom,
+            (transform.height / 4) * camera.zoom,
             0, 0, Math.PI * 2
         );
         this.ctx.fill();
@@ -1466,13 +1456,13 @@ class RenderSystem {
                 bodyColor = `rgba(255, ${Math.floor(100 + (1 - chargeProgress) * 100)}, ${Math.floor(50 + (1 - chargeProgress) * 50)}, 1)`;
             }
         } else if (combat && combat.isWindingUp) {
-            const intensity = combat.windUpProgress;
+            const intensity = EnemyCombatRenderer.getWindUpVisualProgress(combat);
             bodyColor = `rgba(255, ${Math.floor(100 + (1 - intensity) * 100)}, ${Math.floor(50 + (1 - intensity) * 50)}, 1)`;
         } else if (combat && combat.isLunging) {
             bodyColor = '#ff0000';
         }
 
-        const sizeMultiplier = combat && combat.isWindingUp ? (1 + combat.windUpProgress * 0.1) : 1;
+        const sizeMultiplier = combat && combat.isWindingUp ? (1 + EnemyCombatRenderer.getWindUpVisualProgress(combat) * 0.12) : 1;
         const r = (transform.width / 2) * camera.zoom * sizeMultiplier;
         const h = (transform.height / 2) * camera.zoom * sizeMultiplier;
         const enemyType = ai && ai.enemyType ? ai.enemyType : 'goblin';
@@ -1644,39 +1634,6 @@ class RenderSystem {
             this.ctx.arc(screenX + dr * 0.3, screenY - dh * 0.12, eyeSize, 0, Math.PI * 2);
             this.ctx.fill();
             this.ctx.shadowBlur = 0;
-        } else if (enemyType === 'titanBoss') {
-            // Final boss: ~10x chieftain scale (Monster Hunter–style) – massive silhouette
-            const scale = 3.4;
-            const R = r * scale;
-            const H = h * scale;
-            this.ctx.fillStyle = '#0d0508';
-            this.ctx.strokeStyle = strokeColor;
-            this.ctx.lineWidth = 4 / camera.zoom;
-            this.ctx.beginPath();
-            this.ctx.ellipse(screenX, screenY + H * 0.1, R * 1.2, H * 1.1, 0, 0, Math.PI * 2);
-            this.ctx.fill();
-            this.ctx.stroke();
-            this.ctx.fillStyle = '#1a0a0f';
-            this.ctx.beginPath();
-            this.ctx.moveTo(screenX - R * 0.5, screenY - H * 0.4);
-            this.ctx.lineTo(screenX - R * 1.0, screenY - H * 1.2);
-            this.ctx.lineTo(screenX - R * 0.35, screenY - H * 0.3);
-            this.ctx.closePath();
-            this.ctx.fill();
-            this.ctx.stroke();
-            this.ctx.beginPath();
-            this.ctx.moveTo(screenX + R * 0.5, screenY - H * 0.4);
-            this.ctx.lineTo(screenX + R * 1.0, screenY - H * 1.2);
-            this.ctx.lineTo(screenX + R * 0.35, screenY - H * 0.3);
-            this.ctx.closePath();
-            this.ctx.fill();
-            this.ctx.stroke();
-            this.ctx.fillStyle = combat && combat.isAttacking ? '#ff2222' : (ai && ai.state === 'chase' ? '#cc1111' : '#330a0a');
-            const eyeSize = 12 / camera.zoom;
-            this.ctx.beginPath();
-            this.ctx.arc(screenX - R * 0.28, screenY - H * 0.08, eyeSize, 0, Math.PI * 2);
-            this.ctx.arc(screenX + R * 0.28, screenY - H * 0.08, eyeSize, 0, Math.PI * 2);
-            this.ctx.fill();
         } else {
             this.ctx.fillStyle = bodyColor;
             this.ctx.beginPath();
@@ -1722,6 +1679,22 @@ class RenderSystem {
             });
         }
 
+        // Stun duration bar: white bar above health, depletes as stun runs out
+        const statusEffects = entity.getComponent(StatusEffects);
+        if (statusEffects && statusEffects.stunDurationPercentRemaining > 0) {
+            const gap = 2 * camera.zoom;
+            const stunDurationBarHeight = 3 * camera.zoom;
+            const stunDurationBarY = barY - stunDurationBarHeight - gap;
+            this.ctx.fillStyle = '#333';
+            this.ctx.fillRect(barX, stunDurationBarY, barWidth, stunDurationBarHeight);
+            this.ctx.strokeStyle = '#555';
+            this.ctx.lineWidth = 1 / camera.zoom;
+            this.ctx.strokeRect(barX, stunDurationBarY, barWidth, stunDurationBarHeight);
+            const remain = statusEffects.stunDurationPercentRemaining;
+            this.ctx.fillStyle = '#ffffff';
+            this.ctx.fillRect(barX, stunDurationBarY, barWidth * remain, stunDurationBarHeight);
+        }
+
         if (health && health.percent < 1) {
             this.ctx.fillStyle = '#333';
             this.ctx.fillRect(barX, barY, barWidth, barHeight);
@@ -1737,7 +1710,6 @@ class RenderSystem {
         }
 
         // Stun bar under health bar
-        const statusEffects = entity.getComponent(StatusEffects);
         if (statusEffects && statusEffects.stunMeterPercent > 0) {
             const gap = 2 * camera.zoom;
             const stunBarHeight = 3 * camera.zoom;

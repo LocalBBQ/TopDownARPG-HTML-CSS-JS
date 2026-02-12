@@ -8,7 +8,6 @@ class EnemyManager {
         this.currentLevel = 1;
         this.enemiesSpawned = false;
         this.enemiesKilledThisLevel = 0;
-        this.finalBossSpawned = false;
     }
 
     init(systems) {
@@ -52,8 +51,7 @@ class EnemyManager {
             }
         }
         
-        // Titan uses smaller hitbox (50) so it can path through terrain; drawn at 3.4x scale for presence
-        const size = type === 'titanBoss' ? 50 : (type === 'greaterDemon' ? 38 : (type === 'goblinChieftain' ? 34 : 25));
+        const size = type === 'greaterDemon' ? 38 : (type === 'goblinChieftain' ? 34 : 25);
         enemy
             .addComponent(new Transform(x, y, size, size))
             .addComponent(new Health(config.maxHealth))
@@ -126,16 +124,15 @@ class EnemyManager {
         return enemy;
     }
 
-    generateEnemyPacks(worldWidth, worldHeight, packDensity = 0.008, packSize = { min: 2, max: 5 }, entityManager, obstacleManager, enemyTypes = null, options = null) {
+    generateEnemyPacks(worldWidth, worldHeight, packDensity = 0.008, packSize = { min: 2, max: 5 }, entityManager, obstacleManager, enemyTypes = null, options = null, playerSpawn = null) {
         const tileSize = GameConfig.world.tileSize;
         const numPacks = Math.floor(worldWidth * worldHeight * packDensity / (tileSize * tileSize));
         const usePatrol = options && options.patrol === true;
 
-        const excludeArea = {
-            x: worldWidth / 2,
-            y: worldHeight / 2,
-            radius: 200 // Same exclusion zone as rocks/trees
-        };
+        // Exclude area: use actual player spawn when provided so packs don't land on spawn; otherwise world center
+        const excludeArea = playerSpawn && typeof playerSpawn.x === 'number' && typeof playerSpawn.y === 'number'
+            ? { x: playerSpawn.x, y: playerSpawn.y, radius: 300 }
+            : { x: worldWidth / 2, y: worldHeight / 2, radius: 200 };
 
         let packsPlaced = 0;
         let attempts = 0;
@@ -228,7 +225,7 @@ class EnemyManager {
     }
 
     // Spawn enemies for a specific level using pack spawning + optional scene-tile spawn hints
-    spawnLevelEnemies(level, entityManager, obstacleManager) {
+    spawnLevelEnemies(level, entityManager, obstacleManager, playerSpawn = null) {
         const levelConfig = GameConfig.levels[level];
         if (!levelConfig || !levelConfig.packSpawn) {
             console.warn(`No packSpawn config for level ${level}`);
@@ -252,8 +249,11 @@ class EnemyManager {
             entityManager,
             obstacleManager,
             enemyTypes,
-            packOptions
+            packOptions,
+            playerSpawn
         );
+
+        const SPAWN_EXCLUDE_RADIUS = 300;
 
         // Scene-tile spawn hints: extra packs on tiles that define spawn (e.g. goblinCamp, banditAmbush)
         const obstacles = levelConfig.obstacles || {};
@@ -266,6 +266,9 @@ class EnemyManager {
                 const tileSize = cell.tileSize != null ? cell.tileSize : tileSizeDefault;
                 const centerX = cell.originX + tileSize / 2;
                 const centerY = cell.originY + tileSize / 2;
+                if (playerSpawn && typeof playerSpawn.x === 'number' && typeof playerSpawn.y === 'number') {
+                    if (Utils.distance(centerX, centerY, playerSpawn.x, playerSpawn.y) < SPAWN_EXCLUDE_RADIUS) continue;
+                }
                 const count = (tile.spawn.count != null && tile.spawn.count > 0) ? tile.spawn.count : 1;
                 const packOptions = packConfig.patrol ? { patrol: true } : null;
                 for (let i = 0; i < count; i++) {
@@ -546,22 +549,16 @@ class EnemyManager {
                     enemyTransform.x, enemyTransform.y,
                     playerTransform.x, playerTransform.y
                 );
-                // Demon, chieftain, and final boss use arc/release phase or AOE; others use distance only
+                // Demon and chieftain use arc and release phase; others use distance only
                 const isDemon = enemyCombat.demonAttack != null;
                 const isChieftain = enemyCombat.chieftainAttack != null;
-                const isFinalBoss = enemyCombat.finalBossAttack != null;
-                const inRange = isFinalBoss && enemyCombat.finalBossAttack.isCircularAttack
-                    ? currentDist < (enemyCombat.finalBossAttack.stompRadius || 180)
-                    : currentDist < enemyCombat.attackRange;
+                const inRange = currentDist < enemyCombat.attackRange;
                 const inArc = (isDemon || isChieftain) && enemyMovement
-                    ? Utils.pointInArc(playerTransform.x, playerTransform.y, enemyTransform.x, enemyTransform.y, enemyMovement.facingAngle, enemyCombat.attackArc, enemyCombat.attackRange)
-                    : (isFinalBoss && !enemyCombat.finalBossAttack.isCircularAttack) && enemyMovement
                     ? Utils.pointInArc(playerTransform.x, playerTransform.y, enemyTransform.x, enemyTransform.y, enemyMovement.facingAngle, enemyCombat.attackArc, enemyCombat.attackRange)
                     : inRange;
                 const demonCanHit = !isDemon || enemyCombat.demonAttack.isInReleasePhase;
                 const chieftainCanHit = !isChieftain || enemyCombat.chieftainAttack.isInReleasePhase;
-                const finalBossCanHit = !isFinalBoss || enemyCombat.finalBossAttack.isInReleasePhase;
-                if (inRange && inArc && demonCanHit && chieftainCanHit && finalBossCanHit) {
+                if (inRange && inArc && demonCanHit && chieftainCanHit) {
                     let finalDamage = enemyCombat.attackDamage;
                     const attackerStatus = enemy.getComponent(StatusEffects);
                     if (attackerStatus && (performance.now() / 1000) < attackerStatus.buffedUntil) {
@@ -592,9 +589,6 @@ class EnemyManager {
                     if (playerStatus) {
                         let baseStun = enemyConfigForStun.stunBuildupPerHit ?? 0;
                         if (attackerStatus && attackerStatus.packStunBuildupMultiplier != null) baseStun *= attackerStatus.packStunBuildupMultiplier;
-                        if (enemyCombat.finalBossAttack && enemyCombat.finalBossAttack.roarStunBuildup) {
-                            baseStun += enemyCombat.finalBossAttack.roarStunBuildup;
-                        }
                         const mult = blocked ? (GameConfig.player.stun?.blockedMultiplier ?? 0.5) : 1;
                         playerStatus.addStunBuildup(baseStun * mult);
                     }
@@ -612,8 +606,6 @@ class EnemyManager {
                         enemyCombat.demonAttack.markEnemyHit('player');
                     } else if (enemyCombat.chieftainAttack) {
                         enemyCombat.chieftainAttack.markEnemyHit('player');
-                    } else if (enemyCombat.finalBossAttack) {
-                        enemyCombat.finalBossAttack.markEnemyHit('player');
                     } else if (enemyCombat.goblinAttack) {
                         enemyCombat.goblinAttack.attackProcessed = true;
                     } else if (enemyCombat.enemyAttack) {
@@ -638,7 +630,7 @@ class EnemyManager {
     }
 
     // Change to a different level (clears current enemies and spawns new ones)
-    changeLevel(level, entityManager, obstacleManager) {
+    changeLevel(level, entityManager, obstacleManager, playerSpawn = null) {
         this.enemiesKilledThisLevel = 0;
         const hazardManager = this.systems ? this.systems.get('hazards') : null;
         if (hazardManager && hazardManager.clearFlamePillars) {
@@ -653,17 +645,8 @@ class EnemyManager {
         }
         this.enemies = [];
         
-        this.finalBossSpawned = false;
-        // Spawn enemies for the new level
-        this.spawnLevelEnemies(level, entityManager, obstacleManager);
-    }
-
-    /** Spawn the final boss once (e.g. when objective complete on last level). Caller should set finalBossSpawned = true after. */
-    spawnFinalBoss(centerX, centerY, entityManager) {
-        if (this.finalBossSpawned) return null;
-        const boss = this.spawnEnemy(centerX, centerY, 'titanBoss', entityManager, null, null);
-        this.finalBossSpawned = true;
-        return boss;
+        // Spawn enemies for the new level (exclude area around player spawn)
+        this.spawnLevelEnemies(level, entityManager, obstacleManager, playerSpawn);
     }
 
     getCurrentLevel() {
