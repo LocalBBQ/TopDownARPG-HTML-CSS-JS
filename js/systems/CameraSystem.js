@@ -63,7 +63,7 @@ class CameraSystem {
         this.worldHeight = worldHeight;
     }
 
-    follow(transform, canvasWidth, canvasHeight) {
+    follow(transform, canvasWidth, canvasHeight, options = {}) {
         if (!transform) return;
         
         const effectiveWidth = canvasWidth / this.zoom;
@@ -75,8 +75,11 @@ class CameraSystem {
         targetX = Utils.clamp(targetX, 0, Math.max(0, this.worldWidth - effectiveWidth));
         targetY = Utils.clamp(targetY, 0, Math.max(0, this.worldHeight - effectiveHeight));
 
-        this.x = Utils.lerp(this.x, targetX, this.smoothing);
-        this.y = Utils.lerp(this.y, targetY, this.smoothing);
+        const smoothing = options.fastFollow && GameConfig.camera.fastFollowSmoothing != null
+            ? GameConfig.camera.fastFollowSmoothing
+            : this.smoothing;
+        this.x = Utils.lerp(this.x, targetX, smoothing);
+        this.y = Utils.lerp(this.y, targetY, smoothing);
     }
 
     screenToWorld(screenX, screenY) {

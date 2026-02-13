@@ -400,9 +400,20 @@ class EnemyManager {
                 if (is360Attack) {
                     // 360 attack hits everything in range, no arc check needed
                     hitEnemy = true;
-                } else {
-                    // Normal arc-based attack
+                } else if (combat.currentAttackIsThrust || (combat.isPlayer && combat.weapon && combat.weapon.name === 'swordAndShield' && combat.currentAttackAnimationKey === 'melee2')) {
+                    // Thrust: rectangle thrust forward from player (e.g. stab)
                     const facingAngle = movement ? movement.facingAngle : 0;
+                    const thrustLength = combat.attackRange + rangeSensitivity;
+                    const thrustHalfWidth = (combat.currentAttackThrustWidth || 40) / 2 + rangeSensitivity * 0.5;
+                    hitEnemy = Utils.pointInThrustRect(
+                        enemyTransform.x, enemyTransform.y,
+                        transform.x, transform.y,
+                        facingAngle, thrustLength, thrustHalfWidth
+                    );
+                } else {
+                    // Normal arc-based attack (arcOffset shifts cone left/right for alternating slashes)
+                    const facingAngle = movement ? movement.facingAngle : 0;
+                    const arcCenter = facingAngle + (combat.attackArcOffset ?? 0);
                     
                     // Apply arc sensitivity buffer (wider angle tolerance)
                     const generousArc = combat.attackArc + arcSensitivity;
@@ -411,7 +422,7 @@ class EnemyManager {
                     hitEnemy = Utils.pointInArc(
                         enemyTransform.x, enemyTransform.y,
                         transform.x, transform.y,
-                        facingAngle, generousArc, generousRange
+                        arcCenter, generousArc, generousRange
                     );
                 }
                 

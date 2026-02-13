@@ -33,13 +33,6 @@ const GameConfig = {
         attackCooldown: 0.45, // seconds between attacks (weapon combo durations control actual swing length)
         color: '#8b8b9a', // steel (fallback when knight sprites not loaded)
         defaultWeapon: 'swordAndShield',
-        chargedAttack: {
-            minChargeTime: 0.5, // Minimum time to charge (seconds)
-            maxChargeTime: 2.0, // Maximum charge time (seconds)
-            damageMultiplier: 2.0, // Damage multiplier at max charge
-            rangeMultiplier: 1.5, // Range multiplier at max charge
-            staminaCostMultiplier: 1.5 // Stamina cost multiplier at max charge
-        },
         sprint: {
             multiplier: 1.66, // 66% speed increase
             staminaCost: 12 // stamina consumed per second
@@ -101,155 +94,8 @@ const GameConfig = {
     },
     
     enemy: {
-        types: {
-            goblin: {
-                maxHealth: 30,
-                speed: 25, // pixels per second (now properly scaled by deltaTime) - slowed down
-                attackRange: 40,        // Swipe hitbox: max distance (px) to hit player
-                attackDamage: 5,
-                attackArcDegrees: 90,   // Swipe arc (degrees) – goblin currently uses range only
-                detectionRange: 200,
-                color: '#44aa44',
-                attackCooldown: 1.0, // seconds (was 60 frames at 60fps)
-                windUpTime: 0.6, // seconds before attack hits
-                stunThreshold: 60,      // stun meter threshold (lower = easier to stun; default 100)
-                stunBuildupPerHit: 18,  // stun meter added to player when goblin hits
-                knockbackResist: 0, // 0–1; percentage reduction to knockback received
-                knockback: {
-                    force: 160, // Knockback force when goblin hits player (increased by 10)
-                    decay: 0.88 // Friction factor
-                },
-                lunge: {
-                    enabled: true,
-                    chargeRange: 150, // Distance at which goblin starts charging lunge
-                    chargeTime: 0.8, // Time to charge up the lunge
-                    lungeSpeed: 200, // Speed during lunge - slowed down
-                    lungeDistance: 120, // Maximum distance to lunge
-                    lungeDamage: 8, // Damage dealt by lunge (higher than normal attack)
-                    hitRadiusBonus: 0, // Extra px added to enemy+player radius for lunge hit (bigger = easier to get hit)
-                    knockback: { force: 240 }, // Per-attack knockback (default type is 160)
-                    hopBackChance: 0.5, // 50% chance to hop backward after lunge
-                    hopBackDelay: 0.75, // Seconds to wait before hopping back (750ms)
-                    hopBackDistance: 60, // Pixels to hop back
-                    hopBackSpeed: 140 // Speed during hop back
-                },
-                packModifier: 'furious' // optional: name or array of names (random pick)
-            },
-            skeleton: {
-                maxHealth: 50,
-                speed: 20, // pixels per second (now properly scaled by deltaTime) - slowed down
-                attackRange: 50,
-                attackDamage: 8,
-                attackArcDegrees: 90,
-                color: '#cccccc',
-                attackCooldown: 1.5, // seconds (was 50 frames at 60fps)
-                windUpTime: 0.7, // seconds before attack hits
-                stunBuildupPerHit: 15,
-                knockbackResist: 0,
-                knockback: {
-                    force: 190, // Knockback force when skeleton hits player (increased by 10)
-                    decay: 0.87
-                },
-                projectile: {
-                    enabled: true, // Skeletons are ranged enemies
-                    speed: 200, // Pixels per second - slowed down
-                    damage: 6,
-                    range: 280,
-                    cooldown: 3.5, // Seconds between shots - increased cooldown
-                    stunBuildup: 15
-                },
-                packModifier: 'savage'
-            },
-            lesserDemon: {
-                maxHealth: 45,
-                speed: 32, // pixels per second - faster than goblin
-                attackRange: 45,
-                attackDamage: 7,
-                attackArcDegrees: 90,
-                detectionRange: 220,
-                color: '#884444',
-                attackCooldown: 0.85, // seconds - faster than goblin
-                windUpTime: 0.5, // seconds before attack hits
-                stunBuildupPerHit: 18,
-                knockbackResist: 0.1, // 10% less knockback
-                knockback: {
-                    force: 180, // Knockback force when lesser demon hits player
-                    decay: 0.87
-                },
-                lunge: {
-                    enabled: true,
-                    chargeRange: 160, // Distance at which lesser demon starts charging lunge
-                    chargeTime: 0.7, // Time to charge up the lunge - faster than goblin
-                    lungeSpeed: 220, // Speed during lunge - faster than goblin
-                    lungeDistance: 130, // Maximum distance to lunge
-                    lungeDamage: 10, // Damage dealt by lunge (higher than goblin)
-                    knockback: { force: 260 } // Per-attack knockback
-                },
-                packModifier: 'zealous'
-            },
-            greaterDemon: {
-                maxHealth: 80,
-                speed: 30, // pixels per second (now properly scaled by deltaTime) - slowed down
-                attackRange: 60,
-                attackDamage: 12,
-                attackArcDegrees: 90,
-                detectionRange: 300,
-                color: '#aa4444',
-                attackCooldown: 0.67, // seconds (was 40 frames at 60fps)
-                windUpTime: 0.5, // seconds before attack hits
-                stunBuildupPerHit: 22,
-                knockbackResist: 0.2, // 20% less knockback
-                knockback: {
-                    force: 230, // Knockback force when demon hits player (stronger, increased by 10)
-                    decay: 0.86
-                },
-                pillarFlame: {
-                    castDelay: 2.0,   // Telegraph time before pillar spawns (more time to escape)
-                    activeDuration: 2.0,
-                    radius: 45,
-                    damage: 8,
-                    damageInterval: 0.4,
-                    cooldown: 18.0,   // Seconds before same demon can cast again (fewer pillars)
-                    pillarRange: 220
-                },
-                packModifier: 'apex'
-            },
-            goblinChieftain: {
-                maxHealth: 60,
-                speed: 20, // slower than goblin – heavy
-                attackRange: 115, // heavy smash range (increased)
-                attackDamage: 16, // heavy smash damage (set by ChieftainAttack when attacking)
-                attackArcDegrees: 90,
-                detectionRange: 220,
-                color: '#2d5a2d', // darker green
-                attackCooldown: 1.2, // seconds between heavy smashes (faster)
-                windUpTime: 0.5,
-                stunThreshold: 70,      // stun meter threshold (lower = easier to stun; default 100)
-                stunBuildupPerHit: 24,
-                knockbackResist: 0.5, // 50% less knockback
-                knockback: {
-                    force: 200,
-                    decay: 0.86
-                },
-                heavySmash: {
-                    chargeTime: 0.85,   // seconds telegraph (faster)
-                    releaseDuration: 0.15,
-                    damage: 16,
-                    range: 115,   // increased reach
-                    arcDegrees: 90,
-                    knockbackForce: 280
-                },
-                warCry: {
-                    enabled: true,
-                    radius: 180,      // range to buff nearby goblins
-                    cooldown: 12.0,    // seconds before can war cry again
-                    buffDuration: 5.0, // seconds goblins stay buffed
-                    speedMultiplier: 1.2,
-                    damageMultiplier: 1.2
-                },
-                packModifier: 'inspiring'
-            }
-        },
+        // types populated by EnemiesRegistry.js after enemy type scripts load
+        types: {},
         /** Pack detection: same-type allies within radius; need at least minAllies to count as "in pack". */
         pack: {
             radius: 180,
@@ -519,6 +365,8 @@ const GameConfig = {
     
     camera: {
         smoothing: 0.1,
+        /** Higher smoothing when player is attack-dashing (e.g. spin) so camera keeps up and player doesn't appear to leave the frame */
+        fastFollowSmoothing: 0.35,
         minZoom: 1.0,
         maxZoom: 2.0,
         zoomSpeed: 0.05

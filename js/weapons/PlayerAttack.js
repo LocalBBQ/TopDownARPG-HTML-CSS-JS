@@ -18,7 +18,7 @@ class PlayerAttack {
         this.resetCombo();
     }
     
-    update(deltaTime) {
+    update(deltaTime, entity = null) {
         // Update attack timer for visual effects
         if (this.attackTimer > 0) {
             this.attackTimer += deltaTime;
@@ -44,19 +44,24 @@ class PlayerAttack {
 
     /** Returns stamina cost for the next attack without advancing state (for pre-check and buffered attacks). */
     getNextAttackStaminaCost(chargeDuration = 0, options = {}) {
-        const useSpecialAttack = options.useSpecialAttack && this.weapon.specialAttack;
-        const chargedAttackConfig = GameConfig.player.chargedAttack;
+        const useDashAttack = options.useDashAttack && this.weapon.dashAttack;
+        const chargedAttackConfig = this.weapon.chargeAttack || null;
         let stageProps;
-        if (useSpecialAttack) {
-            stageProps = this.weapon.getSpecialAttackProperties();
+        if (useDashAttack) {
+            stageProps = this.weapon.getDashAttackProperties();
         } else {
-            const isCharged = chargeDuration >= chargedAttackConfig.minChargeTime;
-            const nextStage = isCharged ? 1 : (this.comboStage < this.weapon.maxComboStage ? this.comboStage + 1 : 1);
+            const isCharged = chargedAttackConfig && chargeDuration >= chargedAttackConfig.minChargeTime;
+            let nextStage = isCharged ? 1 : (this.comboStage < this.weapon.maxComboStage ? this.comboStage + 1 : 1);
             stageProps = this.weapon.getComboStageProperties(nextStage);
+            // Charged thrust (weapon with thrust stage): use thrust stage for cost
+            if (isCharged && chargedAttackConfig.chargedThrustDashSpeed != null) {
+                const stabProps = this.weapon.getComboStageProperties(3);
+                if (stabProps) stageProps = stabProps;
+            }
         }
         if (!stageProps) return 0;
         let cost = stageProps.staminaCost;
-        if (!useSpecialAttack && chargeDuration >= chargedAttackConfig.minChargeTime) {
+        if (!useDashAttack && chargedAttackConfig && chargeDuration >= chargedAttackConfig.minChargeTime) {
             const chargeMultiplier = Math.min(1.0, (chargeDuration - chargedAttackConfig.minChargeTime) /
                 (chargedAttackConfig.maxChargeTime - chargedAttackConfig.minChargeTime));
             cost *= (1.0 + (chargedAttackConfig.staminaCostMultiplier - 1.0) * chargeMultiplier);
@@ -69,17 +74,17 @@ class PlayerAttack {
             return false;
         }
 
-        const useSpecialAttack = options.useSpecialAttack && this.weapon.specialAttack;
+        const useDashAttack = options.useDashAttack && this.weapon.dashAttack;
+        const chargedAttackConfig = this.weapon.chargeAttack || null;
         let stageProps;
         let isCharged = false;
         let chargeMultiplier = 0;
-        const chargedAttackConfig = GameConfig.player.chargedAttack;
 
-        if (useSpecialAttack) {
-            stageProps = this.weapon.getSpecialAttackProperties();
+        if (useDashAttack) {
+            stageProps = this.weapon.getDashAttackProperties();
             if (!stageProps) return false;
         } else {
-            isCharged = chargeDuration >= chargedAttackConfig.minChargeTime;
+            isCharged = chargedAttackConfig && chargeDuration >= chargedAttackConfig.minChargeTime;
             if (isCharged) {
                 chargeMultiplier = Math.min(1.0, (chargeDuration - chargedAttackConfig.minChargeTime) /
                     (chargedAttackConfig.maxChargeTime - chargedAttackConfig.minChargeTime));
@@ -95,16 +100,23 @@ class PlayerAttack {
             }
             stageProps = this.weapon.getComboStageProperties(this.comboStage);
             if (!stageProps) return false;
+
+            // Charged thrust: use thrust stage (e.g. stab) when weapon has chargedThrustDashSpeed
+            const isChargedThrust = isCharged && chargedAttackConfig && chargedAttackConfig.chargedThrustDashSpeed != null;
+            if (isChargedThrust) {
+                const stabProps = this.weapon.getComboStageProperties(3);
+                if (stabProps) stageProps = stabProps;
+            }
         }
 
-        // Reset combo window (for both normal and special)
+        // Reset combo window (for both normal and dash attack)
         this.comboTimer = this.comboWindow;
         this.hitEnemies.clear();
 
         let finalDamage = stageProps.damage;
         let finalRange = stageProps.range;
         let finalStaminaCost = stageProps.staminaCost;
-        if (!useSpecialAttack && isCharged && chargeMultiplier > 0) {
+        if (!useDashAttack && isCharged && chargedAttackConfig && chargeMultiplier > 0) {
             const damageMultiplier = 1.0 + (chargedAttackConfig.damageMultiplier - 1.0) * chargeMultiplier;
             const rangeMultiplier = 1.0 + (chargedAttackConfig.rangeMultiplier - 1.0) * chargeMultiplier;
             const staminaMultiplier = 1.0 + (chargedAttackConfig.staminaCostMultiplier - 1.0) * chargeMultiplier;
@@ -112,20 +124,34 @@ class PlayerAttack {
             finalRange = stageProps.range * rangeMultiplier;
             finalStaminaCost = stageProps.staminaCost * staminaMultiplier;
         }
+
+        // Charged thrust dash: distance scales with charge (when weapon defines chargedThrustDashSpeed)
+        let dashSpeed = stageProps.dashSpeed;
+        let dashDuration = stageProps.dashDuration;
+        const isChargedThrust = !useDashAttack && isCharged && chargedAttackConfig && chargedAttackConfig.chargedThrustDashSpeed != null;
+        if (isChargedThrust) {
+            const minDist = chargedAttackConfig.chargedThrustDashDistanceMin ?? 25;
+            const maxDist = chargedAttackConfig.chargedThrustDashDistanceMax ?? 140;
+            const dashDistance = minDist + (maxDist - minDist) * chargeMultiplier;
+            dashSpeed = chargedAttackConfig.chargedThrustDashSpeed;
+            dashDuration = dashDistance / dashSpeed;
+        }
         
         // Set attack duration
         this.attackDuration = stageProps.duration / 1000; // Convert to seconds
         this.attackTimer = 0.001; // Start timer (small value to indicate active)
         
-        // Handle dash for stage 3 (or any stage with dashSpeed)
-        if (stageProps.dashSpeed && entity) {
-            const movement = entity.getComponent(Movement);
+        // Handle dash: start immediately for all attacks (spin uses speed ramp in PlayerMovement so first frame is smooth)
+        if (dashSpeed && entity) {
             const transform = entity.getComponent(Transform);
-            if (movement && transform && targetX !== null && targetY !== null) {
+            if (transform && targetX !== null && targetY !== null) {
                 const dx = targetX - transform.x;
                 const dy = targetY - transform.y;
                 const normalized = Utils.normalize(dx, dy);
-                movement.startAttackDash(normalized.x, normalized.y, stageProps.dashDuration);
+                const movement = entity.getComponent(Movement);
+                if (movement && movement.startAttackDash) {
+                    movement.startAttackDash(normalized.x, normalized.y, dashDuration, dashSpeed);
+                }
             }
         }
         
@@ -133,17 +159,21 @@ class PlayerAttack {
             range: finalRange,
             damage: finalDamage,
             arc: stageProps.arc,
+            arcOffset: stageProps.arcOffset ?? 0,
+            reverseSweep: stageProps.reverseSweep === true,
             comboStage: this.comboStage,
             staminaCost: finalStaminaCost,
             duration: stageProps.duration,
             stageName: stageProps.stageName,
             animationKey: stageProps.animationKey,
             isCircular: stageProps.isCircular,
+            isThrust: stageProps.isThrust === true,
+            thrustWidth: stageProps.thrustWidth ?? 40,
             knockbackForce: stageProps.knockbackForce,
             stunBuildup: stageProps.stunBuildup ?? 25,
             isCharged: isCharged,
             chargeMultiplier: chargeMultiplier,
-            isSpecial: useSpecialAttack
+            isDashAttack: useDashAttack
         };
     }
     

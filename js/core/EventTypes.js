@@ -12,7 +12,7 @@ const EventTypes = {
     // Combat / damage events
     DAMAGE_TAKEN: 'damage:taken',
     PLAYER_HIT_ENEMY: 'combat:playerHitEnemy',
-    PLAYER_SPECIAL_ATTACK: 'combat:playerSpecialAttack'
+    PLAYER_DASH_ATTACK: 'combat:playerDashAttack'
 };
 
 // Expose globally for script-tag based usage

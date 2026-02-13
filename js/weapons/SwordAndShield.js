@@ -8,6 +8,7 @@
         cooldown: 0.45,
         comboWindow: 1.6,
         baseStunBuildup: 25,
+        weaponLength: 55,
         block: {
             enabled: true,
             arcDegrees: 180,
@@ -24,11 +25,21 @@
             }
         },
         stages: [
-            { name: 'slash', arcDegrees: 90, duration: 400, staminaCost: 10, rangeMultiplier: 1.0, damageMultiplier: 1.2, animationKey: 'melee', knockbackForce: 100, stunBuildup: 28 },
-            { name: 'stab', arcDegrees: 24, duration: 420, staminaCost: 12, rangeMultiplier: 1.2, damageMultiplier: 1.0, animationKey: 'melee2', dashSpeed: 60, dashDuration: 0.06, stunBuildup: 22 },
-            { name: 'slash', arcDegrees: 90, duration: 400, staminaCost: 10, rangeMultiplier: 1.0, damageMultiplier: 1.2, animationKey: 'melee', knockbackForce: 100, stunBuildup: 28 }
+            { name: 'slash', arcDegrees: 90, duration: 400, staminaCost: 10, range: 92, damageMultiplier: 1.2, animationKey: 'melee', knockbackForce: 100, stunBuildup: 28 },
+            { name: 'slash', arcDegrees: 90, duration: 400, staminaCost: 10, range: 92, damageMultiplier: 1.2, animationKey: 'melee', knockbackForce: 100, stunBuildup: 28, reverseSweep: true },
+            { name: 'stab', arcDegrees: 24, duration: 420, staminaCost: 12, range: 96, damageMultiplier: 1.0, animationKey: 'melee2', dashSpeed: 60, dashDuration: 0.06, stunBuildup: 22, thrust: true, thrustWidth: 44 }
         ],
-        specialAttack: { name: 'spin', arcDegrees: 360, duration: 740, staminaCost: 25, rangeMultiplier: 0.9, damageMultiplier: 1.5, animationKey: 'meleeSpin', dashSpeed: 350, dashDuration: 0.5, stunBuildup: 50 }
+        dashAttack: { name: 'spin', arcDegrees: 360, duration: 740, staminaCost: 25, range: 72, damageMultiplier: 1.5, animationKey: 'meleeSpin', dashSpeed: 350, dashDuration: 0.5, stunBuildup: 50 },
+        chargeAttack: {
+            minChargeTime: 0.5,
+            maxChargeTime: 2.0,
+            damageMultiplier: 2.0,
+            rangeMultiplier: 3.0,
+            staminaCostMultiplier: 1.5,
+            chargedThrustDashSpeed: 380,
+            chargedThrustDashDistanceMin: 50,
+            chargedThrustDashDistanceMax: 280
+        }
     };
     window.SwordAndShieldWeapon = Weapon.fromConfig(config);
 })();

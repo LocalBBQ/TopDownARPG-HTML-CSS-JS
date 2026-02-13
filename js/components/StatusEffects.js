@@ -8,6 +8,8 @@ class StatusEffects {
         this.stunnedUntil = 0;
         // Total duration of current stun (seconds), for UI bar
         this.stunDurationTotal = 0;
+        // True once this entity has been stunned at least once (used to show enemy stun bar only after first stun)
+        this.hasBeenStunnedOnce = false;
         // Stun meter (buildup toward threshold)
         this.stunBuildup = 0;
         // Last time (seconds) we received stun buildup — used for player decay cooldown
@@ -115,6 +117,7 @@ class StatusEffects {
         if (end > this.stunnedUntil) {
             this.stunnedUntil = end;
             this.stunDurationTotal = end - now;
+            this.hasBeenStunnedOnce = true;
         }
     }
 

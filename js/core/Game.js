@@ -47,7 +47,9 @@ class Game {
                 sfxEnabled: true,
                 showMinimap: true,
                 useCharacterSprites: false,  // Player + enemies use sprite sheets vs procedural canvas knight
-                useEnvironmentSprites: false // Trees/rocks/houses etc use sprite images vs procedural shapes
+                useEnvironmentSprites: false, // Trees/rocks/houses etc use sprite images vs procedural shapes
+                showPlayerHitboxIndicators: true,  // Player attack arc, thrust rect
+                showEnemyHitboxIndicators: true    // Enemy cones, wind-up, attack indicator, lunge telegraph
             };
             
             // Initialize screen manager
@@ -711,6 +713,10 @@ class Game {
                     this.settings.useCharacterSprites = !this.settings.useCharacterSprites;
                 } else if (item === 'environmentSprites') {
                     this.settings.useEnvironmentSprites = !this.settings.useEnvironmentSprites;
+                } else if (item === 'playerHitboxIndicators') {
+                    this.settings.showPlayerHitboxIndicators = !this.settings.showPlayerHitboxIndicators;
+                } else if (item === 'enemyHitboxIndicators') {
+                    this.settings.showEnemyHitboxIndicators = !this.settings.showEnemyHitboxIndicators;
                 } else if (item === 'controls') {
                     this.screenManager.setScreen('settings-controls');
                 } else if (item === 'back') {
@@ -797,9 +803,6 @@ class Game {
             this.hitStopRemaining = Math.max(this.hitStopRemaining, 0.05);
         });
 
-        this.systems.eventBus.on(EventTypes.PLAYER_SPECIAL_ATTACK, () => {
-            if (cameraSystem && cameraSystem.addShake) cameraSystem.addShake(8);
-        });
     }
 
     clearAllEntitiesAndProjectiles() {
@@ -1243,12 +1246,14 @@ class Game {
             }
         }
         
-        // Update camera to follow player
+        // Update camera to follow player (faster follow during attack dash so spin doesn't make player leave frame)
         if (player) {
             const transform = player.getComponent(Transform);
             const cameraSystem = this.systems.get('camera');
+            const movement = player.getComponent(Movement);
             if (transform && cameraSystem) {
-                cameraSystem.follow(transform, this.canvas.width, this.canvas.height);
+                const fastFollow = movement && movement.isAttackDashing === true;
+                cameraSystem.follow(transform, this.canvas.width, this.canvas.height, { fastFollow });
             }
         }
 
@@ -1279,7 +1284,7 @@ class Game {
             staminaBarEl.style.width = staminaPercent + '%';
             document.getElementById('stamina-text').textContent =
                 Math.floor(stamina.currentStamina) + '/' + stamina.maxStamina;
-            if (combat && combat.specialAttackFlashUntil > Date.now()) {
+            if (combat && combat.dashAttackFlashUntil > Date.now()) {
                 staminaBarEl.classList.add('stamina-pulse');
             } else {
                 staminaBarEl.classList.remove('stamina-pulse');

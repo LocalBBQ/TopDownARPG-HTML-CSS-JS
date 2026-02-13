@@ -70,6 +70,15 @@
     <script src="js/weapons/DemonAttack.js"></script>
     <script src="js/weapons/ChieftainAttack.js"></script>
     
+    <!-- Enemies (registry populates GameConfig.enemy.types) -->
+    <script src="js/enemies/EnemyType.js"></script>
+    <script src="js/enemies/Goblin.js"></script>
+    <script src="js/enemies/Skeleton.js"></script>
+    <script src="js/enemies/LesserDemon.js"></script>
+    <script src="js/enemies/GreaterDemon.js"></script>
+    <script src="js/enemies/GoblinChieftain.js"></script>
+    <script src="js/enemies/EnemiesRegistry.js"></script>
+    
     <!-- Components -->
     <script src="js/components/Transform.js"></script>
     <script src="js/components/Health.js"></script>
@@ -95,6 +104,15 @@
     <script src="js/systems/PathfindingSystem.js"></script>
     <script src="js/renderers/PlayerCombatRenderer.js"></script>
     <script src="js/renderers/EnemyCombatRenderer.js"></script>
+    <!-- Render layer modules (used by RenderSystem) -->
+    <script src="js/systems/renderers/RenderContext.js"></script>
+    <script src="js/systems/renderers/WorldLayerRenderer.js"></script>
+    <script src="js/systems/renderers/ObstacleLayerRenderer.js"></script>
+    <script src="js/systems/renderers/PortalRenderer.js"></script>
+    <script src="js/systems/renderers/BoardRenderer.js"></script>
+    <script src="js/systems/renderers/ChestRenderer.js"></script>
+    <script src="js/systems/renderers/EntityLayerRenderer.js"></script>
+    <script src="js/systems/renderers/MinimapRenderer.js"></script>
     <script src="js/systems/RenderSystem.js"></script>
     
     <!-- Projectiles -->
@@ -103,6 +121,10 @@
     <!-- Managers -->
     <script src="js/managers/EntityManager.js"></script>
     <script src="js/managers/SpriteManager.js"></script>
+    <!-- Obstacles (Obstacle, ObjectFactory, StructureGenerator - required by ObstacleManager) -->
+    <script src="js/obstacles/Obstacle.js"></script>
+    <script src="js/obstacles/ObjectFactory.js"></script>
+    <script src="js/obstacles/StructureGenerator.js"></script>
     <script src="js/managers/ObstacleManager.js"></script>
     <script src="js/managers/EnemyManager.js"></script>
     <script src="js/managers/HazardManager.js"></script>

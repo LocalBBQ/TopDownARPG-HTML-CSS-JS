@@ -26,6 +26,12 @@ const Utils = {
         return start + (end - start) * factor;
     },
 
+    /** Ease-in quadratic (t in 0..1): slow start, then accelerates. Used for spin rotation and dash ramp. */
+    easeInQuad(t) {
+        const x = Math.max(0, Math.min(1, t));
+        return x * x;
+    },
+
     // Clamp a value between min and max
     clamp(value, min, max) {
         return Math.max(min, Math.min(max, value));
@@ -71,6 +77,16 @@ const Utils = {
         const angleDiff = this.normalizeAngle(angleToPoint - facingAngle);
         
         return Math.abs(angleDiff) <= arcAngle / 2;
+    },
+
+    // Check if a point is within a rectangle thrust forward from a position
+    // originX, originY = start of thrust; facingAngle = direction; length = thrust range; halfWidth = half-width perpendicular to thrust
+    pointInThrustRect(px, py, originX, originY, facingAngle, length, halfWidth) {
+        const dx = px - originX;
+        const dy = py - originY;
+        const along = dx * Math.cos(facingAngle) + dy * Math.sin(facingAngle);
+        const perp = -dx * Math.sin(facingAngle) + dy * Math.cos(facingAngle);
+        return along >= 0 && along <= length && Math.abs(perp) <= halfWidth;
     }
 };
 

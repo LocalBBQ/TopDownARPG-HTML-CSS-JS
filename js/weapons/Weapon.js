@@ -1,6 +1,6 @@
 // Base weapon class - defines weapon types and their combos
 class Weapon {
-    constructor(name, baseRange, baseDamage, baseArcDegrees, cooldown, comboConfig, comboWindow = 1.5, knockback = null, block = null, twoHanded = false, specialAttack = null) {
+    constructor(name, baseRange, baseDamage, baseArcDegrees, cooldown, comboConfig, comboWindow = 1.5, knockback = null, block = null, twoHanded = false, dashAttack = null, rangeMultiplier = 1, weaponLength = null, chargeAttack = null) {
         this.name = name;
         this.baseRange = baseRange;
         this.baseDamage = baseDamage;
@@ -11,7 +11,10 @@ class Weapon {
         this.knockback = knockback; // Optional { force } for weapon-level default
         this.block = block; // Optional block config: { enabled, arcRad, damageReduction, staminaCost, animationKey }
         this.twoHanded = twoHanded === true;
-        this.specialAttack = specialAttack || null; // Optional single attack (e.g. shift+click 360)
+        this.dashAttack = dashAttack || null; // Optional dash attack (e.g. shift+click 360° spin)
+        this.chargeAttack = chargeAttack || null; // Optional charge attack config (minChargeTime, maxChargeTime, damageMultiplier, etc.)
+        this.rangeMultiplier = rangeMultiplier != null ? rangeMultiplier : 1; // Weapon-specific range scale (e.g. unique weapons)
+        this.weaponLength = weaponLength != null ? weaponLength : null; // Optional display length (world units); decouples drawn weapon size from attack range
     }
 
     static fromConfig(config) {
@@ -49,7 +52,10 @@ class Weapon {
             config.knockback ?? null,
             block,
             config.twoHanded === true,
-            config.specialAttack ?? null
+            config.dashAttack ?? config.specialAttack ?? null,
+            config.rangeMultiplier ?? 1,
+            config.weaponLength ?? null,
+            config.chargeAttack ?? null
         );
     }
 
@@ -75,10 +81,21 @@ class Weapon {
         // Knockback: stage override → weapon default → null (caller uses player.knockback.force)
         const knockbackForce = stageConfig.knockbackForce ?? stageConfig.knockback?.force ?? this.knockback?.force ?? null;
         const stunBuildup = stageConfig.stunBuildup != null ? stageConfig.stunBuildup : 25;
+        const arcOffset = stageConfig.arcOffsetDegrees != null
+            ? Utils.degToRad(stageConfig.arcOffsetDegrees)
+            : 0;
+        const baseStageRange = stageConfig.range != null
+            ? stageConfig.range
+            : this.baseRange * (stageConfig.rangeMultiplier || 1.0);
+        const isThrust = stageConfig.thrust === true;
+        const thrustWidth = stageConfig.thrustWidth != null ? stageConfig.thrustWidth : 40;
+        const reverseSweep = stageConfig.reverseSweep === true;
         return {
-            range: this.baseRange * (stageConfig.rangeMultiplier || 1.0),
+            range: baseStageRange * (this.rangeMultiplier ?? 1),
             damage: this.baseDamage * (stageConfig.damageMultiplier || 1.0),
             arc: arcRad,
+            arcOffset,
+            reverseSweep,
             duration: stageConfig.duration || 100, // ms
             staminaCost: stageConfig.staminaCost || 10,
             dashSpeed: stageConfig.dashSpeed || null,
@@ -86,6 +103,8 @@ class Weapon {
             stageName: stageConfig.name || `stage${stage}`,
             animationKey: stageConfig.animationKey || 'melee',
             isCircular,
+            isThrust,
+            thrustWidth,
             knockbackForce,
             stunBuildup
         };
@@ -95,9 +114,9 @@ class Weapon {
         return this.comboConfig.length;
     }
 
-    // Get special attack properties (e.g. shift+click 360) — same shape as getComboStageProperties
-    getSpecialAttackProperties() {
-        const stageConfig = this.specialAttack;
+    // Get dash attack properties (e.g. shift+click 360°) — same shape as getComboStageProperties
+    getDashAttackProperties() {
+        const stageConfig = this.dashAttack;
         if (!stageConfig) return null;
         const arcDegrees = stageConfig.arcDegrees != null
             ? stageConfig.arcDegrees
@@ -108,17 +127,30 @@ class Weapon {
         const isCircular = arcDegrees >= 360;
         const knockbackForce = stageConfig.knockbackForce ?? stageConfig.knockback?.force ?? this.knockback?.force ?? null;
         const stunBuildup = stageConfig.stunBuildup != null ? stageConfig.stunBuildup : 25;
+        const arcOffset = stageConfig.arcOffsetDegrees != null
+            ? Utils.degToRad(stageConfig.arcOffsetDegrees)
+            : 0;
+        const baseStageRange = stageConfig.range != null
+            ? stageConfig.range
+            : this.baseRange * (stageConfig.rangeMultiplier || 1.0);
+        const isThrust = stageConfig.thrust === true;
+        const thrustWidth = stageConfig.thrustWidth != null ? stageConfig.thrustWidth : 40;
+        const reverseSweep = stageConfig.reverseSweep === true;
         return {
-            range: this.baseRange * (stageConfig.rangeMultiplier || 1.0),
+            range: baseStageRange * (this.rangeMultiplier ?? 1),
             damage: this.baseDamage * (stageConfig.damageMultiplier || 1.0),
             arc: arcRad,
+            arcOffset,
+            reverseSweep,
             duration: stageConfig.duration || 100,
             staminaCost: stageConfig.staminaCost || 10,
             dashSpeed: stageConfig.dashSpeed || null,
             dashDuration: stageConfig.dashDuration || 0,
-            stageName: stageConfig.name || 'special',
+            stageName: stageConfig.name || 'dashAttack',
             animationKey: stageConfig.animationKey || 'melee',
             isCircular,
+            isThrust,
+            thrustWidth,
             knockbackForce,
             stunBuildup
         };
@@ -127,21 +159,21 @@ class Weapon {
 
 // Crossbow: ranged weapon, one shot then reload; has perfect-reload window
 class Crossbow extends Weapon {
-    constructor(name, baseRange, baseDamage, baseArcDegrees, cooldown, comboConfig, comboWindow = 0, knockback = null, block = null, twoHanded = true, specialAttack = null) {
-        super(name, baseRange, baseDamage, baseArcDegrees, cooldown, comboConfig, comboWindow, knockback, block, twoHanded, specialAttack);
+    constructor(name, baseRange, baseDamage, baseArcDegrees, cooldown, comboConfig, comboWindow = 0, knockback = null, block = null, twoHanded = true, dashAttack = null, rangeMultiplier = 1, weaponLength = null, chargeAttack = null) {
+        super(name, baseRange, baseDamage, baseArcDegrees, cooldown, comboConfig, comboWindow, knockback, block, twoHanded, dashAttack, rangeMultiplier, weaponLength, chargeAttack);
         this.isRanged = true;
     }
 
     static fromConfig(config) {
         const w = Weapon.fromConfig(config);
-        return new Crossbow(w.name, w.baseRange, w.baseDamage, w.baseArcDegrees, w.cooldown, w.comboConfig, w.comboWindow, w.knockback, w.block, w.twoHanded, w.specialAttack);
+        return new Crossbow(w.name, w.baseRange, w.baseDamage, w.baseArcDegrees, w.cooldown, w.comboConfig, w.comboWindow, w.knockback, w.block, w.twoHanded, w.dashAttack, w.rangeMultiplier, w.weaponLength, w.chargeAttack);
     }
 }
 
 // Greatsword: two-handed weapon with no blocking (different block logic - override in subclass)
 class Greatsword extends Weapon {
-    constructor(name, baseRange, baseDamage, baseArcDegrees, cooldown, comboConfig, comboWindow = 1.5, knockback = null, block = null, twoHanded = true, specialAttack = null) {
-        super(name, baseRange, baseDamage, baseArcDegrees, cooldown, comboConfig, comboWindow, knockback, null, twoHanded, specialAttack);
+    constructor(name, baseRange, baseDamage, baseArcDegrees, cooldown, comboConfig, comboWindow = 1.5, knockback = null, block = null, twoHanded = true, dashAttack = null, rangeMultiplier = 1, weaponLength = null, chargeAttack = null) {
+        super(name, baseRange, baseDamage, baseArcDegrees, cooldown, comboConfig, comboWindow, knockback, null, twoHanded, dashAttack, rangeMultiplier, weaponLength, chargeAttack);
     }
 
     getBlockConfig() {
@@ -150,7 +182,7 @@ class Greatsword extends Weapon {
 
     static fromConfig(config) {
         const w = Weapon.fromConfig(config);
-        return new Greatsword(w.name, w.baseRange, w.baseDamage, w.baseArcDegrees, w.cooldown, w.comboConfig, w.comboWindow, w.knockback, null, w.twoHanded, w.specialAttack);
+        return new Greatsword(w.name, w.baseRange, w.baseDamage, w.baseArcDegrees, w.cooldown, w.comboConfig, w.comboWindow, w.knockback, null, w.twoHanded, w.dashAttack, w.rangeMultiplier, w.weaponLength, w.chargeAttack);
     }
 }
 

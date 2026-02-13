@@ -75,15 +75,7 @@ class InputSystem {
         this.canvas.addEventListener('mouseup', (e) => {
             if (e.button === 0) {
                 // Left mouse button - release charge
-                const chargeDuration = this.isCharging ? (performance.now() - this.chargeStartTime) / 1000 : 0;
-                this.mouseDown = false;
-                this.isCharging = false;
-                this.systems.eventBus.emit(EventTypes.INPUT_MOUSEUP, { 
-                    x: this.mouseX, 
-                    y: this.mouseY,
-                    chargeDuration: chargeDuration,
-                    shiftKey: e.shiftKey
-                });
+                this._emitLeftMouseUp(e.shiftKey);
             } else if (e.button === 2) {
                 // Right mouse button
                 this.rightMouseDown = false;
@@ -91,6 +83,13 @@ class InputSystem {
                     x: this.mouseX, 
                     y: this.mouseY 
                 });
+            }
+        });
+
+        // Left-button release on window so charge attack still fires when release happens outside canvas (e.g. while moving with WASD)
+        window.addEventListener('mouseup', (e) => {
+            if (e.button === 0 && this.isCharging) {
+                this._emitLeftMouseUp(e.shiftKey);
             }
         });
 
@@ -127,6 +126,19 @@ class InputSystem {
             return (performance.now() - this.chargeStartTime) / 1000;
         }
         return 0;
+    }
+
+    /** Emit left mouse up (release charge). Uses last known mouse position so charge attack still fires if released outside canvas. */
+    _emitLeftMouseUp(shiftKey) {
+        const chargeDuration = this.isCharging ? (performance.now() - this.chargeStartTime) / 1000 : 0;
+        this.mouseDown = false;
+        this.isCharging = false;
+        this.systems.eventBus.emit(EventTypes.INPUT_MOUSEUP, {
+            x: this.mouseX,
+            y: this.mouseY,
+            chargeDuration: chargeDuration,
+            shiftKey: shiftKey
+        });
     }
 }
 

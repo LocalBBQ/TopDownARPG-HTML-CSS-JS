@@ -5,56 +5,35 @@ class Combat {
         this.isPlayer = isPlayer;
         this.currentAttackIsCircular = false;
         this.currentAttackAnimationKey = null;
-        this.currentAttackIsSpecial = false;
-        this.specialAttackFlashUntil = 0;
+        this.currentAttackIsDashAttack = false;
+        this.dashAttackFlashUntil = 0;
         
         // Use appropriate attack handler
+        this.goblinAttack = null;
+        this.chieftainAttack = null;
+        this.skeletonAttack = null;
+        this.demonAttack = null;
+        this.enemyAttack = null;
+        this.playerAttack = null;
+
         if (isPlayer) {
             this.playerAttack = new PlayerAttack(weapon || Weapons.swordAndShield);
-            this.goblinAttack = null;
-            this.skeletonAttack = null;
-            this.demonAttack = null;
-            this.enemyAttack = null;
-        } else if (enemyType === 'greaterDemon') {
-            // Greater demons use DemonAttack (claw: charge cone then heavy blow)
-            this.demonAttack = new DemonAttack();
-            this.chieftainAttack = null;
-            this.goblinAttack = null;
-            this.skeletonAttack = null;
-            this.enemyAttack = null;
-            this.playerAttack = null;
-        } else if (enemyType === 'goblinChieftain') {
-            // Goblin Chieftain uses ChieftainAttack (heavy smash: charge then one heavy hit)
-            this.chieftainAttack = new ChieftainAttack();
-            this.demonAttack = null;
-            this.goblinAttack = null;
-            this.skeletonAttack = null;
-            this.enemyAttack = null;
-            this.playerAttack = null;
-        } else if (enemyType === 'goblin' || enemyType === 'lesserDemon') {
-            // Goblins use GoblinAttack (lunge and swipe)
-            this.goblinAttack = new GoblinAttack(attackRange, attackDamage, attackArc, cooldown, windUpTime);
-            this.chieftainAttack = null;
-            this.skeletonAttack = null;
-            this.demonAttack = null;
-            this.enemyAttack = null;
-            this.playerAttack = null;
-        } else if (enemyType === 'skeleton') {
-            // Skeletons use SkeletonAttack (ranged only, no melee)
-            this.skeletonAttack = new SkeletonAttack(attackRange, attackDamage, attackArc, cooldown, windUpTime);
-            this.goblinAttack = null;
-            this.chieftainAttack = null;
-            this.demonAttack = null;
-            this.enemyAttack = null;
-            this.playerAttack = null;
         } else {
-            // Fallback to generic EnemyAttack for unknown types
-            this.enemyAttack = new EnemyAttack(attackRange, attackDamage, attackArc, cooldown, windUpTime);
-            this.goblinAttack = null;
-            this.chieftainAttack = null;
-            this.skeletonAttack = null;
-            this.demonAttack = null;
-            this.playerAttack = null;
+            const createAttack = Enemies.getAttackFactory(enemyType);
+            const handler = createAttack
+                ? createAttack(attackRange, attackDamage, attackArc, cooldown, windUpTime)
+                : new EnemyAttack(attackRange, attackDamage, attackArc, cooldown, windUpTime);
+            if (handler instanceof GoblinAttack) {
+                this.goblinAttack = handler;
+            } else if (handler instanceof DemonAttack) {
+                this.demonAttack = handler;
+            } else if (handler instanceof ChieftainAttack) {
+                this.chieftainAttack = handler;
+            } else if (handler instanceof SkeletonAttack) {
+                this.skeletonAttack = handler;
+            } else {
+                this.enemyAttack = handler;
+            }
         }
         
         // Legacy properties for compatibility (will be removed)
@@ -98,7 +77,7 @@ class Combat {
 
     update(deltaTime, systems) {
         if (this.isPlayer && this.playerAttack) {
-            this.playerAttack.update(deltaTime);
+            this.playerAttack.update(deltaTime, this.entity);
             if (this.isBlocking && this.entity) {
                 const statusEffects = this.entity.getComponent(StatusEffects);
                 if (statusEffects && statusEffects.isStunned) this.stopBlocking();
@@ -236,7 +215,7 @@ class Combat {
             if (stamina && stamina.currentStamina < staminaCost) {
                 return false;
             }
-            // Player attack with weapon combos (or special attack if options.useSpecialAttack)
+            // Player attack with weapon combos (or dash attack if options.useDashAttack)
             const attackData = this.playerAttack.startAttack(targetX, targetY, this.entity, chargeDuration, options);
             if (attackData) {
                 if (stamina) stamina.currentStamina -= attackData.staminaCost;
@@ -245,10 +224,14 @@ class Combat {
                 this.attackRange = attackData.range;
                 this.attackDamage = attackData.damage;
                 this.attackArc = attackData.arc;
+                this.attackArcOffset = attackData.arcOffset ?? 0;
+                this.currentAttackReverseSweep = attackData.reverseSweep === true;
                 this.currentAttackIsCircular = attackData.isCircular === true;
+                this.currentAttackIsThrust = attackData.isThrust === true;
+                this.currentAttackThrustWidth = attackData.thrustWidth ?? 40;
                 this.currentAttackAnimationKey = attackData.animationKey || null;
-                this.currentAttackIsSpecial = attackData.isSpecial === true;
-                if (attackData.isSpecial) this.specialAttackFlashUntil = Date.now() + 400;
+                this.currentAttackIsDashAttack = attackData.isDashAttack === true;
+                if (attackData.isDashAttack) this.dashAttackFlashUntil = Date.now() + 400;
                 
                 // Emit attack event
                 if (this.entity && this.entity.systems) {
@@ -268,8 +251,12 @@ class Combat {
                 const combatRef = this;
                 setTimeout(() => {
                     combatRef.currentAttackIsCircular = false;
+                    combatRef.currentAttackIsThrust = false;
+                    combatRef.currentAttackThrustWidth = 0;
                     combatRef.currentAttackAnimationKey = null;
-                    combatRef.currentAttackIsSpecial = false;
+                    combatRef.currentAttackIsDashAttack = false;
+                    combatRef.attackArcOffset = 0;
+                    combatRef.currentAttackReverseSweep = false;
                     combatRef._currentAttackKnockbackForce = null;
                     combatRef._currentAttackStunBuildup = null;
                     combatRef.playerAttack.endAttack();

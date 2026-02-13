@@ -563,11 +563,27 @@ class ScreenManager {
                 y: startY + 4 * 40
             },
             {
+                key: 'playerHitboxIndicators',
+                label: 'Player Hitbox Indicators',
+                value: settings.showPlayerHitboxIndicators,
+                type: 'toggle',
+                x: cx - rowWidth / 2,
+                y: startY + 5 * 40
+            },
+            {
+                key: 'enemyHitboxIndicators',
+                label: 'Enemy Hitbox Indicators',
+                value: settings.showEnemyHitboxIndicators,
+                type: 'toggle',
+                x: cx - rowWidth / 2,
+                y: startY + 6 * 40
+            },
+            {
                 key: 'controls',
                 label: 'Controls',
                 type: 'link',
                 x: cx - rowWidth / 2,
-                y: startY + 5 * 40
+                y: startY + 7 * 40
             }
         ];
 
@@ -710,7 +726,7 @@ class ScreenManager {
             'Left click — Attack',
             'Right click — Block',
             'Q — Heal (tap to drink, then regen)',
-            'Shift + Left click — 360° slash (greatsword)',
+            'Shift + Left click — Dash attack',
             'E — Portal to next area',
             'B — Return to Sanctuary',
             'In Sanctuary: E at board — Level select · E at chest — Change weapon'

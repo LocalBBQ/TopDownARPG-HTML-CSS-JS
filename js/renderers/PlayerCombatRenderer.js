@@ -4,19 +4,37 @@
 
 const PlayerCombatRenderer = {
     SWEEP_SPEED: 1,
-    /** Anticipation: fraction of attack used as wind-up before the swing (principle: anticipation). */
-    ANTICIPATION_RATIO: 0.14,
-    /** Slight pull-back of the blade during wind-up in radians (principle: anticipation). */
-    PULL_BACK_RADIANS: 0.18,
+    /** Anticipation: fraction of attack used as wind-up before the swing (exaggerated for style). */
+    ANTICIPATION_RATIO: 0.24,
+    /** Pull-back of the blade during wind-up in radians (exaggerated for readable wind-up). */
+    PULL_BACK_RADIANS: 0.48,
+    /** Extra sweep multiplier for weapon follow-through (e.g. 0.14 = 14% past hitbox). */
+    FOLLOW_THROUGH_EXTRA: 0.14,
+    /** Fraction of attack (after swing starts) after which follow-through kicks in. */
+    FOLLOW_THROUGH_START: 0.72,
 
-    /** Cubic ease-out: fast start, slow end — follow-through. */
+    /** Thrust: longer wind-up, no angle change — only position back then forward. */
+    THRUST_ANTICIPATION_RATIO: 0.32,
+    /** Thrust: world-unit offset. Negative = grip pulled back, positive = lunge forward. */
+    THRUST_PULL_BACK_WORLD: 28,
+    THRUST_LUNGE_FORWARD_WORLD: 14,
+    /** Thrust: very snappy forward (ease-out power 5). */
+    easeOutQuint(t) {
+        return 1 - Math.pow(1 - Math.max(0, Math.min(1, t)), 5);
+    },
+
+    /** Cubic ease-out: fast start, slow end — snappy release, follow-through. */
     easeOutCubic(t) {
         return 1 - Math.pow(1 - Math.max(0, Math.min(1, t)), 3);
     },
-    /** Cubic ease-in-out: slow start, fast middle (impact), slow end — weight and follow-through. */
+    /** Cubic ease-in-out: slow start, fast middle (impact), slow end. */
     easeInOutCubic(t) {
         const x = Math.max(0, Math.min(1, t));
         return x < 0.5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2;
+    },
+    /** Strong ease-out (power 4): snappier impact out of wind-up. */
+    easeOutQuart(t) {
+        return 1 - Math.pow(1 - Math.max(0, Math.min(1, t)), 4);
     },
 
     /** Raw linear progress 0..1 over the attack duration. */
@@ -25,13 +43,25 @@ const PlayerCombatRenderer = {
         return Math.min(1, Math.max(0, (combat.attackTimer || 0) / duration));
     },
 
-    /** Visual sweep progress with anticipation and ease-in-out (slow in / slow out, follow-through). */
+    /** Visual sweep progress: anticipation then snappy ease-out (hitbox/arc use this, no overshoot). */
     getSweepProgress(combat) {
         const raw = this.getRawProgress(combat);
         if (raw <= this.ANTICIPATION_RATIO) return 0;
         const swingPhase = (raw - this.ANTICIPATION_RATIO) / (1 - this.ANTICIPATION_RATIO);
-        const eased = this.easeInOutCubic(swingPhase);
+        const eased = this.easeOutQuart(swingPhase);
         return Math.min(1, eased * this.SWEEP_SPEED);
+    },
+
+    /** Weapon-only sweep (includes follow-through overshoot for blade/mace angle). */
+    getWeaponSweepProgress(combat) {
+        const raw = this.getRawProgress(combat);
+        if (raw <= this.ANTICIPATION_RATIO) return 0;
+        const swingPhase = (raw - this.ANTICIPATION_RATIO) / (1 - this.ANTICIPATION_RATIO);
+        const eased = this.easeOutQuart(swingPhase);
+        const followThrough = swingPhase >= this.FOLLOW_THROUGH_START
+            ? this.easeOutCubic((swingPhase - this.FOLLOW_THROUGH_START) / (1 - this.FOLLOW_THROUGH_START))
+            : 0;
+        return Math.min(1, eased) + followThrough * this.FOLLOW_THROUGH_EXTRA;
     },
 
     /** Angle offset in radians during anticipation (pull-back); 0 when not in wind-up. */
@@ -39,6 +69,23 @@ const PlayerCombatRenderer = {
         const raw = this.getRawProgress(combat);
         if (raw >= this.ANTICIPATION_RATIO) return 0;
         return -this.PULL_BACK_RADIANS * (1 - raw / this.ANTICIPATION_RATIO);
+    },
+
+    /** Thrust: grip offset in world units (negative = back, positive = forward). No angle change. */
+    getThrustGripOffset(combat) {
+        const raw = this.getRawProgress(combat);
+        if (raw < this.THRUST_ANTICIPATION_RATIO) {
+            const t = 1 - raw / this.THRUST_ANTICIPATION_RATIO;
+            return -this.THRUST_PULL_BACK_WORLD * t;
+        }
+        const thrustPhase = (raw - this.THRUST_ANTICIPATION_RATIO) / (1 - this.THRUST_ANTICIPATION_RATIO);
+        return this.THRUST_LUNGE_FORWARD_WORLD * this.easeOutQuint(thrustPhase);
+    },
+    getThrustWeaponSweep(combat) {
+        const raw = this.getRawProgress(combat);
+        if (raw <= this.THRUST_ANTICIPATION_RATIO) return 0;
+        const thrustPhase = (raw - this.THRUST_ANTICIPATION_RATIO) / (1 - this.THRUST_ANTICIPATION_RATIO);
+        return Math.min(1, this.easeOutQuint(thrustPhase));
     },
 
     drawAttackArc(ctx, screenX, screenY, combat, movement, camera, options) {
@@ -54,7 +101,7 @@ const PlayerCombatRenderer = {
         let fillStyle = 'rgba(40, 35, 30, 0.22)';
         if (useComboColors) {
             const animKey = combat.currentAttackAnimationKey || 'melee';
-            if (combat.currentAttackIsSpecial) {
+            if (combat.currentAttackIsDashAttack) {
                 edgeColor = '#c99830';
                 edgeHighlight = 'rgba(255, 220, 100, 0.9)';
                 fillStyle = 'rgba(100, 70, 20, 0.35)';
@@ -71,6 +118,7 @@ const PlayerCombatRenderer = {
         const facingAngle = movement ? movement.facingAngle : 0;
         if (combat.currentAttackIsCircular) {
             const currentRadius = range * sweepProgress;
+            if (currentRadius <= 0) return; // skip arc on first frame to avoid spin blink (no zero-radius draw)
             ctx.lineWidth = useComboColors ? lwCombo : lw;
             ctx.fillStyle = fillStyle;
             ctx.beginPath();
@@ -83,15 +131,57 @@ const PlayerCombatRenderer = {
             ctx.beginPath();
             ctx.arc(screenX, screenY, currentRadius - 2 / camera.zoom, 0, Math.PI * 2);
             ctx.stroke();
-        } else {
-            const halfArc = combat.attackArc / 2;
-            const pullBack = this.getAnticipationPullBack(combat);
-            const baseAngle = facingAngle - halfArc + pullBack;
-            const sweepEndAngle = baseAngle + sweepProgress * combat.attackArc;
+        } else if (combat.currentAttackIsThrust || (combat.weapon && combat.weapon.name === 'swordAndShield' && (combat.currentAttackAnimationKey || '') === 'melee2')) {
+            // Thrust: rectangle thrust forward from player (stab)
+            const thrustLength = range * sweepProgress;
+            const thrustHalfWidth = ((combat.currentAttackThrustWidth || 40) * camera.zoom) / 2;
+            const cosA = Math.cos(facingAngle);
+            const sinA = Math.sin(facingAngle);
+            const backLeftX = screenX - thrustHalfWidth * sinA;
+            const backLeftY = screenY + thrustHalfWidth * cosA;
+            const backRightX = screenX + thrustHalfWidth * sinA;
+            const backRightY = screenY - thrustHalfWidth * cosA;
+            const frontLeftX = screenX + thrustLength * cosA - thrustHalfWidth * sinA;
+            const frontLeftY = screenY + thrustLength * sinA + thrustHalfWidth * cosA;
+            const frontRightX = screenX + thrustLength * cosA + thrustHalfWidth * sinA;
+            const frontRightY = screenY + thrustLength * sinA - thrustHalfWidth * cosA;
             ctx.lineWidth = useComboColors ? lwCombo : lw;
             ctx.fillStyle = fillStyle;
             ctx.beginPath();
-            ctx.arc(screenX, screenY, range, baseAngle, sweepEndAngle);
+            ctx.moveTo(backLeftX, backLeftY);
+            ctx.lineTo(frontLeftX, frontLeftY);
+            ctx.lineTo(frontRightX, frontRightY);
+            ctx.lineTo(backRightX, backRightY);
+            ctx.closePath();
+            ctx.fill();
+            ctx.strokeStyle = edgeColor;
+            ctx.stroke();
+            // Center line highlight (blade edge)
+            ctx.strokeStyle = edgeHighlight;
+            ctx.lineWidth = Math.max(1, (useComboColors ? lwCombo : lw) * 0.5);
+            ctx.beginPath();
+            ctx.moveTo(screenX, screenY);
+            ctx.lineTo(screenX + thrustLength * cosA, screenY + thrustLength * sinA);
+            ctx.stroke();
+        } else {
+            const arcCenter = facingAngle + (combat.attackArcOffset ?? 0);
+            const halfArc = combat.attackArc / 2;
+            const pullBack = this.getAnticipationPullBack(combat);
+            const reverseSweep = combat.currentAttackReverseSweep === true;
+            let startAngle, endAngle;
+            if (reverseSweep) {
+                // Slash originates from the opposite side (right), sweeps toward left
+                startAngle = arcCenter + halfArc - sweepProgress * combat.attackArc;
+                endAngle = arcCenter + halfArc - pullBack;
+            } else {
+                // Default: slash from left, sweeps toward right
+                startAngle = arcCenter - halfArc + pullBack;
+                endAngle = arcCenter - halfArc + sweepProgress * combat.attackArc;
+            }
+            ctx.lineWidth = useComboColors ? lwCombo : lw;
+            ctx.fillStyle = fillStyle;
+            ctx.beginPath();
+            ctx.arc(screenX, screenY, range, startAngle, endAngle);
             ctx.lineTo(screenX, screenY);
             ctx.closePath();
             ctx.fill();
@@ -101,7 +191,7 @@ const PlayerCombatRenderer = {
             ctx.strokeStyle = edgeHighlight;
             ctx.lineWidth = Math.max(1, (useComboColors ? lwCombo : lw) * 0.5);
             ctx.beginPath();
-            ctx.arc(screenX, screenY, range - 3 / camera.zoom, baseAngle, sweepEndAngle);
+            ctx.arc(screenX, screenY, range - 3 / camera.zoom, startAngle, endAngle);
             ctx.stroke();
         }
     },
@@ -111,27 +201,42 @@ const PlayerCombatRenderer = {
         const twoHanded = combat.weapon && combat.weapon.twoHanded;
         const lengthMult = twoHanded ? 1.55 : 1;
         const widthMult = twoHanded ? 1.4 : 1;
-        const swordLength = (combat.attackRange || 100) * 0.48 * camera.zoom * lengthMult;
+        const baseLength = (combat.weapon && combat.weapon.weaponLength != null) ? combat.weapon.weaponLength : (combat.attackRange || 100) * 0.48;
+        const swordLength = baseLength * camera.zoom * lengthMult;
         const bladeWidthAtGuard = Math.max(3.5, 7 / camera.zoom) * widthMult;
         const sideOffset = (transform.width / 2 + 4) * camera.zoom;
-        const gripX = screenX + Math.cos(movement.facingAngle + Math.PI / 2) * sideOffset;
-        const gripY = screenY + Math.sin(movement.facingAngle + Math.PI / 2) * sideOffset;
+        const facingAngle = movement.facingAngle;
+        let gripX = screenX + Math.cos(facingAngle + Math.PI / 2) * sideOffset;
+        let gripY = screenY + Math.sin(facingAngle + Math.PI / 2) * sideOffset;
         const animKey = combat.currentAttackAnimationKey || 'melee';
         const isMeleeSpinWithPlayer = animKey === 'meleeSpin'; // weapon fastened to player; whole body spins via RenderSystem
-        let swordAngle = movement.facingAngle;
+        const isThrust = combat.currentAttackIsThrust === true || (combat.weapon && combat.weapon.name === 'swordAndShield' && animKey === 'melee2');
+        let swordAngle = facingAngle;
         if (combat.isAttacking && combat.attackDuration > 0 && !isMeleeSpinWithPlayer) {
-            const sweepProgress = this.getSweepProgress(combat);
-            const pullBack = this.getAnticipationPullBack(combat);
-            if (combat.currentAttackIsCircular) {
-                swordAngle = movement.facingAngle + pullBack + sweepProgress * Math.PI * 2;
+            if (isThrust) {
+                swordAngle = facingAngle;
+                const thrustOffset = this.getThrustGripOffset(combat);
+                gripX += thrustOffset * Math.cos(facingAngle) * camera.zoom;
+                gripY += thrustOffset * Math.sin(facingAngle) * camera.zoom;
             } else {
-                const halfArc = (combat.attackArc || Math.PI / 3) / 2;
-                swordAngle = movement.facingAngle - halfArc + pullBack + sweepProgress * (combat.attackArc || Math.PI / 3);
+                const weaponSweep = this.getWeaponSweepProgress(combat);
+                const pullBack = this.getAnticipationPullBack(combat);
+                if (combat.currentAttackIsCircular) {
+                    swordAngle = facingAngle + pullBack + Math.min(1, weaponSweep) * Math.PI * 2;
+                } else {
+                    const halfArc = (combat.attackArc || Math.PI / 3) / 2;
+                    const attackArc = combat.attackArc || Math.PI / 3;
+                    if (combat.currentAttackReverseSweep) {
+                        swordAngle = facingAngle + halfArc - pullBack - weaponSweep * attackArc;
+                    } else {
+                        swordAngle = facingAngle - halfArc + pullBack + weaponSweep * attackArc;
+                    }
+                }
             }
         }
         if (isMeleeSpinWithPlayer) {
             // Sword at side of player; full spin is applied to player+weapon in RenderSystem
-            swordAngle = movement.facingAngle + Math.PI / 2;
+            swordAngle = facingAngle + Math.PI / 2;
         }
         ctx.save();
         ctx.translate(gripX, gripY);
@@ -193,7 +298,8 @@ const PlayerCombatRenderer = {
     drawMace(ctx, screenX, screenY, transform, movement, combat, camera) {
         if (!movement || !combat || !transform) return;
         const zoom = camera.zoom;
-        const maceLength = (combat.attackRange || 100) * 0.5 * zoom * 1.5;
+        const baseLength = (combat.weapon && combat.weapon.weaponLength != null) ? combat.weapon.weaponLength : (combat.attackRange || 100) * 0.5;
+        const maceLength = baseLength * zoom * 1.5;
         const sideOffset = (transform.width / 2 + 4) * zoom;
         const gripX = screenX + Math.cos(movement.facingAngle + Math.PI / 2) * sideOffset;
         const gripY = screenY + Math.sin(movement.facingAngle + Math.PI / 2) * sideOffset;
@@ -201,13 +307,18 @@ const PlayerCombatRenderer = {
         const isMeleeSpinWithPlayer = animKey === 'meleeSpin';
         let maceAngle = movement.facingAngle;
         if (combat.isAttacking && combat.attackDuration > 0 && !isMeleeSpinWithPlayer) {
-            const sweepProgress = this.getSweepProgress(combat);
+            const weaponSweep = this.getWeaponSweepProgress(combat);
             const pullBack = this.getAnticipationPullBack(combat);
             if (combat.currentAttackIsCircular) {
-                maceAngle = movement.facingAngle + pullBack + sweepProgress * Math.PI * 2;
+                maceAngle = movement.facingAngle + pullBack + Math.min(1, weaponSweep) * Math.PI * 2;
             } else {
                 const halfArc = (combat.attackArc || Math.PI / 3) / 2;
-                maceAngle = movement.facingAngle - halfArc + pullBack + sweepProgress * (combat.attackArc || Math.PI / 3);
+                const attackArc = combat.attackArc || Math.PI / 3;
+                if (combat.currentAttackReverseSweep) {
+                    maceAngle = movement.facingAngle + halfArc - pullBack - weaponSweep * attackArc;
+                } else {
+                    maceAngle = movement.facingAngle - halfArc + pullBack + weaponSweep * attackArc;
+                }
             }
         }
         if (isMeleeSpinWithPlayer) {

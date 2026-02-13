@@ -133,7 +133,7 @@ class PlayerInputController {
                 );
             }
             
-            // Perform attack: crossbow = left-click to shoot when loaded; else shift+left = special, else combo
+            // Perform attack: crossbow = left-click to shoot when loaded; else shift+left = dash attack, else combo
             if (combat && stamina && combat.isPlayer && combat.playerAttack) {
                 const weapon = combat.playerAttack.weapon;
                 const isCrossbow = weapon && weapon.isRanged === true;
@@ -161,18 +161,18 @@ class PlayerInputController {
                     return;
                 }
                 // Attack input while attacking is buffered and fires when current attack ends
-                const useSpecial = data.shiftKey && weapon.specialAttack;
+                const useDashAttack = data.shiftKey && weapon.dashAttack;
                 const staminaCost = combat.playerAttack.getNextAttackStaminaCost(
-                    useSpecial ? 0 : chargeDuration,
-                    useSpecial ? { useSpecialAttack: true } : {}
+                    useDashAttack ? 0 : chargeDuration,
+                    useDashAttack ? { useDashAttack: true } : {}
                 );
                 if (stamina.currentStamina < staminaCost) return;
 
-                if (useSpecial) {
-                    const specialProps = weapon.getSpecialAttackProperties();
-                    if (specialProps) {
-                        combat.attack(worldPos.x, worldPos.y, 0, { useSpecialAttack: true });
-                        this.eventBus.emit(EventTypes.PLAYER_SPECIAL_ATTACK);
+                if (useDashAttack) {
+                    const dashProps = weapon.getDashAttackProperties();
+                    if (dashProps) {
+                        combat.attack(worldPos.x, worldPos.y, 0, { useDashAttack: true });
+                        this.eventBus.emit(EventTypes.PLAYER_DASH_ATTACK);
                     }
                 } else {
                     combat.attack(worldPos.x, worldPos.y, chargeDuration);

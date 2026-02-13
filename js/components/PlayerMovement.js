@@ -47,10 +47,14 @@ class PlayerMovement extends Movement {
         // Handle attack dash (combo 3 or shield bash) - highest priority
         if (this.isAttackDashing) {
             this.attackDashTimer += deltaTime;
-            
+            // Ramp up dash with ease-in over first ~80ms so spin lunge feels smooth (no snap on frame 1)
+            const dashRampDuration = 0.08;
+            const rampRaw = Math.min(1, this.attackDashTimer / dashRampDuration);
+            const ramp = Utils.easeInQuad(rampRaw);
+            const effectiveSpeed = this.attackDashSpeedCurrent * ramp;
             // Override velocity with dash movement (use current dash speed for this dash)
-            this.velocityX = this.attackDashDirectionX * this.attackDashSpeedCurrent;
-            this.velocityY = this.attackDashDirectionY * this.attackDashSpeedCurrent;
+            this.velocityX = this.attackDashDirectionX * effectiveSpeed;
+            this.velocityY = this.attackDashDirectionY * effectiveSpeed;
             
             // End dash after duration
             if (this.attackDashTimer >= this.attackDashDuration) {
