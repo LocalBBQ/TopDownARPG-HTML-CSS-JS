@@ -43,7 +43,7 @@ class AI {
         this.patrolDirection = 1; // 1 = going to end, -1 = going to start
         this.patrolReachedThreshold = 10; // Distance threshold to consider reached
 
-        // Goblin stamina: back off when exhausted until 50% stamina recovered
+        // Stamina back-off: goblins and bandits back off when exhausted until 50% recovered
         this.staminaExhausted = false;
     }
 
@@ -104,9 +104,9 @@ class AI {
         );
         const effectiveDetectionRange = this.detectionRange * (statusEffects && statusEffects.packDetectionRangeMultiplier != null ? statusEffects.packDetectionRangeMultiplier : 1);
 
-        // Goblin stamina: mark exhausted when stamina hits 0
+        // Stamina: mark exhausted when stamina is depleted (goblin, bandit)
         const stamina = this.entity.getComponent(Stamina);
-        if (this.enemyType === 'goblin' && stamina && stamina.percent <= 0.1) {
+        if ((this.enemyType === 'goblin' || this.enemyType === 'bandit') && stamina && stamina.percent <= 0.1) {
             this.staminaExhausted = true;
         }
 
@@ -316,7 +316,7 @@ class AI {
                     }
                 }
             }
-        } else if (this.staminaExhausted && this.enemyType === 'goblin' && stamina && distToPlayer < effectiveDetectionRange) {
+        } else if (this.staminaExhausted && (this.enemyType === 'goblin' || this.enemyType === 'bandit') && stamina && distToPlayer < effectiveDetectionRange) {
             // Back off until 50% stamina recovered
             this.state = 'backOff';
             if (stamina.percent >= 0.5) {
@@ -373,7 +373,7 @@ class AI {
         }
     }
 
-    /** Move away from player (goblin back off when stamina exhausted until 50% recovered). */
+    /** Move away from player (goblin/bandit back off when stamina exhausted until 50% recovered). */
     backOffFromPlayer(playerTransform, movement, systems) {
         const transform = this.entity.getComponent(Transform);
         if (!transform || !movement) return;

@@ -49,6 +49,26 @@ class ObstacleLayerRenderer {
             ctx.beginPath();
             ctx.arc(cx, screenY + h * 0.4, w * 0.4, 0, Math.PI * 2);
             ctx.fill();
+        } else if (obstacle.type === 'deadTree') {
+            const trunk = obstacle.color || '#2a2520';
+            const branch = '#1e1b18';
+            ctx.fillStyle = trunk;
+            ctx.fillRect(screenX + w * 0.4, screenY + h * 0.35, w * 0.2, h * 0.65);
+            ctx.strokeStyle = branch;
+            ctx.lineWidth = Math.max(2, 6 / zoom);
+            ctx.lineCap = 'round';
+            const topX = cx;
+            const topY = screenY + h * 0.38;
+            ctx.beginPath();
+            ctx.moveTo(topX, topY);
+            ctx.lineTo(topX - w * 0.35, topY - h * 0.25);
+            ctx.moveTo(topX, topY);
+            ctx.lineTo(topX + w * 0.32, topY - h * 0.2);
+            ctx.moveTo(topX, topY);
+            ctx.lineTo(topX - w * 0.12, topY - h * 0.35);
+            ctx.moveTo(topX, topY);
+            ctx.lineTo(topX + w * 0.38, topY - h * 0.12);
+            ctx.stroke();
         } else if (obstacle.type === 'mushroom') {
             ctx.fillStyle = '#2a221c';
             if (obstacle.leafless) {
@@ -151,6 +171,20 @@ class ObstacleLayerRenderer {
             ctx.fillRect(screenX, screenY, w, h);
             ctx.fillStyle = 'rgba(180, 60, 30, 0.35)';
             ctx.fillRect(screenX + w * 0.1, screenY + h * 0.1, w * 0.5, h * 0.4);
+        } else if (obstacle.type === 'ironFence') {
+            const black = obstacle.color || '#1a1a1a';
+            const highlight = '#2a2a2a';
+            const pad = Math.max(1, w * 0.12);
+            const barCount = Math.max(2, Math.floor(w / (pad * 2)));
+            const barW = Math.max(1.5, (w - pad * 2) / barCount - pad * 0.5);
+            for (let i = 0; i < barCount; i++) {
+                const bx = screenX + pad + i * (barW + pad * 0.5);
+                ctx.fillStyle = black;
+                ctx.fillRect(bx, screenY, barW, h);
+                ctx.strokeStyle = highlight;
+                ctx.lineWidth = Math.max(1, 1 / zoom);
+                ctx.strokeRect(bx, screenY, barW, h);
+            }
         } else {
             ctx.fillStyle = color;
             ctx.fillRect(screenX, screenY, w, h);
@@ -163,7 +197,7 @@ class ObstacleLayerRenderer {
         if (!obstacleManager) return;
         const zoom = camera.zoom;
         const useEnvironmentSprites = !settings || settings.useEnvironmentSprites !== false;
-        const depthSortTypes = ['tree', 'rock', 'pillar', 'brokenPillar', 'column', 'statueBase', 'arch'];
+        const depthSortTypes = ['tree', 'deadTree', 'rock', 'pillar', 'brokenPillar', 'column', 'statueBase', 'arch'];
 
         // View bounds in world space (with margin so we don't clip at edges)
         const margin = 80;

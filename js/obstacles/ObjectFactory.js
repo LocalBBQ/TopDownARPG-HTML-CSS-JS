@@ -12,6 +12,7 @@ class ObjectFactory {
             firepit: { minSize: 30, maxSize: 40, defaultSpritePath: 'assets/sprites/environment/firepit.png', color: '#ff6600' },
             well: { minSize: 40, maxSize: 50, defaultSpritePath: 'assets/sprites/environment/well.png', color: '#888888' },
             fence: { minSize: 15, maxSize: 20, defaultSpritePath: 'assets/sprites/environment/fence.png', color: '#8b7355' },
+            ironFence: { minSize: 12, maxSize: 22, defaultSpritePath: null, color: '#1a1a1a' },
             barrel: { minSize: 25, maxSize: 35, defaultSpritePath: 'assets/sprites/environment/barrel.png', color: '#4a4a4a' },
             pillar: { minSize: 35, maxSize: 55, defaultSpritePath: 'assets/sprites/environment/pillar.png', color: '#6b6b6b' },
             brokenPillar: { minSize: 40, maxSize: 70, defaultSpritePath: 'assets/sprites/environment/broken_pillar.png', color: '#5a5a5a' },
@@ -22,6 +23,11 @@ class ObjectFactory {
             column: { minSize: 30, maxSize: 50, defaultSpritePath: 'assets/sprites/environment/column.png', color: '#656565' },
             stoneDebris: { minSize: 18, maxSize: 32, defaultSpritePath: 'assets/sprites/environment/stone_debris.png', color: '#555555' },
             mushroom: { minSize: 13, maxSize: 85, defaultSpritePath: null, color: '#3d3028' },
+            deadTree: { minSize: 30, maxSize: 90, defaultSpritePath: null, color: '#2a2520' },
+            // Level 3 Demon Approach
+            lavaRock: { minSize: 32, maxSize: 55, defaultSpritePath: null, color: '#4a2520' },
+            demonPillar: { minSize: 38, maxSize: 58, defaultSpritePath: null, color: '#3a1518' },
+            brazier: { minSize: 35, maxSize: 50, defaultSpritePath: null, color: '#4a3020' },
         };
     }
 

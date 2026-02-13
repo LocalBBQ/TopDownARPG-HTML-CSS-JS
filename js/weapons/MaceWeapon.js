@@ -19,7 +19,7 @@
             minChargeTime: 0.5,
             maxChargeTime: 2.0,
             damageMultiplier: 2.0,
-            rangeMultiplier: 3.0,
+            rangeMultiplier: 1.0,  // no range growth on charge (was 3.0)
             staminaCostMultiplier: 1.5
         }
     };

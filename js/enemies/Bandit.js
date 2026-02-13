@@ -21,7 +21,8 @@
         color: '#5c4a3a',
         attackCooldown,
         windUpTime: 0,
-        attackCooldownMultiplier: 1,
+        attackCooldownMultiplier: 2.5,
+        attackDurationMultiplier: 2.5,
         damageMultiplier: 1,
         stunThreshold: 90,
         stunBuildupPerHit: 35,
@@ -31,9 +32,9 @@
             decay: 0.88
         },
         lunge: { enabled: false },
-        maxStamina: 60,
-        staminaRegen: 5,
-        attackStaminaCost: 18
+            maxStamina: 50,
+        staminaRegen: 3,
+        attackStaminaCost: 25
     };
 
     window.EnemyBandit = EnemyType.fromConfig(config, null);

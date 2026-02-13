@@ -20,6 +20,7 @@
             this.weaponLength = p.weaponLength;
             this.chargeAttack = p.chargeAttack;
             this.attackVisual = p.attackVisual;
+            this._maxComboStage = p.maxComboStage != null ? p.maxComboStage : null;
         }
 
         static fromConfig(config) {
@@ -36,7 +37,7 @@
         }
 
         get maxComboStage() {
-            return this.comboConfig.length;
+            return this._maxComboStage != null ? this._maxComboStage : this.comboConfig.length;
         }
 
         getThrustStageIndex() {
@@ -71,18 +72,34 @@
         cooldown: 0.4,
         comboWindow: 2.0,
         baseStunBuildup: 35,
-        weaponLength: 75,
+        weaponLength: 48,
+        maxComboStage: 2,
         stages: [
-            { name: 'slash1', arcDegrees: 180, duration: 540, staminaCost: 18, range: 100, damageMultiplier: 1.0, animationKey: 'melee', stunBuildup: 35 },
-            { name: 'slash2', arcDegrees: 110, duration: 600, staminaCost: 20, range: 105, damageMultiplier: 1.5, animationKey: 'melee2', stunBuildup: 42, reverseSweep: true },
-            { name: 'slash3', arcDegrees: 360, duration: 1120, staminaCost: 26, range: 120, damageMultiplier: 1.9, animationKey: 'meleeSpin', stunBuildup: 55 }
+            { name: 'slash1', arcDegrees: 120, duration: 480, staminaCost: 16, range: 92, damageMultiplier: 1.0, animationKey: 'melee', stunBuildup: 35 },
+            { name: 'slash2', arcDegrees: 110, duration: 520, staminaCost: 18, range: 96, damageMultiplier: 1.4, animationKey: 'melee2', stunBuildup: 42, reverseSweep: true },
+            { name: 'spin360', arcDegrees: 360, duration: 1000, staminaCost: 24, range: 110, damageMultiplier: 1.8, animationKey: 'meleeSpin', stunBuildup: 50 }
         ],
         chargeAttack: {
             minChargeTime: 0.5,
             maxChargeTime: 2.0,
             damageMultiplier: 2.0,
-            rangeMultiplier: 3.0,
-            staminaCostMultiplier: 1.5
+            rangeMultiplier: 1.4,
+            staminaCostMultiplier: 1.5,
+            chargedStageIndex: 3
+        },
+        dashAttack: {
+            name: 'stab',
+            arcDegrees: 24,
+            duration: 320,
+            staminaCost: 14,
+            range: 115,
+            damageMultiplier: 1.3,
+            animationKey: 'melee2',
+            thrust: true,
+            thrustWidth: 42,
+            stunBuildup: 28,
+            dashSpeed: 340,
+            dashDuration: 0.28
         }
     };
     window.Greatsword = Greatsword;

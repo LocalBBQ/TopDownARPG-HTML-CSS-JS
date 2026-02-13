@@ -56,24 +56,29 @@ const EnemyEntityRenderer = {
         }
 
         const isGoblin = enemyType === 'goblin';
+        const isBanditDagger = enemyType === 'banditDagger';
         let baseX, baseY;
         if (isGoblin) {
             const sideAngle = facingAngle + Math.PI / 2;
             const sideOffset = 0.78;
             baseX = screenX + Math.cos(sideAngle) * r * sideOffset;
             baseY = screenY + Math.sin(sideAngle) * h * sideOffset;
+        } else if (isBanditDagger) {
+            baseX = screenX + Math.cos(facingAngle) * r * handOffset;
+            baseY = screenY + Math.sin(facingAngle) * h * handOffset;
         } else {
             baseX = screenX + Math.cos(facingAngle) * r * handOffset;
             baseY = screenY + Math.sin(facingAngle) * h * handOffset;
         }
 
         let drawAngle = facingAngle;
-        if (isGoblin && combat) {
+        if ((isGoblin || isBanditDagger) && combat) {
             const handler = combat.enemyAttackHandler;
             const attackArc = (handler && handler.attackArc != null) ? handler.attackArc : (combat.attackArc != null ? combat.attackArc : Math.PI / 2);
             const halfArc = attackArc / 2;
             const arcCenter = facingAngle + (combat.attackArcOffset ?? 0);
-            const sweepProgress = combat.isWindingUp ? 0 : combat.enemySlashSweepProgress;
+            // For banditDagger read sweep from handler each frame so attack redraws (handler uses _slashStartTime)
+            const sweepProgress = combat.isWindingUp ? 0 : (handler && typeof handler.getSlashSweepProgress === 'function' ? handler.getSlashSweepProgress() : combat.enemySlashSweepProgress);
             if (combat.currentAttackReverseSweep) {
                 drawAngle = arcCenter + halfArc - sweepProgress * attackArc;
             } else {
@@ -86,6 +91,12 @@ const EnemyEntityRenderer = {
             const daggerLength = (weapon && weapon.weaponLength != null) ? weapon.weaponLength : 35;
             const style = (weapon && weapon.visual === 'goblinDagger') ? 'goblin' : undefined;
             PlayerCombatRenderer.drawDaggerAt(ctx, baseX, baseY, drawAngle, daggerLength, camera, style ? { style } : {});
+            return;
+        }
+        if (isBanditDagger) {
+            const weapon = combat && combat.weapon;
+            const daggerLength = (weapon && weapon.weaponLength != null) ? weapon.weaponLength : 35;
+            PlayerCombatRenderer.drawDaggerAt(ctx, baseX, baseY, drawAngle, daggerLength, camera, {});
             return;
         }
 
@@ -411,9 +422,69 @@ const EnemyEntityRenderer = {
             ctx.fill();
             ctx.stroke();
             ctx.restore();
+            // Mace swipe arc: during wind-up (telegraph) and during active swing
+            if (typeof PlayerCombatRenderer !== 'undefined' && combat) {
+                if (combat.isWindingUp) {
+                    PlayerCombatRenderer.drawAttackArc(ctx, screenX, screenY, combat, movement || { facingAngle: 0 }, camera, { telegraph: true, sweepProgress: 0, pullBack: PlayerCombatRenderer.getAnticipationPullBack ? PlayerCombatRenderer.getAnticipationPullBack(combat) : 0, comboColors: false });
+                }
+                if (combat.isAttacking && !combat.isWindingUp) {
+                    PlayerCombatRenderer.drawAttackArc(ctx, screenX, screenY, combat, movement || { facingAngle: 0 }, camera, {
+                        sweepProgress: combat.enemySlashSweepProgress,
+                        pullBack: PlayerCombatRenderer.getAnticipationPullBack ? PlayerCombatRenderer.getAnticipationPullBack(combat) : 0,
+                        comboColors: false
+                    });
+                }
+            }
             if (typeof PlayerCombatRenderer !== 'undefined' && combat && combat.weapon && combat.weapon.name === 'mace') {
                 PlayerCombatRenderer.drawMace(ctx, screenX, screenY, transform, movement, combat, camera);
             }
+        } else if (enemyType === 'banditDagger') {
+            const lw = Math.max(1, 2 / camera.zoom);
+            ctx.fillStyle = bodyColor;
+            ctx.strokeStyle = strokeColor;
+            ctx.lineWidth = lw;
+            ctx.beginPath();
+            ctx.ellipse(screenX, screenY + h * 0.08, r * 0.92, h * 0.88, 0, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.stroke();
+            ctx.save();
+            ctx.translate(screenX, screenY);
+            ctx.rotate(movement ? movement.facingAngle : 0);
+            const helmetRx = r * 0.42;
+            const helmetRy = h * 0.38;
+            const paulOffsetY = helmetRy * 0.72;
+            const paulRx = r * 0.22;
+            const paulRy = h * 0.28;
+            ctx.fillStyle = '#5a4a3a';
+            ctx.strokeStyle = '#2a2218';
+            ctx.beginPath();
+            ctx.ellipse(0, paulOffsetY, paulRx, paulRy, 0, 0, Math.PI * 2);
+            ctx.ellipse(0, -paulOffsetY, paulRx, paulRy, 0, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.stroke();
+            ctx.fillStyle = '#4a3d32';
+            ctx.strokeStyle = '#2a2218';
+            ctx.beginPath();
+            ctx.ellipse(0, 0, helmetRx, helmetRy, 0, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.stroke();
+            ctx.restore();
+            // Dagger swipe arc and weapon: use handler sweep each frame so attack redraws
+            const handler = combat && combat.enemyAttackHandler;
+            const slashSweep = (handler && typeof handler.getSlashSweepProgress === 'function') ? handler.getSlashSweepProgress() : (combat.enemySlashSweepProgress || 0);
+            if (typeof PlayerCombatRenderer !== 'undefined' && combat) {
+                if (combat.isWindingUp) {
+                    PlayerCombatRenderer.drawAttackArc(ctx, screenX, screenY, combat, movement || { facingAngle: 0 }, camera, { telegraph: true, sweepProgress: 0, pullBack: 0, comboColors: false });
+                }
+                if (combat.isAttacking && !combat.isWindingUp) {
+                    PlayerCombatRenderer.drawAttackArc(ctx, screenX, screenY, combat, movement || { facingAngle: 0 }, camera, {
+                        sweepProgress: slashSweep,
+                        pullBack: 0,
+                        comboColors: false
+                    });
+                }
+            }
+            this.drawWeapon(context, 'banditDagger', screenX, screenY, movement ? movement.facingAngle : 0, r, h, combat);
         } else if (enemyType === 'goblinChieftain') {
             ctx.fillStyle = bodyColor;
             ctx.beginPath();

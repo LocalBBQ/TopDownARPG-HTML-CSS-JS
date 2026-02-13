@@ -98,19 +98,20 @@ const PlayerCombatRenderer = {
     },
 
     drawAttackArc(ctx, screenX, screenY, combat, movement, camera, options) {
-        if (!combat || !combat.isAttacking) return;
-        const range = combat.attackRange * camera.zoom;
+        const isTelegraph = options && options.telegraph && combat && combat.isWindingUp;
+        if (!combat || (!combat.isAttacking && !isTelegraph)) return;
+        const range = (combat.attackRange || 80) * camera.zoom;
         // Optional override for enemies: pass options.sweepProgress (0..1) and options.pullBack (radians, e.g. 0)
-        const sweepProgress = (options && typeof options.sweepProgress === 'number') ? options.sweepProgress : this.getSweepProgress(combat);
+        const sweepProgress = (options && typeof options.sweepProgress === 'number') ? options.sweepProgress : (isTelegraph ? 0 : this.getSweepProgress(combat));
         const pullBackOverride = (options && typeof options.pullBack === 'number');
         const useComboColors = options && options.comboColors;
         const lw = 3 / camera.zoom;
         const lwCombo = 4 / camera.zoom;
-        // Medieval palette: steel edge, shadow/vellum fill; combo = bronze/gold
+        // Medieval palette: steel edge, shadow/vellum fill; combo = bronze/gold; telegraph = dimmer
         let edgeColor = '#5a5a62';
         let edgeHighlight = 'rgba(180, 175, 165, 0.9)';
-        let fillStyle = 'rgba(40, 35, 30, 0.22)';
-        if (useComboColors) {
+        let fillStyle = isTelegraph ? 'rgba(50, 45, 40, 0.18)' : 'rgba(40, 35, 30, 0.22)';
+        if (!isTelegraph && useComboColors) {
             const animKey = combat.currentAttackAnimationKey || 'melee';
             if (combat.currentAttackIsDashAttack) {
                 edgeColor = '#c99830';
@@ -175,19 +176,26 @@ const PlayerCombatRenderer = {
             ctx.lineTo(screenX + thrustLength * cosA, screenY + thrustLength * sinA);
             ctx.stroke();
         } else {
+            const attackArc = (combat.attackArc != null && combat.attackArc > 0) ? combat.attackArc : (typeof Utils !== 'undefined' ? Utils.degToRad(90) : Math.PI / 2);
             const arcCenter = facingAngle + (combat.attackArcOffset ?? 0);
-            const halfArc = combat.attackArc / 2;
-            const pullBack = pullBackOverride ? options.pullBack : this.getAnticipationPullBack(combat);
-            const reverseSweep = combat.currentAttackReverseSweep === true;
+            const halfArc = attackArc / 2;
             let startAngle, endAngle;
-            if (reverseSweep) {
-                // Slash originates from the opposite side (right), sweeps toward left
-                startAngle = arcCenter + halfArc - sweepProgress * combat.attackArc;
-                endAngle = arcCenter + halfArc - pullBack;
+            if (isTelegraph) {
+                // Telegraph: show full cone (entire danger zone)
+                startAngle = arcCenter - halfArc;
+                endAngle = arcCenter + halfArc;
             } else {
-                // Default: slash from left, sweeps toward right
-                startAngle = arcCenter - halfArc + pullBack;
-                endAngle = arcCenter - halfArc + sweepProgress * combat.attackArc;
+                const pullBack = pullBackOverride ? options.pullBack : this.getAnticipationPullBack(combat);
+                const reverseSweep = combat.currentAttackReverseSweep === true;
+                if (reverseSweep) {
+                    // Slash originates from the opposite side (right), sweeps toward left
+                    startAngle = arcCenter + halfArc - sweepProgress * attackArc;
+                    endAngle = arcCenter + halfArc - pullBack;
+                } else {
+                    // Default: slash from left, sweeps toward right
+                    startAngle = arcCenter - halfArc + pullBack;
+                    endAngle = arcCenter - halfArc + sweepProgress * attackArc;
+                }
             }
             ctx.lineWidth = useComboColors ? lwCombo : lw;
             ctx.fillStyle = fillStyle;

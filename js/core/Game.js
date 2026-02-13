@@ -1357,6 +1357,8 @@ class Game {
     /** Format enemy type key as display name (e.g. goblinChieftain -> Goblin Chieftain). */
     getEnemyDisplayName(enemyTypeKey) {
         if (!enemyTypeKey) return 'Enemy';
+        const displayNames = { banditDagger: 'Bandit' };
+        if (displayNames[enemyTypeKey]) return displayNames[enemyTypeKey];
         const withSpaces = enemyTypeKey
             .replace(/([a-z])([A-Z])/g, '$1 $2')
             .replace(/_/g, ' ');

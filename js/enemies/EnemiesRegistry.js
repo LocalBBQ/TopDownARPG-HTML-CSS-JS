@@ -6,7 +6,8 @@ var Enemies = {
     lesserDemon: window.EnemyLesserDemon,
     greaterDemon: window.EnemyGreaterDemon,
     goblinChieftain: window.EnemyGoblinChieftain,
-    bandit: window.EnemyBandit
+    bandit: window.EnemyBandit,
+    banditDagger: window.EnemyBanditDagger
 };
 
 Enemies.weaponAndBehavior = {
@@ -15,7 +16,8 @@ Enemies.weaponAndBehavior = {
     goblinChieftain: { weaponId: 'chieftainClub', behaviorId: 'chargeRelease' },
     greaterDemon: { weaponId: 'demonClaw', behaviorId: 'chargeRelease' },
     skeleton: { weaponId: 'skeletonNoMelee', behaviorId: 'rangedOnly' },
-    bandit: { weaponId: 'mace', behaviorId: 'comboAndCharge' }
+    bandit: { weaponId: 'mace', behaviorId: 'comboAndCharge' },
+    banditDagger: { weaponId: 'dagger', behaviorId: 'slashAndLeap' }
 };
 
 Enemies.getConfig = function (type) {
@@ -40,7 +42,8 @@ Enemies.createAttackHandler = function (enemyType) {
             behaviorType: behaviorId,
             windUpTime: config && config.windUpTime != null ? config.windUpTime : 0.6,
             cooldownMultiplier: config && config.attackCooldownMultiplier != null ? config.attackCooldownMultiplier : 1,
-            damageMultiplier: config && config.damageMultiplier != null ? config.damageMultiplier : 1
+            damageMultiplier: config && config.damageMultiplier != null ? config.damageMultiplier : 1,
+            attackDurationMultiplier: config && config.attackDurationMultiplier != null ? config.attackDurationMultiplier : 1
         };
         return new window.WeaponAttackHandler(weapon, options);
     }

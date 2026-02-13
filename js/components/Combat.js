@@ -255,7 +255,9 @@ class Combat {
             const combatRef = this;
             setTimeout(() => {
                 combatRef._clearAttackState();
-                if (combatRef.attackHandler && typeof combatRef.attackHandler.endAttack === 'function') combatRef.attackHandler.endAttack();
+                // Do not call endAttack() here for player: attack is already ended in WeaponAttackHandler.update()
+                // when attackTimer >= attackDuration. Calling it here would clear hitEnemies of a *buffered*
+                // attack that may have already started, causing the same enemy to be hit twice (double hitbox).
                 if (combatRef.isPlayer && combatRef.blockInputBuffered) {
                     combatRef.blockInputBuffered = false;
                     if (combatRef.blockInputBufferedFacingAngle != null && combatRef.entity) {

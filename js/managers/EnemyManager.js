@@ -24,14 +24,10 @@ class EnemyManager {
         if (!AIClass) throw new Error('AI component (AI.js) must load before EnemyManager. Check script order in index.html.');
         const ai = new AIClass(config.detectionRange, config.attackRange, patrolConfig);
         ai.enemyType = type; // Store enemy type for lunge detection
-        // Pack modifier: only set when pack explicitly has one (no default; difficulty tuning via modifierChance)
-        if (packHasNoModifier || packModifierOverride == null) {
-            ai.packModifierName = null;
-        } else if (GameConfig.packModifiers && GameConfig.packModifiers[packModifierOverride]) {
-            ai.packModifierName = packModifierOverride;
-        } else {
-            ai.packModifierName = null;
-        }
+        
+        // Pack modifier: only when this spawn is from a pack that rolled a modifier (modifierChance in config)
+        const validOverride = packModifierOverride != null && GameConfig.packModifiers && GameConfig.packModifiers[packModifierOverride];
+        ai.packModifierName = (!packHasNoModifier && validOverride) ? packModifierOverride : null;
         const packDef = ai.packModifierName && GameConfig.packModifiers ? GameConfig.packModifiers[ai.packModifierName] : null;
         const healthMult = (packDef && packDef.healthMultiplier != null) ? packDef.healthMultiplier : 1;
         const maxHealth = config.maxHealth * healthMult;
@@ -54,7 +50,7 @@ class EnemyManager {
             }
         }
         
-        const size = type === 'greaterDemon' ? 38 : (type === 'goblinChieftain' ? 34 : (type === 'bandit' ? 31 : 25));
+        const size = type === 'greaterDemon' ? 38 : (type === 'goblinChieftain' ? 34 : (type === 'bandit' || type === 'banditDagger' ? 31 : 25));
         enemy
             .addComponent(new Transform(x, y, size, size))
             .addComponent(new Health(maxHealth))
@@ -283,6 +279,7 @@ class EnemyManager {
                 }
                 const count = (tile.spawn.count != null && tile.spawn.count > 0) ? tile.spawn.count : 1;
                 const packOptions = packConfig.patrol ? { patrol: true } : null;
+                const tileEnemyTypes = (tile.spawn.enemyTypes && tile.spawn.enemyTypes.length > 0) ? tile.spawn.enemyTypes : enemyTypes;
                 for (let i = 0; i < count; i++) {
                     this.spawnPackAt(
                         centerX, centerY,
@@ -290,7 +287,7 @@ class EnemyManager {
                         packConfig.packSize,
                         entityManager,
                         obstacleManager,
-                        enemyTypes,
+                        tileEnemyTypes,
                         packOptions
                     );
                 }

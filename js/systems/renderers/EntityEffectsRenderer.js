@@ -51,16 +51,19 @@ const EntityEffectsRenderer = {
         const { ctx, camera } = context;
         const renderable = entity.getComponent(Renderable);
         const statusEffects = entity.getComponent(StatusEffects);
+        const ai = entity.getComponent(AI);
         const transform = entity.getComponent(Transform);
-        if (!renderable || renderable.type !== 'enemy' || !statusEffects || !transform) return;
+        if (!renderable || renderable.type !== 'enemy' || !transform) return;
         const colors = [];
-        if (statusEffects.packModifierName) {
+        // Use same source as tooltip: active buff (statusEffects) or assigned pack modifier (ai) so label and glow stay in sync
+        const packModifierName = (statusEffects && statusEffects.packModifierName) || (ai && ai.packModifierName) || null;
+        if (packModifierName) {
             const packModifiers = (typeof GameConfig !== 'undefined' && GameConfig.packModifiers) ? GameConfig.packModifiers : {};
-            const modDef = packModifiers[statusEffects.packModifierName];
-            colors.push(modDef && modDef.color ? modDef.color : '#ffffff');
+            const modDef = packModifiers[packModifierName];
+            if (modDef) colors.push(modDef.color ? modDef.color : '#ffffff');
         }
         const now = performance.now() / 1000;
-        if (statusEffects.buffedUntil != null && now < statusEffects.buffedUntil) {
+        if (statusEffects && statusEffects.buffedUntil != null && now < statusEffects.buffedUntil) {
             colors.push('#ffaa00'); // War Cry
         }
         if (colors.length === 0) return;

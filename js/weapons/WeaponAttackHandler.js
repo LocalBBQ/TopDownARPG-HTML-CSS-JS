@@ -203,6 +203,8 @@
             this.hitEnemies.clear();
             let durationMs = stageProps.duration;
             if (durationMs < 50) durationMs = Math.round(durationMs * 1000);
+            const durationMult = (this.options && this.options.attackDurationMultiplier != null) ? this.options.attackDurationMultiplier : 1;
+            durationMs = Math.round(durationMs * durationMult);
 
             this.attackRange = finalRange;
             this.attackDamage = finalDamage * effectiveMult;
@@ -338,7 +340,14 @@
 
         update(deltaTime, entity) {
             if (this.isPlayer) {
-                if (this.attackTimer > 0) this.attackTimer += deltaTime;
+                if (this.attackTimer > 0) {
+                    this.attackTimer += deltaTime;
+                    // Clamp to duration so hit-window progress never wraps or extends past 1
+                    if (this.attackDuration > 0 && this.attackTimer >= this.attackDuration) {
+                        this.attackTimer = this.attackDuration;
+                        this.endAttack();
+                    }
+                }
                 if (this.attackBuffer > 0) this.attackBuffer = Math.max(0, this.attackBuffer - deltaTime);
                 if (this.comboStage > 0 && this.attackTimer <= 0) {
                     this.comboTimer -= deltaTime;

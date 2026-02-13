@@ -794,13 +794,14 @@ class ObstacleManager {
         }
         if (tile.perimeterFence) {
             const opts = typeof tile.perimeterFence === 'object' ? tile.perimeterFence : {};
-            const fenceConfig = this.factory.getConfig('fence');
+            const fenceType = opts.type || 'fence';
+            const fenceConfig = this.factory.getConfig(fenceType);
             const spritePath = fenceConfig && fenceConfig.defaultSpritePath || null;
             const customProps = (fenceConfig && fenceConfig.color) ? { color: fenceConfig.color } : null;
             const segments = this.getPerimeterFenceSegments(tileSize, opts);
             for (const seg of segments) {
                 const r = this.rotateObstacleInTile(seg.x, seg.y, seg.width, seg.height, tileSize, rotation);
-                this.addObstacle(originX + r.x, originY + r.y, r.width, r.height, 'fence', spritePath, customProps);
+                this.addObstacle(originX + r.x, originY + r.y, r.width, r.height, fenceType, spritePath, customProps);
             }
         }
     }

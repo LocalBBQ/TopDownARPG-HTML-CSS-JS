@@ -232,27 +232,34 @@ const GameConfig = {
         },
         2: {
             name: 'Cursed Wilds',
-            packSpawn: { density: 0.012, packSize: { min: 3, max: 5 } },
+            packSpawn: { density: 0.012, packSize: { min: 3, max: 5 }, patrol: true },
             enemyTypes: ['goblin', 'goblin', 'goblinChieftain', 'skeleton', 'skeleton'],
             killsToUnlockPortal: 15,
             theme: {
                 ground: { r: 28, g: 26, b: 24, variation: 10 },
                 sky: 'rgba(60, 55, 70, 0.08)'
             },
+            worldWidth: 4800,
+            worldHeight: 2400,
             obstacles: {
-                mushrooms: { density: 0.028 },
-                darkRocks: { density: 0.02 },
-                border: { spacing: 50, type: 'mushroom' },
-                graves: { count: 18 },
-                swampPools: { count: 10 },
-                structures: {
-                    houses: { enabled: false },
-                    woodClusters: { enabled: false },
-                    settlements: { enabled: false },
-                    firepits: { enabled: true, count: 1 },
-                    sheds: { enabled: false },
-                    wells: { enabled: false },
-                    ruins: { enabled: true, rubblePiles: 15, pillarClusters: 4, ruinedWalls: 10, ruinedStructures: 2, brokenArches: 3, statueRemnants: 8 }
+                border: { spacing: 50, type: 'deadTree' },
+                useSceneTiles: true,
+                sceneTileLayout: {
+                    tileSize: 800,
+                    cols: 6,
+                    rows: 3,
+                    pool: [
+                        { id: 'cursedWilds.clearing', weight: 5 },
+                        { id: 'cursedWilds.crossroads', weight: 4 },
+                        { id: 'cursedWilds.bogClearing', weight: 3 },
+                        { id: 'cursedWilds.swampEdge', weight: 3 },
+                        { id: 'cursedWilds.ruinedShrine', weight: 2 },
+                        { id: 'cursedWilds.thickMushroomGrove', weight: 2 },
+                        { id: 'cursedWilds.ruinFragment', weight: 1 },
+                        { id: 'cursedWilds.graveyard', weight: 1 },
+                        { id: 'cursedWilds.graveyardB', weight: 1 },
+                        { id: 'cursedWilds.skeletonCamp', weight: 0.5 }
+                    ]
                 }
             }
         },
@@ -265,19 +272,28 @@ const GameConfig = {
                 ground: { r: 34, g: 16, b: 18, variation: 12 },
                 sky: 'rgba(80, 20, 30, 0.12)'
             },
+            worldWidth: 4800,
+            worldHeight: 2400,
             obstacles: {
-                lavaRocks: { density: 0.025 },
-                demonPillars: { count: 14 },
-                braziers: { count: 12 },
                 border: { spacing: 50, type: 'lavaRock' },
-                structures: {
-                    houses: { enabled: false },
-                    woodClusters: { enabled: false },
-                    settlements: { enabled: false },
-                    firepits: { enabled: false },
-                    sheds: { enabled: false },
-                    wells: { enabled: false },
-                    ruins: { enabled: true, rubblePiles: 20, pillarClusters: 8, ruinedWalls: 12, ruinedStructures: 6, brokenArches: 4, statueRemnants: 10 }
+                useSceneTiles: true,
+                sceneTileLayout: {
+                    tileSize: 800,
+                    cols: 6,
+                    rows: 3,
+                    pool: [
+                        { id: 'demonApproach.clearing', weight: 5 },
+                        { id: 'demonApproach.crossroads', weight: 4 },
+                        { id: 'demonApproach.pillarRing', weight: 3 },
+                        { id: 'demonApproach.lavaRockField', weight: 3 },
+                        { id: 'demonApproach.demonShrine', weight: 2 },
+                        { id: 'demonApproach.brazierCourt', weight: 2 },
+                        { id: 'demonApproach.ashenPlaza', weight: 2 },
+                        { id: 'demonApproach.ruinedGate', weight: 1 },
+                        { id: 'demonApproach.ruinFragment', weight: 1 },
+                        { id: 'demonApproach.demonCamp', weight: 1 },
+                        { id: 'demonApproach.skeletonCamp', weight: 0.5 }
+                    ]
                 }
             }
         }

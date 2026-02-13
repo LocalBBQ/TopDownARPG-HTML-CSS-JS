@@ -46,7 +46,7 @@
             hitRadiusBonus: 0,
             knockback: { force: lungeKnockbackForce },
             hopBackChance: 0.5,
-            hopBackDelay: 0.75,
+            hopBackDelay: 1.5,
             hopBackDistance: 60,
             hopBackSpeed: 140
         },

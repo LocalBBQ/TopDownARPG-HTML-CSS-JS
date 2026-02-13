@@ -237,10 +237,11 @@ class EnemyMovement extends Movement {
         this.velocityY = 0;
         this.lungeTraveled = 0;
         
-        // Notify combat component that lunge ended (goblin-specific)
+        // Notify combat component that lunge ended (goblin/bandit dagger/etc.)
         const combat = this.entity.getComponent(Combat);
         if (combat && combat.enemyAttackHandler && combat.enemyAttackHandler.endLunge) {
             combat.enemyAttackHandler.endLunge(combat.getPackCooldownMultiplier());
+            combat._clearAttackState();
         }
         
         // Goblin: 50% chance to hop back after lunge

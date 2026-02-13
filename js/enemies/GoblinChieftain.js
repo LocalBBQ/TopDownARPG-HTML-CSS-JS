@@ -16,7 +16,7 @@
 
     const config = {
         maxHealth: 60,
-        moveSpeed: 20,
+        moveSpeed: 50,
         weaponId: 'chieftainClub',
         attackRange,
         attackDamage: heavySmash.damage,

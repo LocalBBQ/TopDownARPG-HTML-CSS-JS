@@ -105,10 +105,15 @@
             };
         }
         const chargeState = getChargeState(chargeDuration, weapon.chargeAttack);
-        const nextComboStage = chargeState.isCharged ? 0 : (comboStage < weapon.maxComboStage ? comboStage + 1 : 1);
+        const maxStage = (weapon.maxComboStage != null && weapon.maxComboStage > 0) ? weapon.maxComboStage : (weapon.comboConfig && weapon.comboConfig.length) || 1;
+        const nextComboStage = chargeState.isCharged ? 0 : (comboStage < maxStage ? comboStage + 1 : 1);
         const useChargedThrust = chargeState.isCharged && weapon.chargeAttack && weapon.chargeAttack.chargedThrustDashSpeed != null;
         const thrustStageIndex = getThrustStageIndex(weapon.comboConfig);
-        const stageForLookup = (chargeState.isCharged && thrustStageIndex != null) ? thrustStageIndex : (chargeState.isCharged ? 1 : nextComboStage);
+        const c = weapon.chargeAttack;
+        const chargedStageIndex = (c && c.chargedStageIndex != null) ? c.chargedStageIndex : null;
+        const stageForLookup = chargeState.isCharged
+            ? (chargedStageIndex != null ? chargedStageIndex : (thrustStageIndex != null ? thrustStageIndex : 1))
+            : nextComboStage;
         let stageProps = weapon.getComboStageProperties(stageForLookup);
         if (!stageProps) return null;
         if (useChargedThrust && thrustStageIndex != null) {
@@ -118,7 +123,6 @@
         let finalDamage = stageProps.damage;
         let finalRange = stageProps.range;
         let finalStaminaCost = stageProps.staminaCost;
-        const c = weapon.chargeAttack;
         if (chargeState.isCharged && c && chargeState.chargeMultiplier > 0) {
             const dm = 1 + (c.damageMultiplier - 1) * chargeState.chargeMultiplier;
             const rm = 1 + (c.rangeMultiplier - 1) * chargeState.chargeMultiplier;
@@ -160,6 +164,7 @@
             baseArcDegrees: config.baseArcDegrees ?? 60,
             cooldown: config.cooldown ?? 0.3,
             comboConfig: stages,
+            maxComboStage: config.maxComboStage != null ? config.maxComboStage : null,
             comboWindow: config.comboWindow ?? 1.5,
             knockback: config.knockback ?? null,
             block,

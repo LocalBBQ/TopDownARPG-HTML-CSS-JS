@@ -141,7 +141,8 @@ class EntitySpriteRenderer {
         }
         if (renderable && renderable.type === 'enemy') {
             const ai = entity.getComponent(AI);
-            if (ai && (ai.enemyType === 'goblin' || ai.enemyType === 'goblinChieftain') && typeof EnemyEntityRenderer !== 'undefined') {
+            const needsWeaponOverlay = ai && (ai.enemyType === 'goblin' || ai.enemyType === 'goblinChieftain' || ai.enemyType === 'banditDagger') && typeof EnemyEntityRenderer !== 'undefined';
+            if (needsWeaponOverlay) {
                 const r = (transform.width / 2) * camera.zoom;
                 const h = (transform.height / 2) * camera.zoom;
                 // Goblin shiv: same miniature slash arc as player dagger
@@ -151,6 +152,16 @@ class EntitySpriteRenderer {
                         pullBack: 0,
                         comboColors: false
                     });
+                }
+                // Bandit dagger: arc and weapon so attack redraws when using sprite path
+                if (ai.enemyType === 'banditDagger' && combat && typeof PlayerCombatRenderer !== 'undefined') {
+                    if (combat.isWindingUp) {
+                        PlayerCombatRenderer.drawAttackArc(ctx, screenX, screenY, combat, movement || { facingAngle: 0 }, camera, { telegraph: true, sweepProgress: 0, pullBack: 0, comboColors: false });
+                    }
+                    if (combat.isAttacking && !combat.isWindingUp) {
+                        const slashSweep = (combat.enemyAttackHandler && typeof combat.enemyAttackHandler.getSlashSweepProgress === 'function') ? combat.enemyAttackHandler.getSlashSweepProgress() : combat.enemySlashSweepProgress;
+                        PlayerCombatRenderer.drawAttackArc(ctx, screenX, screenY, combat, movement || { facingAngle: 0 }, camera, { sweepProgress: slashSweep, pullBack: 0, comboColors: false });
+                    }
                 }
                 EnemyEntityRenderer.drawWeapon(context, ai.enemyType, screenX, screenY, movement ? movement.facingAngle : 0, r, h, combat);
             }
