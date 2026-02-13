@@ -79,6 +79,20 @@ const Utils = {
         return Math.abs(angleDiff) <= arcAngle / 2;
     },
 
+    // Check if a point is within the swept portion of a slash (arc from start to current blade position).
+    // sweepProgress 0 = no arc swept, 1 = full arc swept. Matches slash rendering: blade at facingAngle - halfArc + sweepProgress * arcAngle.
+    pointInSweptArc(px, py, centerX, centerY, facingAngle, arcAngle, sweepProgress, maxDistance) {
+        const dist = this.distance(px, py, centerX, centerY);
+        if (dist > maxDistance) return false;
+        if (sweepProgress <= 0) return false;
+        const halfArc = arcAngle / 2;
+        const sweepStart = facingAngle - halfArc;
+        const angleToPoint = this.angleTo(centerX, centerY, px, py);
+        const rel = this.normalizeAngle(angleToPoint - sweepStart);
+        const sweptAngle = sweepProgress * arcAngle;
+        return rel >= 0 && rel <= sweptAngle;
+    },
+
     // Check if a point is within a rectangle thrust forward from a position
     // originX, originY = start of thrust; facingAngle = direction; length = thrust range; halfWidth = half-width perpendicular to thrust
     pointInThrustRect(px, py, originX, originY, facingAngle, length, halfWidth) {

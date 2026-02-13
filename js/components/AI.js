@@ -3,7 +3,7 @@ class AI {
     constructor(detectionRange, attackRange, patrolConfig = null) {
         this.detectionRange = detectionRange;
         this.attackRange = attackRange;
-        this.state = 'idle'; // idle, chase, attack, patrol, lunge
+        this.state = 'idle'; // idle, chase, attack, patrol, lunge, backOff
         this.idleTimer = 0;
         this.wanderTargetX = 0;
         this.wanderTargetY = 0;
@@ -42,6 +42,9 @@ class AI {
         this.patrolTargetY = null;
         this.patrolDirection = 1; // 1 = going to end, -1 = going to start
         this.patrolReachedThreshold = 10; // Distance threshold to consider reached
+
+        // Goblin stamina: back off when exhausted until 50% stamina recovered
+        this.staminaExhausted = false;
     }
 
     update(deltaTime, systems) {
@@ -101,6 +104,12 @@ class AI {
         );
         const effectiveDetectionRange = this.detectionRange * (statusEffects && statusEffects.packDetectionRangeMultiplier != null ? statusEffects.packDetectionRangeMultiplier : 1);
 
+        // Goblin stamina: mark exhausted when stamina hits 0
+        const stamina = this.entity.getComponent(Stamina);
+        if (this.enemyType === 'goblin' && stamina && stamina.percent <= 0.1) {
+            this.staminaExhausted = true;
+        }
+
         // Get enemy config once (used for lunge, projectile, and pillar checks)
         const enemyConfig = this.enemyType ? GameConfig.enemy.types[this.enemyType] : null;
         const pillarConfig = this.enemyType === 'greaterDemon' && enemyConfig && enemyConfig.pillarFlame ? enemyConfig.pillarFlame : null;
@@ -136,13 +145,12 @@ class AI {
             }
         }
         
-        // Check for lunge attack (goblin and lesser demon specific)
+        // Check for lunge attack (goblin and lesser demon)
         const isGoblin = this.enemyType === 'goblin';
-        const isLesserDemon = this.enemyType === 'lesserDemon';
-        const hasLunge = (isGoblin || isLesserDemon);
-        const lungeConfig = hasLunge && enemyConfig && enemyConfig.lunge ? enemyConfig.lunge : null;
-        // Can lunge if: goblin or lesser demon, lunge is enabled, not on cooldown, haven't used all lunges, and not already charging
-        const canLunge = hasLunge && lungeConfig && lungeConfig.enabled && combat && 
+        const hasLunge = enemyConfig && enemyConfig.lunge && enemyConfig.lunge.enabled;
+        const lungeConfig = hasLunge && enemyConfig.lunge ? enemyConfig.lunge : null;
+        // Can lunge if: lunge enabled in config, not on cooldown, haven't used all lunges, and not already charging
+        const canLunge = hasLunge && lungeConfig && combat && 
                         this.lungeCooldown === 0 && 
                         this.lungeCount < this.maxLunges && 
                         !this.isChargingLunge;
@@ -187,14 +195,14 @@ class AI {
                 movement.facingAngle = Math.atan2(dy, dx);
             }
             
-            // When charge completes, start lunge (goblin and lesser demon specific)
-            if (this.lungeChargeTimer <= 0 && lungeConfig && (this.enemyType === 'goblin' || this.enemyType === 'lesserDemon')) {
+            // When charge completes, start lunge (lesser demon and any type with lunge config)
+            if (this.lungeChargeTimer <= 0 && lungeConfig) {
                 this.isChargingLunge = false;
                 // Increment lunge count
                 this.lungeCount++;
-                // Start lunge attack (goblin and lesser demon)
-                if (combat.goblinAttack) {
-                    combat.goblinAttack.startLunge(this.lungeTargetX, this.lungeTargetY, lungeConfig);
+                // Start lunge attack (movement + combat handler)
+                if (combat.enemyAttackHandler && combat.enemyAttackHandler.startLunge) {
+                    combat.enemyAttackHandler.startLunge(this.lungeTargetX, this.lungeTargetY, lungeConfig);
                 }
                 // Start lunge movement
                 movement.startLunge(this.lungeTargetX, this.lungeTargetY, lungeConfig);
@@ -248,7 +256,7 @@ class AI {
         if (pillarConfig && this.pillarFlameCooldown === 0 && !this.isCastingPillar && !combat.isAttacking) {
             const inMeleeRange = distToPlayer < this.attackRange;
             const inPillarRange = distToPlayer <= pillarConfig.pillarRange && distToPlayer > this.attackRange;
-            const canClaw = combat && combat.demonAttack && combat.demonAttack.canAttack();
+            const canClaw = combat && combat.enemyAttackHandler && combat.enemyAttackHandler.canAttack && combat.enemyAttackHandler.canAttack();
             if (inPillarRange && Math.random() < 0.2) {
                 // 20% chance when in range so pillars don't spam
                 this.isCastingPillar = true;
@@ -261,22 +269,15 @@ class AI {
                 this.attackInitiatedThisFrame = true;
             }
         }
-        // Normal attack (melee)
-        // Demons use combo system, chieftain uses heavy smash, titan boss uses sweep/stomp, goblins use swipe attacks, skeletons don't melee
-        const hasDemonAttack = combat && combat.demonAttack !== null && combat.demonAttack !== undefined;
-        const hasChieftainAttack = combat && combat.chieftainAttack !== null && combat.chieftainAttack !== undefined;
-        const hasGoblinAttack = combat && combat.goblinAttack !== null && combat.goblinAttack !== undefined;
+        // Normal attack (melee) - use handler capabilities
+        const canMelee = combat && combat.enemyAttackHandler && combat.enemyAttackHandler.canMeleeAttack && combat.enemyAttackHandler.canMeleeAttack();
         const isSkeleton = this.enemyType === 'skeleton';
-        
-        // Skeletons don't melee attack - they only use projectiles
-        if (!isSkeleton && !this.isCastingPillar) {
-            const canAttack = combat && !this.attackInitiatedThisFrame && (
-                (hasDemonAttack && combat.demonAttack.canAttack() && !combat.isAttacking) ||
-                (hasChieftainAttack && combat.chieftainAttack.canAttack() && !combat.isAttacking) ||
-                (hasGoblinAttack && combat.cooldown === 0 && !combat.isWindingUp && !combat.isLunging)
-            );
+
+        if (!isSkeleton && !this.isCastingPillar && canMelee) {
+            const canAttack = combat && !this.attackInitiatedThisFrame && combat.enemyAttackHandler && combat.enemyAttackHandler.canAttack && combat.enemyAttackHandler.canAttack();
             
-            if (distToPlayer < this.attackRange && canAttack && !combat.isLunging) {
+            const meleeRange = (combat && combat.attackRange != null && combat.attackRange > 0) ? combat.attackRange : this.attackRange;
+            if (distToPlayer < meleeRange && canAttack && !combat.isLunging) {
                 this.state = 'attack';
                 movement.stop();
                 // Pass player position for attack
@@ -289,18 +290,28 @@ class AI {
         }
         
         if (combat && (combat.isAttacking || combat.isWindingUp || combat.isLunging)) {
-            // During attack, wind-up, or lunge, keep stopped and facing the player
+            // During attack, wind-up, or lunge, keep stopped
             this.state = combat.isLunging ? 'lunge' : 'attack';
             if (combat.isLunging) {
                 // Movement is handled by lunge
             } else {
                 movement.stop();
-                // Face the player during attack
-                const dx = playerTransform.x - transform.x;
-                const dy = playerTransform.y - transform.y;
-                if (dx !== 0 || dy !== 0) {
-                    movement.facingAngle = Math.atan2(dy, dx);
+                // During wind-up: face the player (aim). During slash: keep facing locked so the swipe commits like the player's dagger.
+                if (combat.isWindingUp) {
+                    const dx = playerTransform.x - transform.x;
+                    const dy = playerTransform.y - transform.y;
+                    if (dx !== 0 || dy !== 0) {
+                        movement.facingAngle = Math.atan2(dy, dx);
+                    }
                 }
+            }
+        } else if (this.staminaExhausted && this.enemyType === 'goblin' && stamina && distToPlayer < effectiveDetectionRange) {
+            // Back off until 50% stamina recovered
+            this.state = 'backOff';
+            if (stamina.percent >= 0.5) {
+                this.staminaExhausted = false;
+            } else {
+                this.backOffFromPlayer(playerTransform, movement, systems);
             }
         } else if (distToPlayer < effectiveDetectionRange) {
             // Chase player (this includes when lunge is on cooldown)
@@ -349,6 +360,21 @@ class AI {
                 movement.setVelocity(dx, dy);
             }
         }
+    }
+
+    /** Move away from player (goblin back off when stamina exhausted until 50% recovered). */
+    backOffFromPlayer(playerTransform, movement, systems) {
+        const transform = this.entity.getComponent(Transform);
+        if (!transform || !movement) return;
+        const dx = transform.x - playerTransform.x;
+        const dy = transform.y - playerTransform.y;
+        const distance = Math.sqrt(dx * dx + dy * dy);
+        if (distance < 1) {
+            movement.stop();
+            return;
+        }
+        if (movement.cancelPath) movement.cancelPath();
+        movement.setVelocity(dx, dy);
     }
 
     handlePathfindingFailure(transform, playerTransform, movement, obstacleManager) {

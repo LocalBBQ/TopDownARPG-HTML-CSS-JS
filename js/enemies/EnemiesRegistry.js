@@ -1,10 +1,19 @@
 // Registry of enemy types (built from enemy class files). Populates GameConfig.enemy.types at load.
+// weaponAndBehavior: one map for attack handler creation (lean approach).
 var Enemies = {
     goblin: window.EnemyGoblin,
     skeleton: window.EnemySkeleton,
     lesserDemon: window.EnemyLesserDemon,
     greaterDemon: window.EnemyGreaterDemon,
     goblinChieftain: window.EnemyGoblinChieftain
+};
+
+Enemies.weaponAndBehavior = {
+    goblin: { weaponId: 'dagger', behaviorId: 'slashAndLeap' },
+    lesserDemon: { weaponId: 'lesserDemonClaw', behaviorId: 'slashAndLeap' },
+    goblinChieftain: { weaponId: 'chieftainClub', behaviorId: 'chargeRelease' },
+    greaterDemon: { weaponId: 'demonClaw', behaviorId: 'chargeRelease' },
+    skeleton: { weaponId: 'skeletonNoMelee', behaviorId: 'rangedOnly' }
 };
 
 Enemies.getConfig = function (type) {
@@ -15,6 +24,28 @@ Enemies.getConfig = function (type) {
 Enemies.getAttackFactory = function (type) {
     const def = this[type];
     return def && typeof def.createAttack === 'function' ? def.createAttack : null;
+};
+
+Enemies.createAttackHandler = function (enemyType) {
+    const map = Enemies.weaponAndBehavior && Enemies.weaponAndBehavior[enemyType];
+    const config = Enemies.getConfig(enemyType) || (GameConfig && GameConfig.enemy && GameConfig.enemy.types && GameConfig.enemy.types[enemyType]);
+    const weaponId = (map && map.weaponId) || (config && config.weaponId);
+    const behaviorId = (map && map.behaviorId) || (config && config.behaviorId) || 'slashOnly';
+    const weapon = (typeof EnemyWeapons !== 'undefined' && EnemyWeapons.resolveWeapon) ? EnemyWeapons.resolveWeapon(weaponId) : null;
+    if (typeof window !== 'undefined' && window.WeaponAttackHandler) {
+        const options = {
+            isPlayer: false,
+            behaviorType: behaviorId,
+            windUpTime: config && config.windUpTime != null ? config.windUpTime : 0.6,
+            cooldownMultiplier: config && config.attackCooldownMultiplier != null ? config.attackCooldownMultiplier : 1,
+            damageMultiplier: config && config.damageMultiplier != null ? config.damageMultiplier : 1
+        };
+        return new window.WeaponAttackHandler(weapon, options);
+    }
+    const EnemyAttackHandlerClass = typeof window !== 'undefined' ? window.EnemyAttackHandler : null;
+    if (!EnemyAttackHandlerClass) return null;
+    const options = config ? { windUpTime: config.windUpTime, cooldownMultiplier: config.attackCooldownMultiplier ?? 1, damageMultiplier: config.damageMultiplier ?? 1 } : {};
+    return new EnemyAttackHandlerClass(weapon, behaviorId, options);
 };
 
 // Populate GameConfig.enemy.types so existing callers keep working without change

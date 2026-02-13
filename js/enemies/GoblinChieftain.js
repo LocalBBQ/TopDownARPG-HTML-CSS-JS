@@ -1,10 +1,25 @@
 (function () {
+    const weapon = (typeof EnemyWeapons !== 'undefined' && EnemyWeapons.chieftainClub) ? EnemyWeapons.chieftainClub : null;
+    const heavySmash = weapon && weapon.heavySmash ? weapon.heavySmash : {
+        chargeTime: 0.85,
+        releaseDuration: 0.15,
+        damage: 16,
+        knockbackForce: 280,
+        aoeInFront: true,
+        aoeOffset: 55,
+        aoeRadius: 42
+    };
+    // Attack range for AI: when aoeInFront, use offset + radius; otherwise use range
+    const attackRange = heavySmash.aoeInFront
+        ? (heavySmash.aoeOffset || 55) + (heavySmash.aoeRadius || 42)
+        : (heavySmash.range || 97);
+
     const config = {
         maxHealth: 60,
-        speed: 20,
-        attackRange: 115,
-        attackDamage: 16,
-        attackArcDegrees: 90,
+        moveSpeed: 20,
+        weaponId: 'chieftainClub',
+        attackRange,
+        attackDamage: heavySmash.damage,
         detectionRange: 220,
         color: '#2d5a2d',
         attackCooldown: 1.2,
@@ -16,14 +31,7 @@
             force: 200,
             decay: 0.86
         },
-        heavySmash: {
-            chargeTime: 0.85,
-            releaseDuration: 0.15,
-            damage: 16,
-            range: 115,
-            arcDegrees: 90,
-            knockbackForce: 280
-        },
+        heavySmash,
         warCry: {
             enabled: true,
             radius: 180,

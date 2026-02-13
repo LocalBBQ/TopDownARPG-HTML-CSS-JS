@@ -254,6 +254,69 @@ const PlayerCombatRenderer = {
     },
 
     /**
+     * Draw the one-handed sword/dagger shape at a given grip and angle.
+     * Shared by player (dagger/sword-and-shield) and goblin so the dagger looks identical.
+     * part: 'handle' = pommel + grip only; 'blade' = guard + blade only; 'all' = full (default).
+     */
+    drawDaggerAt(ctx, gripX, gripY, angle, baseLength, camera, options = {}) {
+        const part = options.part || 'all';
+        const swordLength = baseLength * camera.zoom;
+        const bladeWidthAtGuard = 7;
+        const lw = 1;
+        const gripScale = 1;
+        ctx.save();
+        ctx.translate(gripX, gripY);
+        ctx.rotate(angle);
+        ctx.lineWidth = lw;
+
+        if (part === 'handle' || part === 'all') {
+            const pommelX = -16 * gripScale;
+            const pommelR = 3;
+            ctx.fillStyle = '#4a4a52';
+            ctx.strokeStyle = '#3a3a42';
+            ctx.beginPath();
+            ctx.arc(pommelX, 0, pommelR, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.stroke();
+            const hiltHalfLen = 14 * gripScale;
+            const hiltThickness = 6;
+            ctx.fillStyle = '#8b4513';
+            ctx.strokeStyle = '#5d2e0c';
+            ctx.fillRect(-hiltHalfLen, -hiltThickness / 2, hiltHalfLen * 2, hiltThickness);
+            ctx.strokeRect(-hiltHalfLen, -hiltThickness / 2, hiltHalfLen * 2, hiltThickness);
+        }
+
+        if (part === 'blade' || part === 'all') {
+            const guardHalfW = 6;
+            const guardThick = 2;
+            ctx.fillStyle = '#6b6b75';
+            ctx.strokeStyle = '#4a4a52';
+            ctx.fillRect(-guardThick / 2, -guardHalfW, guardThick, guardHalfW * 2);
+            ctx.strokeRect(-guardThick / 2, -guardHalfW, guardThick, guardHalfW * 2);
+            const hw = bladeWidthAtGuard / 2;
+            const tipWidth = hw * 0.65;
+            ctx.fillStyle = '#a8a8b0';
+            ctx.strokeStyle = '#3d3d42';
+            ctx.beginPath();
+            ctx.moveTo(0, -hw);
+            ctx.lineTo(0, hw);
+            ctx.lineTo(swordLength, tipWidth);
+            ctx.lineTo(swordLength, -tipWidth);
+            ctx.closePath();
+            ctx.fill();
+            ctx.stroke();
+            ctx.strokeStyle = 'rgba(120, 118, 110, 0.55)';
+            ctx.lineWidth = lw * 0.6;
+            ctx.beginPath();
+            ctx.moveTo(hw * 0.5, 0);
+            ctx.lineTo(swordLength, 0);
+            ctx.stroke();
+        }
+
+        ctx.restore();
+    },
+
+    /**
      * part: 'handle' = pommel + grip only (draw under helmet); 'blade' = guard + blade only (draw over); 'all' = full sword (default).
      */
     drawSword(ctx, screenX, screenY, transform, movement, combat, camera, options = {}) {
@@ -263,10 +326,16 @@ const PlayerCombatRenderer = {
         if (!grip) return;
         const { gripX, gripY, swordAngle } = grip;
         const twoHanded = combat.weapon && combat.weapon.twoHanded;
-        const lengthMult = twoHanded ? 1.55 : 1;
-        const widthMult = twoHanded ? 1.4 : 1;
         const defaultRange = combat.weapon ? combat.weapon.baseRange : 100;
         const baseLength = (combat.weapon && combat.weapon.weaponLength != null) ? combat.weapon.weaponLength : (combat.attackRange ?? defaultRange) * 0.48;
+
+        if (!twoHanded) {
+            this.drawDaggerAt(ctx, gripX, gripY, swordAngle, baseLength, camera, { part });
+            return;
+        }
+
+        const lengthMult = 1.55;
+        const widthMult = 1.4;
         const swordLength = baseLength * camera.zoom * lengthMult;
         const bladeWidthAtGuard = 7 * widthMult;
         ctx.save();
@@ -274,12 +343,11 @@ const PlayerCombatRenderer = {
         ctx.rotate(swordAngle);
         const lw = 1;
         ctx.lineWidth = lw;
-        const gripScale = twoHanded ? 1.35 : 1;
+        const gripScale = 1.35;
 
         if (part === 'handle' || part === 'all') {
-            // Handle length constant when zooming (same as thickness)
             const pommelX = -16 * gripScale;
-            const pommelR = 3 * (twoHanded ? 1.2 : 1);
+            const pommelR = 3 * 1.2;
             ctx.fillStyle = '#4a4a52';
             ctx.strokeStyle = '#3a3a42';
             ctx.beginPath();
@@ -287,7 +355,7 @@ const PlayerCombatRenderer = {
             ctx.fill();
             ctx.stroke();
             const hiltHalfLen = 14 * gripScale;
-            const hiltThickness = 6 * (twoHanded ? 1.15 : 1);
+            const hiltThickness = 6 * 1.15;
             ctx.fillStyle = '#8b4513';
             ctx.strokeStyle = '#5d2e0c';
             ctx.fillRect(-hiltHalfLen, -hiltThickness / 2, hiltHalfLen * 2, hiltThickness);
@@ -295,8 +363,8 @@ const PlayerCombatRenderer = {
         }
 
         if (part === 'blade' || part === 'all') {
-            const guardHalfW = 6 * (twoHanded ? 1.4 : 1);
-            const guardThick = 2 * (twoHanded ? 1.3 : 1);
+            const guardHalfW = 6 * 1.4;
+            const guardThick = 2 * 1.3;
             ctx.fillStyle = '#6b6b75';
             ctx.strokeStyle = '#4a4a52';
             ctx.fillRect(-guardThick / 2, -guardHalfW, guardThick, guardHalfW * 2);

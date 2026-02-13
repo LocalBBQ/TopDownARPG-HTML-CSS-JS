@@ -8,6 +8,7 @@ class EnemyManager {
         this.currentLevel = 1;
         this.enemiesSpawned = false;
         this.enemiesKilledThisLevel = 0;
+        this._packUpdateTick = 0; // Throttle pack detection to every 2 frames to save CPU on level 2+
     }
 
     init(systems) {
@@ -32,7 +33,10 @@ class EnemyManager {
                 ? allModifierNames[Utils.randomInt(0, allModifierNames.length - 1)]
                 : null;
         }
-        
+        const packDef = ai.packModifierName && GameConfig.packModifiers ? GameConfig.packModifiers[ai.packModifierName] : null;
+        const healthMult = (packDef && packDef.healthMultiplier != null) ? packDef.healthMultiplier : 1;
+        const maxHealth = config.maxHealth * healthMult;
+
         // Get sprite manager for sprite components
         const spriteManager = this.systems ? this.systems.get('sprites') : null;
         
@@ -54,12 +58,18 @@ class EnemyManager {
         const size = type === 'greaterDemon' ? 38 : (type === 'goblinChieftain' ? 34 : 25);
         enemy
             .addComponent(new Transform(x, y, size, size))
-            .addComponent(new Health(config.maxHealth))
+            .addComponent(new Health(maxHealth))
             .addComponent(new StatusEffects(false))
-            .addComponent(new EnemyMovement(config.speed, type)) // Pass enemy type for type-specific behavior
+            .addComponent(new EnemyMovement(config.moveSpeed != null ? config.moveSpeed : config.speed, type)) // Pass enemy type for type-specific behavior
             .addComponent(new Combat(config.attackRange, config.attackDamage, Utils.degToRad(config.attackArcDegrees ?? 90), config.attackCooldown, config.windUpTime || 0.5, false, null, type)) // isPlayer=false, weapon=null, enemyType=type
             .addComponent(ai)
             .addComponent(new Renderable('enemy', { color: config.color }));
+
+        // Stamina for enemies that define it (e.g. goblins: back off when exhausted until 50% recovered)
+        if (config.maxStamina != null && config.maxStamina > 0) {
+            const regen = config.staminaRegen != null ? config.staminaRegen : 5;
+            enemy.addComponent(new Stamina(config.maxStamina, regen));
+        }
         
         const statusEffects = enemy.getComponent(StatusEffects);
         if (statusEffects) statusEffects.knockbackResist = config.knockbackResist ?? 0;
@@ -294,6 +304,10 @@ class EnemyManager {
         const minAllies = packConfig.minAllies;
         const packModifiers = GameConfig.packModifiers || {};
 
+        // Run pack detection only every 2 frames (saves significant CPU on level 2+ with many enemies)
+        const runPackThisFrame = this._packUpdateTick === 0;
+        this._packUpdateTick = (this._packUpdateTick + 1) % 2;
+
         // Update all enemies
         for (let i = this.enemies.length - 1; i >= 0; i--) {
             const enemy = this.enemies[i];
@@ -309,41 +323,40 @@ class EnemyManager {
             }
 
             // Pack modifier: count same-type allies in radius; apply or clear pack buff
-            const ai = enemy.getComponent(AI);
-            const statusEffects = enemy.getComponent(StatusEffects);
-            const transform = enemy.getComponent(Transform);
-            const modifierName = ai && ai.packModifierName ? ai.packModifierName : null;
-            if (modifierName && statusEffects && transform && packModifiers[modifierName]) {
-                let sameTypeCount = 0;
-                for (const other of this.enemies) {
-                    if (other === enemy) continue;
-                    const otherHealth = other.getComponent(Health);
-                    if (otherHealth && otherHealth.isDead) continue;
-                    const otherAI = other.getComponent(AI);
-                    const otherTransform = other.getComponent(Transform);
-                    if (!otherAI || otherAI.enemyType !== ai.enemyType || !otherTransform) continue;
-                    const dist = Utils.distance(transform.x, transform.y, otherTransform.x, otherTransform.y);
-                    if (dist <= packRadius) sameTypeCount++;
-                }
-                if (sameTypeCount >= minAllies) {
-                    const def = packModifiers[modifierName];
-                    const stats = {
-                        speedMultiplier: def.speedMultiplier,
-                        damageMultiplier: def.damageMultiplier,
-                        knockbackResist: def.knockbackResist,
-                        attackCooldownMultiplier: def.attackCooldownMultiplier,
-                        stunBuildupPerHitMultiplier: def.stunBuildupPerHitMultiplier,
-                        detectionRangeMultiplier: def.detectionRangeMultiplier
-                    };
-                    if (modifierName === 'frenzied' && def.speedPerAlly != null) {
-                        stats.speedMultiplier = 1 + sameTypeCount * (def.speedPerAlly || 0);
+            if (runPackThisFrame) {
+                const ai = enemy.getComponent(AI);
+                const statusEffects = enemy.getComponent(StatusEffects);
+                const transform = enemy.getComponent(Transform);
+                const modifierName = ai && ai.packModifierName ? ai.packModifierName : null;
+                if (modifierName && statusEffects && transform && packModifiers[modifierName]) {
+                    let sameTypeCount = 0;
+                    for (const other of this.enemies) {
+                        if (other === enemy) continue;
+                        const otherHealth = other.getComponent(Health);
+                        if (otherHealth && otherHealth.isDead) continue;
+                        const otherAI = other.getComponent(AI);
+                        const otherTransform = other.getComponent(Transform);
+                        if (!otherAI || otherAI.enemyType !== ai.enemyType || !otherTransform) continue;
+                        const dist = Utils.distance(transform.x, transform.y, otherTransform.x, otherTransform.y);
+                        if (dist <= packRadius) sameTypeCount++;
                     }
-                    statusEffects.setPackBuff(modifierName, stats);
-                } else {
+                    if (sameTypeCount >= minAllies) {
+                        const def = packModifiers[modifierName];
+                        const stats = {
+                            speedMultiplier: def.speedMultiplier,
+                            damageMultiplier: def.damageMultiplier,
+                            knockbackResist: def.knockbackResist,
+                            attackCooldownMultiplier: def.attackCooldownMultiplier,
+                            stunBuildupPerHitMultiplier: def.stunBuildupPerHitMultiplier,
+                            detectionRangeMultiplier: def.detectionRangeMultiplier
+                        };
+                        statusEffects.setPackBuff(modifierName, stats);
+                    } else {
+                        statusEffects.clearPackBuff();
+                    }
+                } else if (statusEffects && statusEffects.packModifierName) {
                     statusEffects.clearPackBuff();
                 }
-            } else if (statusEffects && statusEffects.packModifierName) {
-                statusEffects.clearPackBuff();
             }
         }
     }
@@ -510,10 +523,8 @@ class EnemyManager {
                 const collisionDist = enemyRadius + playerRadius + baseBuffer + hitBonus;
                 
                 if (currentDist < collisionDist && !enemyCombat.attackProcessed) {
-                    // Lunge damage: goblin uses goblinAttack.lungeDamage, others use enemyAttack or config
-                    const lungeDamage = enemyCombat.goblinAttack
-                        ? enemyCombat.goblinAttack.lungeDamage
-                        : (enemyCombat.enemyAttack ? enemyCombat.enemyAttack.lungeDamage : enemyCombat.attackDamage);
+                    const h = enemyCombat.enemyAttackHandler;
+                    const lungeDamage = h && h.lungeDamage != null ? h.lungeDamage : enemyCombat.attackDamage;
                     let finalDamage = lungeDamage;
                     const attackerStatusLunge = enemy.getComponent(StatusEffects);
                     if (attackerStatusLunge && attackerStatusLunge.packDamageMultiplier != null) finalDamage *= attackerStatusLunge.packDamageMultiplier;
@@ -546,30 +557,57 @@ class EnemyManager {
                         const dy = playerTransform.y - enemyTransform.y;
                         playerMovement.applyKnockback(dx, dy, lungeKnockbackForce);
                     }
-                    if (enemyCombat.goblinAttack) {
-                        enemyCombat.goblinAttack.attackProcessed = true;
-                    } else if (enemyCombat.enemyAttack) {
-                        enemyCombat.enemyAttack.attackProcessed = true;
+                    if (h) {
+                        h.markEnemyHit('player'); // single hit per lunge; Combat.attackProcessed reads this
                     }
                 }
             }
             // Check if enemy attack has completed wind-up and is ready to hit (normal attacks)
             // Only process normal attacks if not currently lunging
             if ((!enemyMovement || !enemyMovement.isLunging) && enemyCombat.isAttacking && !enemyCombat.attackProcessed && !enemyCombat.isLunging) {
-                const currentDist = Utils.distance(
-                    enemyTransform.x, enemyTransform.y,
-                    playerTransform.x, playerTransform.y
-                );
-                // Demon and chieftain use arc and release phase; others use distance only
-                const isDemon = enemyCombat.demonAttack != null;
-                const isChieftain = enemyCombat.chieftainAttack != null;
-                const inRange = currentDist < enemyCombat.attackRange;
-                const inArc = (isDemon || isChieftain) && enemyMovement
-                    ? Utils.pointInArc(playerTransform.x, playerTransform.y, enemyTransform.x, enemyTransform.y, enemyMovement.facingAngle, enemyCombat.attackArc, enemyCombat.attackRange)
-                    : inRange;
-                const demonCanHit = !isDemon || enemyCombat.demonAttack.isInReleasePhase;
-                const chieftainCanHit = !isChieftain || enemyCombat.chieftainAttack.isInReleasePhase;
-                if (inRange && inArc && demonCanHit && chieftainCanHit) {
+                const h = enemyCombat.enemyAttackHandler;
+                const useReleasePhase = h && h.hasChargeRelease && h.hasChargeRelease();
+                // AOE in front (e.g. chieftain club slam): circle centered in front of enemy
+                const aoeInFront = enemyCombat.currentAttackAoeInFront && enemyCombat.currentAttackAoeRadius > 0;
+                let inRange;
+                let inArc;
+                let inHitWindow = true;
+                const rangeSensitivity = 30;
+                const arcSensitivity = 0.3;
+                if (aoeInFront && enemyMovement) {
+                    const slamX = enemyTransform.x + Math.cos(enemyMovement.facingAngle) * (enemyCombat.currentAttackAoeOffset || 0);
+                    const slamY = enemyTransform.y + Math.sin(enemyMovement.facingAngle) * (enemyCombat.currentAttackAoeOffset || 0);
+                    const distToSlam = Utils.distance(playerTransform.x, playerTransform.y, slamX, slamY);
+                    inRange = distToSlam <= enemyCombat.currentAttackAoeRadius;
+                    inArc = true;
+                } else {
+                    // Same rules as player dagger: distance to edge of target, full cone (arc + range) with sensitivity, hit window 0.25–0.75
+                    const currentDist = Utils.distance(
+                        enemyTransform.x, enemyTransform.y,
+                        playerTransform.x, playerTransform.y
+                    );
+                    const playerHitboxRadius = Math.max(playerTransform.width, playerTransform.height) / 2;
+                    const distToEdge = Math.max(0, currentDist - playerHitboxRadius);
+                    const generousRange = enemyCombat.attackRange + rangeSensitivity;
+                    inRange = distToEdge < generousRange;
+                    const useArcCheck = enemyMovement && !enemyCombat.currentAttackIsCircular;
+                    if (useArcCheck) {
+                        const arcCenter = enemyMovement.facingAngle + (enemyCombat.attackArcOffset ?? 0);
+                        const generousArc = enemyCombat.attackArc + arcSensitivity;
+                        const useSlashSweep = h && typeof h.getSlashSweepProgress === 'function';
+                        if (useSlashSweep) {
+                            const sweepProgress = h.getSlashSweepProgress();
+                            inHitWindow = sweepProgress >= 0.25 && sweepProgress <= 0.75;
+                            inArc = inHitWindow && Utils.pointInArc(playerTransform.x, playerTransform.y, enemyTransform.x, enemyTransform.y, arcCenter, generousArc, generousRange);
+                        } else {
+                            inArc = Utils.pointInArc(playerTransform.x, playerTransform.y, enemyTransform.x, enemyTransform.y, arcCenter, generousArc, generousRange);
+                        }
+                    } else {
+                        inArc = inRange;
+                    }
+                }
+                const releasePhaseOk = !useReleasePhase || (h && h.isInReleasePhase);
+                if (inRange && inArc && inHitWindow && releasePhaseOk) {
                     let finalDamage = enemyCombat.attackDamage;
                     const attackerStatus = enemy.getComponent(StatusEffects);
                     if (attackerStatus && (performance.now() / 1000) < attackerStatus.buffedUntil) {
@@ -592,13 +630,13 @@ class EnemyManager {
                         }
                     }
 
-                    playerHealth.takeDamage(finalDamage, blocked);
                     const ai = enemy.getComponent(AI);
+                    playerHealth.takeDamage(finalDamage, blocked);
                     const enemyTypeForStun = ai ? ai.enemyType : 'goblin';
                     const enemyConfigForStun = GameConfig.enemy.types[enemyTypeForStun] || GameConfig.enemy.types.goblin;
                     const playerStatus = player.getComponent(StatusEffects);
                     if (playerStatus) {
-                        let baseStun = enemyConfigForStun.stunBuildupPerHit ?? 0;
+                        let baseStun = enemyCombat.currentAttackStunBuildup || (enemyConfigForStun.stunBuildupPerHit ?? 0);
                         if (attackerStatus && attackerStatus.packStunBuildupMultiplier != null) baseStun *= attackerStatus.packStunBuildupMultiplier;
                         const mult = blocked ? (GameConfig.player.stun?.blockedMultiplier ?? 0.5) : 1;
                         playerStatus.addStunBuildup(baseStun * mult);
@@ -608,26 +646,23 @@ class EnemyManager {
                     if (playerMovement && !blocked) {
                         const knockbackConfig = enemyConfigForStun.knockback || { force: 160, decay: 0.88 };
                         const baseForce = enemyCombat.currentAttackKnockbackForce ?? knockbackConfig.force;
-                        const dx = playerTransform.x - enemyTransform.x;
-                        const dy = playerTransform.y - enemyTransform.y;
+                        // AOE-in-front: knockback away from slam center; otherwise away from enemy
+                        let dx, dy;
+                        if (aoeInFront && enemyMovement && enemyCombat.currentAttackAoeRadius > 0) {
+                            const slamX = enemyTransform.x + Math.cos(enemyMovement.facingAngle) * (enemyCombat.currentAttackAoeOffset || 0);
+                            const slamY = enemyTransform.y + Math.sin(enemyMovement.facingAngle) * (enemyCombat.currentAttackAoeOffset || 0);
+                            dx = playerTransform.x - slamX;
+                            dy = playerTransform.y - slamY;
+                        } else {
+                            dx = playerTransform.x - enemyTransform.x;
+                            dy = playerTransform.y - enemyTransform.y;
+                        }
                         playerMovement.applyKnockback(dx, dy, baseForce);
                     }
 
-                    if (enemyCombat.demonAttack) {
-                        enemyCombat.demonAttack.markEnemyHit('player');
-                    } else if (enemyCombat.chieftainAttack) {
-                        enemyCombat.chieftainAttack.markEnemyHit('player');
-                    } else if (enemyCombat.goblinAttack) {
-                        enemyCombat.goblinAttack.attackProcessed = true;
-                    } else if (enemyCombat.enemyAttack) {
-                        enemyCombat.enemyAttack.attackProcessed = true;
+                    if (h) {
+                        h.markEnemyHit('player'); // single hit per attack; Combat.attackProcessed reads this
                     }
-                }
-                // Mark attack processed so this branch runs once per attack (for non-demon, non-chieftain)
-                if (enemyCombat.goblinAttack) {
-                    enemyCombat.goblinAttack.attackProcessed = true;
-                } else if (enemyCombat.enemyAttack) {
-                    enemyCombat.enemyAttack.attackProcessed = true;
                 }
             }
         }

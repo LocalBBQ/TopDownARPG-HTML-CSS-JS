@@ -168,7 +168,7 @@ class PlayerMovement extends Movement {
                     this.isKnockedBack = false;
                     this.knockbackVelocityX = 0;
                     this.knockbackVelocityY = 0;
-                    // Resume movement from currently held keys so player doesn't have to re-press
+                    // Resume movement from currently held keys so player doesn't have to re-press; otherwise stop
                     const inputSystem = systems ? systems.get('input') : null;
                     if (inputSystem) {
                         let moveX = 0;
@@ -181,7 +181,13 @@ class PlayerMovement extends Movement {
                             const normalized = Utils.normalize(moveX, moveY);
                             this.velocityX = normalized.x * this.speed;
                             this.velocityY = normalized.y * this.speed;
+                        } else {
+                            this.velocityX = 0;
+                            this.velocityY = 0;
                         }
+                    } else {
+                        this.velocityX = 0;
+                        this.velocityY = 0;
                     }
                 }
             } else {

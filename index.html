@@ -10,21 +10,29 @@
     <div id="game-container">
         <canvas id="gameCanvas"></canvas>
         <div id="ui-overlay">
-            <div id="stats">
-                <div class="stat-bar">
-                    <label>HP</label>
-                    <div class="bar-container">
-                        <div id="health-bar" class="bar health"></div>
+            <div id="orb-row">
+                <div class="orb-wrapper">
+                    <div id="health-orb" class="orb health-orb" title="Health">
+                        <div class="orb-frame"></div>
+                        <div id="health-orb-fill" class="orb-fill health-fill" style="height: 100%;"></div>
                     </div>
-                    <span id="health-text">100/100</span>
-                </div>
-                <div class="stat-bar">
-                    <label>SP</label>
-                    <div class="bar-container">
-                        <div id="stamina-bar" class="bar stamina"></div>
+                    <div class="orb-caption">
+                        <span class="orb-label">Health</span>
+                        <span id="health-text" class="orb-text">100/100</span>
                     </div>
-                    <span id="stamina-text">50/50</span>
                 </div>
+                <div class="orb-wrapper">
+                    <div id="stamina-orb" class="orb stamina-orb" title="Stamina">
+                        <div class="orb-frame"></div>
+                        <div id="stamina-orb-fill" class="orb-fill stamina-fill" style="height: 100%;"></div>
+                    </div>
+                    <div class="orb-caption">
+                        <span class="orb-label">Stamina</span>
+                        <span id="stamina-text" class="orb-text">50/50</span>
+                    </div>
+                </div>
+            </div>
+            <div id="stats-extra">
                 <div class="stat-bar stun-buildup">
                     <label>Stun</label>
                     <div class="bar-container">
@@ -62,13 +70,18 @@
     <script src="js/weapons/GreatswordWeapon.js"></script>
     <script src="js/weapons/MaceWeapon.js"></script>
     <script src="js/weapons/CrossbowWeapon.js"></script>
+    <script src="js/weapons/DaggerWeapon.js"></script>
     <script src="js/weapons/WeaponsRegistry.js"></script>
     <script src="js/weapons/PlayerAttack.js"></script>
+    <script src="js/weapons/WeaponAttackHandler.js"></script>
     <script src="js/weapons/EnemyAttack.js"></script>
     <script src="js/weapons/GoblinAttack.js"></script>
     <script src="js/weapons/SkeletonAttack.js"></script>
     <script src="js/weapons/DemonAttack.js"></script>
     <script src="js/weapons/ChieftainAttack.js"></script>
+    <script src="js/weapons/ChieftainClubWeapon.js"></script>
+    <script src="js/weapons/EnemyWeaponsRegistry.js"></script>
+    <script src="js/weapons/EnemyAttackHandler.js"></script>
     
     <!-- Enemies (registry populates GameConfig.enemy.types) -->
     <script src="js/enemies/EnemyType.js"></script>
@@ -106,6 +119,10 @@
     <script src="js/renderers/EnemyCombatRenderer.js"></script>
     <!-- Render layer modules (used by RenderSystem) -->
     <script src="js/systems/renderers/RenderContext.js"></script>
+    <script src="js/systems/renderers/EntityEffectsRenderer.js"></script>
+    <script src="js/systems/renderers/EnemyEntityRenderer.js"></script>
+    <script src="js/systems/renderers/PlayerEntityRenderer.js"></script>
+    <script src="js/systems/renderers/EntitySpriteRenderer.js"></script>
     <script src="js/systems/renderers/WorldLayerRenderer.js"></script>
     <script src="js/systems/renderers/ObstacleLayerRenderer.js"></script>
     <script src="js/systems/renderers/PortalRenderer.js"></script>

@@ -1,10 +1,9 @@
 (function () {
     const config = {
         maxHealth: 80,
-        speed: 30,
+        moveSpeed: 30,
         attackRange: 60,
         attackDamage: 12,
-        attackArcDegrees: 90,
         detectionRange: 300,
         color: '#aa4444',
         attackCooldown: 0.67,
@@ -24,7 +23,7 @@
             cooldown: 18.0,
             pillarRange: 220
         },
-        packModifier: 'apex'
+        packModifier: 'stalwart'
     };
 
     function createAttack() {

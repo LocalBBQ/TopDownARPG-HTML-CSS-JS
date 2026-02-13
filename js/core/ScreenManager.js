@@ -56,9 +56,10 @@ class ScreenManager {
             cx, rowW, rowH, startY,
             rows: [
                 { key: 'swordAndShield', label: 'Sword & Shield', y: startY },
-                { key: 'greatsword', label: 'Greatsword', y: startY + rowH },
-                { key: 'crossbow', label: 'Crossbow', y: startY + rowH * 2 },
-                { key: 'mace', label: 'Mace', y: startY + rowH * 3 }
+                { key: 'dagger', label: 'Dagger', y: startY + rowH },
+                { key: 'greatsword', label: 'Greatsword', y: startY + rowH * 2 },
+                { key: 'crossbow', label: 'Crossbow', y: startY + rowH * 3 },
+                { key: 'mace', label: 'Mace', y: startY + rowH * 4 }
             ]
         };
     }
@@ -231,8 +232,9 @@ class ScreenManager {
             const pct = Math.round((def.detectionRangeMultiplier - 1) * 100);
             parts.push(`+${pct}% detection range`);
         }
-        if (def.speedPerAlly != null) {
-            parts.push('speed scales with allies in pack');
+        if (def.healthMultiplier != null && def.healthMultiplier !== 1) {
+            const pct = Math.round((def.healthMultiplier - 1) * 100);
+            parts.push(pct > 0 ? `+${pct}% health` : `${pct}% health`);
         }
         return parts.length ? parts.join(', ') : '—';
     }
@@ -242,12 +244,10 @@ class ScreenManager {
         const height = this.canvas.height;
         const cx = width / 2;
 
-        // Dim overlay but leave top-left cutout so health/stamina UI stays visible
-        const statsCutoutW = 340;
-        const statsCutoutH = 165;
+        // Dim overlay but leave bottom cutout so health/stamina orbs stay visible
+        const bottomCutoutH = 200;
         this.ctx.fillStyle = 'rgba(10, 8, 6, 0.88)';
-        this.ctx.fillRect(statsCutoutW, 0, width - statsCutoutW, height);
-        this.ctx.fillRect(0, statsCutoutH, statsCutoutW, height - statsCutoutH);
+        this.ctx.fillRect(0, 0, width, height - bottomCutoutH);
 
         this.ctx.textAlign = 'center';
         this.ctx.textBaseline = 'middle';
@@ -439,9 +439,10 @@ class ScreenManager {
             backY: height / 2 + 120,
             rows: [
                 { key: 'swordAndShield', label: 'Sword & Shield', y: startY },
-                { key: 'greatsword', label: 'Greatsword', y: startY + rowH },
-                { key: 'crossbow', label: 'Crossbow', y: startY + rowH * 2 },
-                { key: 'mace', label: 'Mace', y: startY + rowH * 3 }
+                { key: 'dagger', label: 'Dagger', y: startY + rowH },
+                { key: 'greatsword', label: 'Greatsword', y: startY + rowH * 2 },
+                { key: 'crossbow', label: 'Crossbow', y: startY + rowH * 3 },
+                { key: 'mace', label: 'Mace', y: startY + rowH * 4 }
             ]
         };
     }
@@ -576,11 +577,19 @@ class ScreenManager {
                 y: startY + 6 * 40
             },
             {
+                key: 'enemyStaminaBars',
+                label: 'Enemy Stamina Bars',
+                value: settings.showEnemyStaminaBars,
+                type: 'toggle',
+                x: cx - rowWidth / 2,
+                y: startY + 7 * 40
+            },
+            {
                 key: 'controls',
                 label: 'Controls',
                 type: 'link',
                 x: cx - rowWidth / 2,
-                y: startY + 7 * 40
+                y: startY + 8 * 40
             }
         ];
 

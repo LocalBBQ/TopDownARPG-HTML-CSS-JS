@@ -103,65 +103,39 @@ const GameConfig = {
         }
     },
 
-    /** Pack modifiers: named buff sets applied when enemy is in a pack (same-type allies in range). */
+    /** Pack modifiers: named buff sets applied when enemy is in a pack (same-type allies in range). Fewer, stronger identities; some scale health at spawn. */
     packModifiers: {
-        furious: {
-            speedMultiplier: 1.15,
-            damageMultiplier: 1.1,
-            color: '#ff6600'
-        },
-        savage: {
-            damageMultiplier: 1.25,
+        fierce: {
+            damageMultiplier: 1.4,
+            healthMultiplier: 1.25,
             color: '#cc2222'
         },
-        zealous: {
-            speedMultiplier: 1.2,
+        swift: {
+            speedMultiplier: 1.3,
             damageMultiplier: 1.05,
             color: '#ffcc00'
         },
-        apex: {
-            speedMultiplier: 1.1,
-            damageMultiplier: 1.2,
-            knockbackResist: 0.15,
-            color: '#8866ff'
-        },
-        esurient: {
-            damageMultiplier: 1.3,
-            speedMultiplier: 1.05,
-            color: '#aa2288'
-        },
-        tenacious: {
-            speedMultiplier: 1.05,
-            damageMultiplier: 1.05,
-            knockbackResist: 0.25,
+        stalwart: {
+            healthMultiplier: 1.6,
+            knockbackResist: 0.5,
+            damageMultiplier: 1.0,
             color: '#228822'
         },
         relentless: {
-            damageMultiplier: 1.1,
-            attackCooldownMultiplier: 0.85,
+            attackCooldownMultiplier: 0.65,
+            damageMultiplier: 1.15,
             color: '#6666ff'
         },
         vicious: {
-            damageMultiplier: 1.1,
-            stunBuildupPerHitMultiplier: 1.25,
+            stunBuildupPerHitMultiplier: 1.5,
+            damageMultiplier: 1.15,
             color: '#cc44cc'
         },
         inspiring: {
-            speedMultiplier: 1.1,
-            damageMultiplier: 1.15,
+            speedMultiplier: 1.15,
+            damageMultiplier: 1.2,
+            healthMultiplier: 1.3,
             color: '#00aacc'
-        },
-        frenzied: {
-            damageMultiplier: 1.1,
-            /** Speed scales with ally count: 1 + (allyCount - 1) * speedPerAlly */
-            speedPerAlly: 0.05,
-            color: '#ff4400'
-        },
-        marauding: {
-            speedMultiplier: 1.05,
-            damageMultiplier: 1.1,
-            detectionRangeMultiplier: 1.35,
-            color: '#888800'
         }
     },
     

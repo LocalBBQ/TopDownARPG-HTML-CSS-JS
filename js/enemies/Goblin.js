@@ -1,14 +1,34 @@
+// Goblin uses the Dagger weapon; melee slash matches player's dagger (no wind-up, same timing/cooldown).
+// Lunge uses dash attack stats from dagger.
 (function () {
+    const weapon = (typeof EnemyWeapons !== 'undefined' && EnemyWeapons.resolveWeapon) ? EnemyWeapons.resolveWeapon('dagger') : null;
+    let attackRange = 40, attackDamage = 5, attackCooldown = 0.25, lungeDamage = 8, lungeKnockbackForce = 240;
+    if (weapon) {
+        const first = weapon.getComboStageProperties && weapon.getComboStageProperties(1);
+        const dash = weapon.getDashAttackProperties && weapon.getDashAttackProperties();
+        if (first) {
+            attackRange = first.range;
+            attackDamage = first.damage;
+        }
+        if (weapon.cooldown != null) attackCooldown = weapon.cooldown;
+        if (dash) {
+            lungeDamage = dash.damage;
+            if (dash.knockbackForce != null) lungeKnockbackForce = dash.knockbackForce;
+        }
+    }
+
     const config = {
         maxHealth: 30,
-        speed: 25,
-        attackRange: 40,
-        attackDamage: 5,
-        attackArcDegrees: 90,
+        moveSpeed: 25,
+        weaponId: 'dagger',
+        attackRange,
+        attackDamage,
         detectionRange: 200,
         color: '#44aa44',
-        attackCooldown: 1.0,
-        windUpTime: 0.6,
+        attackCooldown,
+        windUpTime: 0, // Same as player dagger: no wind-up, slash starts immediately (like click)
+        attackCooldownMultiplier: 1,
+        damageMultiplier: 1,
         stunThreshold: 60,
         stunBuildupPerHit: 18,
         knockbackResist: 0,
@@ -22,20 +42,20 @@
             chargeTime: 0.8,
             lungeSpeed: 200,
             lungeDistance: 120,
-            lungeDamage: 8,
+            lungeDamage,
             hitRadiusBonus: 0,
-            knockback: { force: 240 },
+            knockback: { force: lungeKnockbackForce },
             hopBackChance: 0.5,
             hopBackDelay: 0.75,
             hopBackDistance: 60,
             hopBackSpeed: 140
         },
-        packModifier: 'furious'
+        packModifier: 'fierce',
+        // Stamina: goblins back off when exhausted until 50% recovered
+        maxStamina: 30,
+        staminaRegen: 4,
+        attackStaminaCost: 12
     };
 
-    function createAttack(attackRange, attackDamage, attackArc, cooldown, windUpTime) {
-        return new GoblinAttack(attackRange, attackDamage, attackArc, cooldown, windUpTime);
-    }
-
-    window.EnemyGoblin = EnemyType.fromConfig(config, createAttack);
+    window.EnemyGoblin = EnemyType.fromConfig(config, null);
 })();

@@ -31,38 +31,126 @@ body {
     position: absolute;
     inset: 0;
     pointer-events: none;
-    padding: 16px;
+    padding: 16px 16px 0 16px;
     display: flex;
     flex-direction: column;
-    justify-content: space-between;
+    justify-content: flex-end;
+    align-items: center;
 }
 
-/* Stats panel - wooden frame, parchment interior */
-#stats {
-    align-self: flex-start;
-    width: 300px;
-    padding: 16px 20px;
-    background: linear-gradient(180deg, #2c1810 0%, #1a1008 100%);
-    border: 3px solid #4a3020;
-    border-radius: 4px;
+/* Bottom orb row - Diablo / Path of Exile style */
+#orb-row {
+    display: flex;
+    align-items: flex-end;
+    justify-content: center;
+    gap: clamp(120px, 40vw, 1000px);
+    padding-bottom: 12px;
+}
+
+.orb-wrapper {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+}
+
+.orb {
+    position: relative;
+    width: 150px;
+    height: 150px;
+    flex-shrink: 0;
+    border-radius: 50%;
+    overflow: hidden;
+}
+
+.orb-caption {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    margin-top: 6px;
+    gap: 2px;
+}
+
+.orb-label {
+    font-size: 14px;
+    font-weight: 700;
+    color: #c9a227;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.8);
+}
+
+.orb-frame {
+    position: absolute;
+    inset: 0;
+    border-radius: 50%;
+    border: 4px solid rgba(61, 40, 23, 0.6);
     box-shadow:
-        inset 0 1px 0 rgba(201, 162, 39, 0.15),
-        0 2px 8px rgba(0, 0, 0, 0.5);
+        inset 0 -6px 16px rgba(0, 0, 0, 0.35),
+        inset 0 2px 6px rgba(255, 255, 255, 0.06),
+        0 4px 16px rgba(0, 0, 0, 0.4);
+    background: radial-gradient(ellipse 60% 50% at 50% 30%, rgba(40, 28, 18, 0.35), rgba(15, 10, 6, 0.25));
+    z-index: 2;
+    pointer-events: none;
+}
+
+.orb-fill {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    width: 100%;
+    transition: height 0.2s ease;
+    z-index: 1;
+}
+
+.health-orb .orb-fill.health-fill {
+    background: linear-gradient(180deg, #e04040 0%, #b02828 30%, #8b2020 60%, #5c1010 100%);
+    box-shadow: inset 0 2px 0 rgba(255, 200, 200, 0.3);
+}
+
+.stamina-orb .orb-fill.stamina-fill {
+    background: linear-gradient(180deg, #4a9070 0%, #2a7050 30%, #1e5038 60%, #0f2520 100%);
+    box-shadow: inset 0 2px 0 rgba(200, 240, 220, 0.25);
+}
+
+.stamina-orb.stamina-pulse .orb-fill.stamina-fill {
+    filter: brightness(1.25);
+    box-shadow: inset 0 2px 0 rgba(200, 240, 220, 0.4), 0 0 18px rgba(100, 200, 160, 0.5);
+}
+
+.orb-text {
+    font-size: 18px;
+    font-weight: 700;
+    color: #e0c8a0;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+    text-shadow: 0 1px 3px rgba(0, 0, 0, 0.9), 0 0 8px rgba(0, 0, 0, 0.6);
+}
+
+/* Extra stats (stun, heal) - compact bar below orbs */
+#stats-extra {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: center;
+    gap: 16px 32px;
+    padding: 12px 28px;
+    min-width: 420px;
+    background: linear-gradient(180deg, rgba(44, 24, 16, 0.45) 0%, rgba(26, 16, 8, 0.5) 100%);
+    border: 2px solid rgba(61, 40, 23, 0.5);
+    border-radius: 6px;
+    margin-bottom: 8px;
+    box-shadow: 0 2px 12px rgba(0, 0, 0, 0.3);
 }
 
 .stat-bar {
     display: flex;
     align-items: center;
-    gap: 12px;
-    margin-bottom: 14px;
-}
-
-.stat-bar:last-child {
-    margin-bottom: 0;
+    gap: 8px;
 }
 
 .stat-bar label {
-    font-size: 13px;
+    font-size: 14px;
     font-weight: 700;
     color: #c9a227;
     width: 52px;
@@ -71,13 +159,13 @@ body {
 }
 
 .bar-container {
-    flex: 1;
-    height: 20px;
+    width: 120px;
+    height: 18px;
     background: #0f0a06;
-    border: 2px solid #3d2817;
+    border: 1px solid #3d2817;
     border-radius: 2px;
     overflow: hidden;
-    box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.6);
+    box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.6);
 }
 
 .bar {
@@ -86,25 +174,9 @@ body {
     transition: width 0.25s ease;
 }
 
-.bar.health {
-    background: linear-gradient(180deg, #8b2020 0%, #5c1010 50%, #4a0c0c 100%);
-    box-shadow: inset 0 1px 0 rgba(255, 180, 180, 0.2);
-}
-
-.bar.stamina {
-    background: linear-gradient(180deg, #2a5070 0%, #1a3048 50%, #0f2035 100%);
-    box-shadow: inset 0 1px 0 rgba(180, 220, 255, 0.15);
-    transition: box-shadow 0.1s ease, filter 0.1s ease;
-}
-
-.bar.stamina.stamina-pulse {
-    box-shadow: inset 0 1px 0 rgba(180, 220, 255, 0.4), 0 0 12px rgba(200, 230, 255, 0.5);
-    filter: brightness(1.2);
-}
-
 .bar.stun {
-    background: linear-gradient(180deg, #ffffff 0%, #e0e0e0 50%, #c8c8c8 100%);
-    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.4);
+    background: linear-gradient(180deg, #e8e8e8 0%, #c8c8c8 50%, #a0a0a0 100%);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.3);
 }
 
 .bar.stun-duration-bar {
@@ -112,18 +184,10 @@ body {
     box-shadow: inset 0 1px 0 rgba(255, 220, 150, 0.3);
 }
 
-.stat-bar span {
-    font-size: 13px;
+.stat-bar.heal-charges span {
+    font-size: 14px;
     font-weight: 600;
     color: #b89870;
     font-variant-numeric: tabular-nums;
-    min-width: 48px;
-    text-align: right;
-}
-
-/* Spacer so stun row has same flex layout as HP/SP (avoids layout shift) */
-.stat-bar-spacer {
-    min-width: 48px;
-    width: 48px;
 }
 

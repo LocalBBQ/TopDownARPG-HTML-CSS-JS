@@ -26,12 +26,19 @@ class RenderSystem {
         return createRenderContext(this.ctx, this.canvas, camera, this.systems, this.settings);
     }
 
-    renderWorld(camera, obstacleManager, currentLevel = 1, worldWidth = null, worldHeight = null) {
+    renderWorld(camera, obstacleManager, currentLevel = 1, worldWidth = null, worldHeight = null, playerY = null) {
         const context = this._getContext(camera);
         this.worldLayer.render(context, { currentLevel, worldWidth, worldHeight });
         if (obstacleManager) {
-            this.obstacleLayer.render(context, { obstacleManager, currentLevel });
+            const phase = typeof playerY === 'number' ? 'behind' : 'all';
+            this.obstacleLayer.render(context, { obstacleManager, currentLevel, playerY, phase });
         }
+    }
+
+    /** Draw only trees (and other depth-sorted obstacles) that are in front of the player. Call after renderEntities. */
+    renderObstaclesInFront(camera, obstacleManager, currentLevel = 1, playerY = null) {
+        if (!obstacleManager || typeof playerY !== 'number') return;
+        this.obstacleLayer.render(this._getContext(camera), { obstacleManager, currentLevel, playerY, phase: 'front' });
     }
 
     renderPortal(portal, camera, playerNearPortal) {

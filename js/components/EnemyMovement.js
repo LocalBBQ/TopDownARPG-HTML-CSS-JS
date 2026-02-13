@@ -89,14 +89,11 @@ class EnemyMovement extends Movement {
             // Get dash speed from weapon config or use default
             const combat = this.entity.getComponent(Combat);
             let dashSpeed = 300; // Default dash speed for enemies
-            if (combat && combat.demonAttack) {
-                // Demons use weapon combos - get dash speed from current attack
-                const weapon = combat.demonAttack.weapon;
-                if (weapon) {
-                    const stageProps = weapon.getComboStageProperties(combat.demonAttack.comboStage);
-                    if (stageProps && stageProps.dashSpeed) {
-                        dashSpeed = stageProps.dashSpeed;
-                    }
+            if (combat && combat.enemyAttackHandler && combat.enemyAttackHandler.getWeapon) {
+                const weapon = combat.enemyAttackHandler.getWeapon();
+                if (weapon && weapon.getComboStageProperties) {
+                    const stageProps = weapon.getComboStageProperties(combat.enemyAttackHandler.comboStage || 1);
+                    if (stageProps && stageProps.dashSpeed) dashSpeed = stageProps.dashSpeed;
                 }
             }
             
@@ -198,6 +195,8 @@ class EnemyMovement extends Movement {
     }
 
     updateFacingAngle(deltaTime, systems) {
+        // Don't change facing during knockback – stay facing the direction they were before being hit
+        if (this.isKnockedBack) return;
         // Enemies face their movement direction
         if (this.velocityX !== 0 || this.velocityY !== 0) {
             this.facingAngle = Utils.angleTo(0, 0, this.velocityX, this.velocityY);
@@ -240,8 +239,8 @@ class EnemyMovement extends Movement {
         
         // Notify combat component that lunge ended (goblin-specific)
         const combat = this.entity.getComponent(Combat);
-        if (combat && combat.goblinAttack) {
-            combat.goblinAttack.endLunge(combat.getPackCooldownMultiplier());
+        if (combat && combat.enemyAttackHandler && combat.enemyAttackHandler.endLunge) {
+            combat.enemyAttackHandler.endLunge(combat.getPackCooldownMultiplier());
         }
         
         // Goblin: 50% chance to hop back after lunge

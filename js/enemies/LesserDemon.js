@@ -1,10 +1,9 @@
 (function () {
     const config = {
         maxHealth: 45,
-        speed: 32,
+        moveSpeed: 32,
         attackRange: 45,
         attackDamage: 7,
-        attackArcDegrees: 90,
         detectionRange: 220,
         color: '#884444',
         attackCooldown: 0.85,
@@ -24,7 +23,7 @@
             lungeDamage: 10,
             knockback: { force: 260 }
         },
-        packModifier: 'zealous'
+        packModifier: 'swift'
     };
 
     function createAttack(attackRange, attackDamage, attackArc, cooldown, windUpTime) {

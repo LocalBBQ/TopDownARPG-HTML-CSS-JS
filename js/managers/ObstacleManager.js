@@ -47,15 +47,43 @@ class ObstacleManager {
         return img;
     }
 
+    /** Trees: trunk-only collision. Rocks/shrines: smaller centered collision so the player can walk behind the visible image. */
+    _getObstacleCollisionRect(obstacle) {
+        if (obstacle.type === 'tree') {
+            const trunkWidthFraction = 0.16;
+            const trunkHeightFraction = 0.22;
+            const minTrunkW = 10;
+            const minTrunkH = 8;
+            const cw = Math.max(minTrunkW, obstacle.width * trunkWidthFraction);
+            const ch = Math.max(minTrunkH, obstacle.height * trunkHeightFraction);
+            const left = obstacle.x + (obstacle.width - cw) / 2;
+            const top = obstacle.y + obstacle.height - ch;
+            return { x: left, y: top, width: cw, height: ch };
+        }
+        // Rock and shrine-like props: collision smaller than sprite so player can walk behind the edges
+        const smallCollisionTypes = ['rock', 'pillar', 'brokenPillar', 'column', 'statueBase', 'arch'];
+        if (smallCollisionTypes.includes(obstacle.type)) {
+            const frac = 0.5;  // 50% of width/height, centered
+            const minSize = 14;
+            const cw = Math.max(minSize, obstacle.width * frac);
+            const ch = Math.max(minSize, obstacle.height * frac);
+            const left = obstacle.x + (obstacle.width - cw) / 2;
+            const top = obstacle.y + (obstacle.height - ch) / 2;
+            return { x: left, y: top, width: cw, height: ch };
+        }
+        return { x: obstacle.x, y: obstacle.y, width: obstacle.width, height: obstacle.height };
+    }
+
     canMoveTo(x, y, entityWidth, entityHeight, options = null) {
         const entityLeft = x - entityWidth / 2;
         const entityTop = y - entityHeight / 2;
         const allowSwampPools = options && options.allowSwampPools;
         for (const obstacle of this.obstacles) {
             if (allowSwampPools && obstacle.type === 'swampPool') continue;
+            const rect = this._getObstacleCollisionRect(obstacle);
             if (Utils.rectCollision(
                 entityLeft, entityTop, entityWidth, entityHeight,
-                obstacle.x, obstacle.y, obstacle.width, obstacle.height
+                rect.x, rect.y, rect.width, rect.height
             )) {
                 return false;
             }

@@ -11,7 +11,8 @@ class EnemyAttack {
         this.isWindingUp = false;
         this.isAttacking = false;
         this.attackProcessed = false;
-        
+        this._slashStartTime = 0;
+
         // Lunge attack properties
         this.isLunging = false;
         this.lungeTargetX = 0;
@@ -31,11 +32,11 @@ class EnemyAttack {
                 this.isWindingUp = false;
                 this.isAttacking = true;
                 this.attackProcessed = false;
-                
-                // Reset attack state after a short time
+                this._slashStartTime = Date.now();
+                const self = this;
                 setTimeout(() => {
-                    this.isAttacking = false;
-                    this.attackProcessed = false;
+                    self.isAttacking = false;
+                    self.attackProcessed = false;
                 }, 200);
             }
         }
@@ -73,6 +74,14 @@ class EnemyAttack {
     get windUpProgress() {
         if (!this.isWindingUp) return 0;
         return 1 - (this.windUpTimer / this.windUpTime);
+    }
+
+    /** 0 = weapon back, 1 = end of swing. Used for goblin dagger swipe when this handler is used as fallback. */
+    getSlashSweepProgress() {
+        if (this.isLunging) return 1;
+        if (!this.isAttacking || !this._slashStartTime) return 0;
+        const raw = Math.min(1, (Date.now() - this._slashStartTime) / 200);
+        return 1 - (1 - raw) ** 4;
     }
 }
 

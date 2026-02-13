@@ -1,10 +1,9 @@
 (function () {
     const config = {
         maxHealth: 50,
-        speed: 20,
+        moveSpeed: 20,
         attackRange: 50,
         attackDamage: 8,
-        attackArcDegrees: 90,
         color: '#cccccc',
         attackCooldown: 1.5,
         windUpTime: 0.7,
@@ -22,7 +21,7 @@
             cooldown: 3.5,
             stunBuildup: 15
         },
-        packModifier: 'savage'
+        packModifier: 'fierce'
     };
 
     function createAttack(attackRange, attackDamage, attackArc, cooldown, windUpTime) {

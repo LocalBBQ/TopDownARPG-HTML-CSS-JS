@@ -1,12 +1,44 @@
 // Renders obstacle list (trees, walls, etc.) using context + obstacleManager.
+// When playerY is set and phase is 'behind'|'front', trees are split by depth so the player can walk behind them.
+// Within each phase, depth-sort by center Y so back objects draw first and front last — keeps all trunks behind all leaves.
 class ObstacleLayerRenderer {
     render(context, data) {
         const { ctx, canvas, camera, settings } = context;
-        const { obstacleManager, currentLevel = 1 } = data;
+        const { obstacleManager, currentLevel = 1, playerY = null, phase = 'all' } = data;
         if (!obstacleManager) return;
         const zoom = camera.zoom;
         const useEnvironmentSprites = !settings || settings.useEnvironmentSprites !== false;
-        for (const obstacle of obstacleManager.obstacles) {
+        const depthSortTypes = ['tree', 'rock', 'pillar', 'brokenPillar', 'column', 'statueBase', 'arch'];
+
+        // View bounds in world space (with margin so we don't clip at edges)
+        const margin = 80;
+        const viewLeft = camera.x - margin;
+        const viewTop = camera.y - margin;
+        const viewRight = camera.x + canvas.width / zoom + margin;
+        const viewBottom = camera.y + canvas.height / zoom + margin;
+
+        // Filter to obstacles in view first — avoids sorting hundreds of off-screen obstacles (big win on level 2+)
+        let toDraw = obstacleManager.obstacles.filter((obstacle) => {
+            const obsRight = obstacle.x + obstacle.width;
+            const obsBottom = obstacle.y + obstacle.height;
+            if (obsRight < viewLeft || obstacle.x > viewRight || obsBottom < viewTop || obstacle.y > viewBottom) return false;
+            if (typeof playerY === 'number' && (phase === 'behind' || phase === 'front') && depthSortTypes.includes(obstacle.type)) {
+                const top = obstacle.y;
+                const bottom = obstacle.y + obstacle.height;
+                const playerInBand = playerY >= top && playerY <= bottom;
+                const drawOnTopOfPlayer = playerInBand;
+                if ((phase === 'behind' && drawOnTopOfPlayer) || (phase === 'front' && !drawOnTopOfPlayer)) return false;
+            }
+            return true;
+        });
+        // Sort only the visible subset by center Y (depth order)
+        toDraw = toDraw.slice().sort((a, b) => {
+            const cyA = a.y + a.height / 2;
+            const cyB = b.y + b.height / 2;
+            return cyA - cyB;
+        });
+
+        for (const obstacle of toDraw) {
             const screenX = camera.toScreenX(obstacle.x);
             const screenY = camera.toScreenY(obstacle.y);
             const w = obstacle.width * zoom;

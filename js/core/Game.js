@@ -22,7 +22,6 @@ class Game {
             this.crossbowReloadProgress = 1;
             this.crossbowReloadInProgress = false;
             this.crossbowPerfectReloadNext = false;
-            this.hitStopRemaining = 0;
             // Portal state (spawns after enough kills; enter with E)
             this.portal = null;
             this.portalUseCooldown = 0;
@@ -49,7 +48,8 @@ class Game {
                 useCharacterSprites: false,  // Player + enemies use sprite sheets vs procedural canvas knight
                 useEnvironmentSprites: false, // Trees/rocks/houses etc use sprite images vs procedural shapes
                 showPlayerHitboxIndicators: true,  // Player attack arc, thrust rect
-                showEnemyHitboxIndicators: true    // Enemy cones, wind-up, attack indicator, lunge telegraph
+                showEnemyHitboxIndicators: true,   // Enemy cones, wind-up, attack indicator, lunge telegraph
+                showEnemyStaminaBars: false        // Enemy stamina bars (e.g. goblins)
             };
             
             // Initialize screen manager
@@ -725,6 +725,8 @@ class Game {
                     this.settings.showPlayerHitboxIndicators = !this.settings.showPlayerHitboxIndicators;
                 } else if (item === 'enemyHitboxIndicators') {
                     this.settings.showEnemyHitboxIndicators = !this.settings.showEnemyHitboxIndicators;
+                } else if (item === 'enemyStaminaBars') {
+                    this.settings.showEnemyStaminaBars = !this.settings.showEnemyStaminaBars;
                 } else if (item === 'controls') {
                     this.screenManager.setScreen('settings-controls');
                 } else if (item === 'back') {
@@ -806,10 +808,6 @@ class Game {
                 );
             });
         }
-
-        this.systems.eventBus.on(EventTypes.PLAYER_HIT_ENEMY, () => {
-            this.hitStopRemaining = Math.max(this.hitStopRemaining, 0.05);
-        });
 
     }
 
@@ -1281,21 +1279,26 @@ class Game {
 
         if (health) {
             const healthPercent = health.percent * 100;
-            document.getElementById('health-bar').style.width = healthPercent + '%';
-            document.getElementById('health-text').textContent =
+            const healthFillEl = document.getElementById('health-orb-fill');
+            if (healthFillEl) healthFillEl.style.height = healthPercent + '%';
+            const healthTextEl = document.getElementById('health-text');
+            if (healthTextEl) healthTextEl.textContent =
                 Math.floor(health.currentHealth) + '/' + health.maxHealth;
         }
 
         if (stamina) {
             const staminaPercent = stamina.percent * 100;
-            const staminaBarEl = document.getElementById('stamina-bar');
-            staminaBarEl.style.width = staminaPercent + '%';
+            const staminaFillEl = document.getElementById('stamina-orb-fill');
+            if (staminaFillEl) staminaFillEl.style.height = staminaPercent + '%';
             document.getElementById('stamina-text').textContent =
                 Math.floor(stamina.currentStamina) + '/' + stamina.maxStamina;
-            if (combat && combat.dashAttackFlashUntil > Date.now()) {
-                staminaBarEl.classList.add('stamina-pulse');
-            } else {
-                staminaBarEl.classList.remove('stamina-pulse');
+            const staminaOrbEl = document.getElementById('stamina-orb');
+            if (staminaOrbEl) {
+                if (combat && combat.dashAttackFlashUntil > Date.now()) {
+                    staminaOrbEl.classList.add('stamina-pulse');
+                } else {
+                    staminaOrbEl.classList.remove('stamina-pulse');
+                }
             }
         }
 
@@ -1387,9 +1390,11 @@ class Game {
 
             // Game world and entities (draw for both 'playing' and 'pause' so pause shows over frozen frame)
             const currentLevel = this.systems.get('enemies') ? this.systems.get('enemies').getCurrentLevel() : 1;
+            const player = this.entities.get('player');
+            const playerY = player ? (player.getComponent(Transform) || {}).y : null;
             try {
                 renderSystem.clear();
-                renderSystem.renderWorld(cameraSystem, obstacleManager, currentLevel);
+                renderSystem.renderWorld(cameraSystem, obstacleManager, currentLevel, null, null, playerY);
                 if (this.portal) {
                     renderSystem.renderPortal(this.portal, cameraSystem);
                     if (this.playerNearPortal) {
@@ -1401,6 +1406,7 @@ class Game {
                     console.warn('No entities to render');
                 }
                 renderSystem.renderEntities(entities, cameraSystem);
+                renderSystem.renderObstaclesInFront(cameraSystem, obstacleManager, currentLevel, playerY);
                 const projectileManager = this.systems.get('projectiles');
                 if (projectileManager) {
                     projectileManager.render(this.ctx, cameraSystem);
@@ -1442,10 +1448,7 @@ class Game {
         const deltaTime = (currentTime - this.lastTime) / 1000;
         this.lastTime = currentTime;
 
-        const effectiveDelta = this.hitStopRemaining > 0 ? 0 : deltaTime;
-        if (this.hitStopRemaining > 0) this.hitStopRemaining -= deltaTime;
-
-        this.update(effectiveDelta);
+        this.update(deltaTime);
         this.render();
 
         requestAnimationFrame(() => this.gameLoop());

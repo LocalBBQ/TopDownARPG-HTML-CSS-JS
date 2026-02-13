@@ -8,6 +8,8 @@ class PathfindingSystem {
         this.systems = null;
         this.gridWidth = Math.ceil(worldWidth / cellSize);
         this.gridHeight = Math.ceil(worldHeight / cellSize);
+        this._pathRequestsThisFrame = 0;
+        this._maxPathRequestsPerFrame = 5; // Cap to avoid frame spikes when many enemies request paths (e.g. level 2)
     }
 
     setWorldBounds(worldWidth, worldHeight) {
@@ -19,6 +21,10 @@ class PathfindingSystem {
 
     init(systems) {
         this.systems = systems;
+    }
+
+    update(deltaTime, systems) {
+        this._pathRequestsThisFrame = 0;
     }
 
     // Convert world coordinates to grid coordinates
@@ -73,6 +79,11 @@ class PathfindingSystem {
 
     // A* pathfinding algorithm
     findPath(startX, startY, endX, endY, entityWidth, entityHeight) {
+        if (this._pathRequestsThisFrame >= this._maxPathRequestsPerFrame) {
+            return null; // Defer to next frame to avoid spike (caller will retry when pathUpdateTimer fires)
+        }
+        this._pathRequestsThisFrame++;
+
         // First check if direct path is available (optimization)
         if (this.hasLineOfSight(startX, startY, endX, endY, entityWidth, entityHeight)) {
             return [{ x: endX, y: endY }];

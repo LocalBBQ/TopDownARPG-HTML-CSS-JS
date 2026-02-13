@@ -1,45 +1,39 @@
-// Combat component - now uses PlayerAttack or enemy-specific attack classes
+// Combat component - uses shared WeaponAttackHandler for both player and enemy; single code path for applying attack result.
 class Combat {
     constructor(attackRange, attackDamage, attackArc, cooldown, windUpTime = 0.5, isPlayer = false, weapon = null, enemyType = null) {
         this.entity = null;
         this.isPlayer = isPlayer;
         this.currentAttackIsCircular = false;
+        this.currentAttackAoeInFront = false;
+        this.currentAttackAoeOffset = 0;
+        this.currentAttackAoeRadius = 0;
         this.currentAttackAnimationKey = null;
         this.currentAttackIsDashAttack = false;
         this.dashAttackFlashUntil = 0;
-        
-        // Use appropriate attack handler
-        this.goblinAttack = null;
-        this.chieftainAttack = null;
-        this.skeletonAttack = null;
-        this.demonAttack = null;
-        this.enemyAttack = null;
+
+        this.attackHandler = null;
+        this.enemyAttackHandler = null;
         this.playerAttack = null;
 
         if (isPlayer) {
-            this.playerAttack = new PlayerAttack(weapon || Weapons.swordAndShield);
+            const HandlerClass = typeof window !== 'undefined' && window.WeaponAttackHandler ? window.WeaponAttackHandler : null;
+            this.attackHandler = HandlerClass ? new HandlerClass(weapon || Weapons.swordAndShield, { isPlayer: true }) : new PlayerAttack(weapon || Weapons.swordAndShield);
+            this.playerAttack = this.attackHandler;
         } else {
-            const createAttack = Enemies.getAttackFactory(enemyType);
-            const handler = createAttack
-                ? createAttack(attackRange, attackDamage, attackArc, cooldown, windUpTime)
-                : new EnemyAttack(attackRange, attackDamage, attackArc, cooldown, windUpTime);
-            if (handler instanceof GoblinAttack) {
-                this.goblinAttack = handler;
-            } else if (handler instanceof DemonAttack) {
-                this.demonAttack = handler;
-            } else if (handler instanceof ChieftainAttack) {
-                this.chieftainAttack = handler;
-            } else if (handler instanceof SkeletonAttack) {
-                this.skeletonAttack = handler;
-            } else {
-                this.enemyAttack = handler;
+            this.attackHandler = (Enemies.createAttackHandler && Enemies.createAttackHandler(enemyType)) || null;
+            if (!this.attackHandler && typeof Enemies.getAttackFactory === 'function') {
+                const createAttack = Enemies.getAttackFactory(enemyType);
+                this.attackHandler = createAttack
+                    ? createAttack(attackRange, attackDamage, attackArc, cooldown, windUpTime)
+                    : new EnemyAttack(attackRange, attackDamage, attackArc, cooldown, windUpTime);
             }
+            this.enemyAttackHandler = this.attackHandler;
         }
-        
-        // Legacy properties for compatibility (attackRange/Damage/Arc read by hit detection and renderers)
-        this.attackRange = attackRange;
-        this.attackDamage = attackDamage;
-        this.attackArc = attackArc;
+
+        const h = this.attackHandler;
+        this.attackRange = h ? h.attackRange : attackRange;
+        this.attackDamage = h ? h.attackDamage : attackDamage;
+        this.attackArc = h ? h.attackArc : attackArc;
         this.windUpTime = windUpTime;
         
         // Blocking state (player only); block config comes from weapon.getBlockConfig()
@@ -57,8 +51,8 @@ class Combat {
     
     // Set weapon for player; sync displayed range/damage/arc from weapon (single source of truth)
     setWeapon(weapon) {
-        if (this.isPlayer && this.playerAttack) {
-            this.playerAttack.setWeapon(weapon);
+        if (this.isPlayer && this.attackHandler && typeof this.attackHandler.setWeapon === 'function') {
+            this.attackHandler.setWeapon(weapon);
             if (weapon) {
                 const first = weapon.getComboStageProperties ? weapon.getComboStageProperties(1) : null;
                 if (first) {
@@ -73,9 +67,9 @@ class Combat {
             }
         }
     }
-    
+
     get weapon() {
-        return this.isPlayer && this.playerAttack ? this.playerAttack.weapon : null;
+        return this.isPlayer && this.attackHandler ? this.attackHandler.weapon : null;
     }
 
     /** Pack modifier: attack cooldown multiplier (enemies only). */
@@ -86,22 +80,12 @@ class Combat {
     }
 
     update(deltaTime, systems) {
-        if (this.isPlayer && this.playerAttack) {
-            this.playerAttack.update(deltaTime, this.entity);
-            if (this.isBlocking && this.entity) {
-                const statusEffects = this.entity.getComponent(StatusEffects);
-                if (statusEffects && statusEffects.isStunned) this.stopBlocking();
-            }
-        } else if (this.demonAttack) {
-            this.demonAttack.update(deltaTime);
-        } else if (this.chieftainAttack) {
-            this.chieftainAttack.update(deltaTime);
-        } else if (this.goblinAttack) {
-            this.goblinAttack.update(deltaTime);
-        } else if (this.skeletonAttack) {
-            this.skeletonAttack.update(deltaTime);
-        } else if (this.enemyAttack) {
-            this.enemyAttack.update(deltaTime);
+        if (this.attackHandler && typeof this.attackHandler.update === 'function') {
+            this.attackHandler.update(deltaTime, this.entity);
+        }
+        if (this.isPlayer && this.isBlocking && this.entity) {
+            const statusEffects = this.entity.getComponent(StatusEffects);
+            if (statusEffects && statusEffects.isStunned) this.stopBlocking();
         }
     }
     
@@ -212,244 +196,148 @@ class Combat {
         return angleDiff <= (blockConfig.arcRad / 2);
     }
 
+    /** Single code path: apply handler result to Combat state. */
+    _applyAttackResult(result) {
+        if (!result || typeof result !== 'object') return;
+        this._currentAttackKnockbackForce = result.knockbackForce ?? null;
+        this._currentAttackStunBuildup = result.stunBuildup ?? 25;
+        if (result.range != null) this.attackRange = result.range;
+        if (result.damage != null) this.attackDamage = result.damage;
+        if (result.arc != null) this.attackArc = result.arc;
+        this.attackArcOffset = result.arcOffset ?? 0;
+        this.currentAttackReverseSweep = result.reverseSweep === true;
+        this.currentAttackIsCircular = result.isCircular === true;
+        this.currentAttackIsThrust = result.isThrust === true;
+        this.currentAttackThrustWidth = result.thrustWidth ?? 40;
+        this.currentAttackAnimationKey = result.animationKey || null;
+        this.currentAttackIsDashAttack = result.isDashAttack === true;
+        if (result.isDashAttack) this.dashAttackFlashUntil = Date.now() + 400;
+        this.currentAttackAoeInFront = result.aoeInFront === true;
+        this.currentAttackAoeOffset = result.aoeOffset != null ? result.aoeOffset : 0;
+        this.currentAttackAoeRadius = result.aoeRadius != null ? result.aoeRadius : 0;
+    }
+
+    _clearAttackState() {
+        this.currentAttackIsCircular = false;
+        this.currentAttackIsThrust = false;
+        this.currentAttackThrustWidth = 0;
+        this.currentAttackAoeInFront = false;
+        this.currentAttackAoeOffset = 0;
+        this.currentAttackAoeRadius = 0;
+        this.currentAttackAnimationKey = null;
+        this.currentAttackIsDashAttack = false;
+        this.attackArcOffset = 0;
+        this.currentAttackReverseSweep = false;
+        this._currentAttackKnockbackForce = null;
+        this._currentAttackStunBuildup = null;
+    }
+
     attack(targetX = null, targetY = null, chargeDuration = 0, options = {}) {
-        if (this.isPlayer && this.playerAttack) {
-            // Buffer one combo input during attack; fire when current attack ends so combos chain
+        if (!this.attackHandler) return false;
+
+        if (this.isPlayer) {
             if (this.isAttacking) {
                 this.attackInputBuffered = { targetX, targetY, chargeDuration, options: options || {} };
                 return false;
             }
-            // Pre-check stamina before starting (so buffered attack can also be validated when it fires)
-            const staminaCost = this.playerAttack.getNextAttackStaminaCost(chargeDuration, options);
+            const staminaCost = this.attackHandler.getNextAttackStaminaCost ? this.attackHandler.getNextAttackStaminaCost(chargeDuration, options) : 0;
             const stamina = this.entity ? this.entity.getComponent(Stamina) : null;
-            if (stamina && stamina.currentStamina < staminaCost) {
-                return false;
+            if (stamina && stamina.currentStamina < staminaCost) return false;
+            const result = this.attackHandler.startAttack(targetX, targetY, this.entity, chargeDuration, options);
+            if (!result || typeof result !== 'object') return false;
+            if (stamina && result.staminaCost != null) stamina.currentStamina -= result.staminaCost;
+            this._applyAttackResult(result);
+            if (this.entity && this.entity.systems) {
+                const eventBus = this.entity.systems.eventBus || (this.entity.systems.get ? this.entity.systems.get('eventBus') : null);
+                if (eventBus) eventBus.emit('entity:attack', { entity: this.entity, range: result.range, damage: result.damage, arc: result.arc, comboStage: result.comboStage });
             }
-            // Player attack with weapon combos (or dash attack if options.useDashAttack)
-            const attackData = this.playerAttack.startAttack(targetX, targetY, this.entity, chargeDuration, options);
-            if (attackData) {
-                if (stamina) stamina.currentStamina -= attackData.staminaCost;
-                this._currentAttackKnockbackForce = attackData.knockbackForce ?? null;
-                this._currentAttackStunBuildup = attackData.stunBuildup ?? 25;
-                this.attackRange = attackData.range;
-                this.attackDamage = attackData.damage;
-                this.attackArc = attackData.arc;
-                this.attackArcOffset = attackData.arcOffset ?? 0;
-                this.currentAttackReverseSweep = attackData.reverseSweep === true;
-                this.currentAttackIsCircular = attackData.isCircular === true;
-                this.currentAttackIsThrust = attackData.isThrust === true;
-                this.currentAttackThrustWidth = attackData.thrustWidth ?? 40;
-                this.currentAttackAnimationKey = attackData.animationKey || null;
-                this.currentAttackIsDashAttack = attackData.isDashAttack === true;
-                if (attackData.isDashAttack) this.dashAttackFlashUntil = Date.now() + 400;
-                
-                // Emit attack event
-                if (this.entity && this.entity.systems) {
-                    const eventBus = this.entity.systems.eventBus || (this.entity.systems.get ? this.entity.systems.get('eventBus') : null);
-                    if (eventBus) {
-                        eventBus.emit('entity:attack', {
-                            entity: this.entity,
-                            range: attackData.range,
-                            damage: attackData.damage,
-                            arc: attackData.arc,
-                            comboStage: attackData.comboStage
-                        });
+            const durationMs = result.duration >= 100 ? result.duration : Math.round((result.duration || 0) * 1000);
+            const combatRef = this;
+            setTimeout(() => {
+                combatRef._clearAttackState();
+                if (combatRef.attackHandler && typeof combatRef.attackHandler.endAttack === 'function') combatRef.attackHandler.endAttack();
+                if (combatRef.isPlayer && combatRef.blockInputBuffered) {
+                    combatRef.blockInputBuffered = false;
+                    if (combatRef.blockInputBufferedFacingAngle != null && combatRef.entity) {
+                        const movement = combatRef.entity.getComponent(Movement);
+                        if (movement) movement.facingAngle = combatRef.blockInputBufferedFacingAngle;
+                        combatRef.blockInputBufferedFacingAngle = null;
                     }
+                    combatRef.startBlocking();
                 }
-                
-                // Set timeout to end attack (duration from weapon is in ms; ensure we never use seconds by mistake)
-                const durationMs = attackData.duration >= 100 ? attackData.duration : Math.round(attackData.duration * 1000);
-                const combatRef = this;
-                setTimeout(() => {
-                    combatRef.currentAttackIsCircular = false;
-                    combatRef.currentAttackIsThrust = false;
-                    combatRef.currentAttackThrustWidth = 0;
-                    combatRef.currentAttackAnimationKey = null;
-                    combatRef.currentAttackIsDashAttack = false;
-                    combatRef.attackArcOffset = 0;
-                    combatRef.currentAttackReverseSweep = false;
-                    combatRef._currentAttackKnockbackForce = null;
-                    combatRef._currentAttackStunBuildup = null;
-                    combatRef.playerAttack.endAttack();
-                    // Apply buffered block first (player pressed block during attack)
-                    if (combatRef.isPlayer && combatRef.blockInputBuffered) {
-                        combatRef.blockInputBuffered = false;
-                        if (combatRef.blockInputBufferedFacingAngle != null && combatRef.entity) {
-                            const movement = combatRef.entity.getComponent(Movement);
-                            if (movement) movement.facingAngle = combatRef.blockInputBufferedFacingAngle;
-                            combatRef.blockInputBufferedFacingAngle = null;
-                        }
-                        combatRef.startBlocking();
-                    }
-                    // Fire buffered attack if player pressed attack during the animation
-                    if (combatRef.attackInputBuffered) {
-                        const b = combatRef.attackInputBuffered;
-                        combatRef.attackInputBuffered = null;
-                        combatRef.attack(b.targetX, b.targetY, b.chargeDuration, b.options);
-                    }
-                }, durationMs);
-                
-                return attackData;
-            }
-            return false;
-        } else if (this.demonAttack) {
-            // Demon claw: charge up in cone, then release heavy blow
-            if (this.demonAttack.isAttacking || !this.demonAttack.canAttack()) {
-                return false;
-            }
-            const attackData = this.demonAttack.startAttack(targetX, targetY, this.entity);
-            if (attackData) {
-                this._currentAttackKnockbackForce = attackData.knockbackForce ?? null;
-                this.attackRange = attackData.range;
-                this.attackDamage = attackData.damage;
-                this.attackArc = attackData.arc;
-                this.currentAttackIsCircular = attackData.isCircular === true;
-                this.currentAttackAnimationKey = attackData.animationKey || null;
-                const durationMs = attackData.duration;
-                setTimeout(() => {
-                    if (this.demonAttack && this.demonAttack.isAttacking) {
-                        this.currentAttackIsCircular = false;
-                        this.currentAttackAnimationKey = null;
-                        this._currentAttackKnockbackForce = null;
-                        this.demonAttack.endAttack();
-                    } else {
-                        this.currentAttackIsCircular = false;
-                        this.currentAttackAnimationKey = null;
-                        this._currentAttackKnockbackForce = null;
-                    }
-                }, durationMs);
-                return attackData;
-            }
-            return false;
-        } else if (this.chieftainAttack) {
-            // Chieftain heavy smash: charge then release
-            if (this.chieftainAttack.isAttacking || !this.chieftainAttack.canAttack()) {
-                return false;
-            }
-            const attackData = this.chieftainAttack.startAttack(targetX, targetY, this.entity);
-            if (attackData) {
-                this._currentAttackKnockbackForce = attackData.knockbackForce ?? null;
-                this.attackRange = attackData.range;
-                this.attackDamage = attackData.damage;
-                this.attackArc = attackData.arc;
-                this.currentAttackIsCircular = attackData.isCircular === true;
-                this.currentAttackAnimationKey = attackData.animationKey || null;
-                const durationMs = attackData.duration;
-                const combatRef = this;
-                setTimeout(() => {
-                    if (combatRef.chieftainAttack && combatRef.chieftainAttack.isAttacking) {
-                        combatRef.currentAttackIsCircular = false;
-                        combatRef.currentAttackAnimationKey = null;
-                        combatRef._currentAttackKnockbackForce = null;
-                        combatRef.chieftainAttack.endAttack();
-                    } else {
-                        combatRef.currentAttackIsCircular = false;
-                        combatRef.currentAttackAnimationKey = null;
-                        combatRef._currentAttackKnockbackForce = null;
-                    }
-                }, durationMs);
-                return attackData;
-            }
-            return false;
-        } else if (this.goblinAttack) {
-            // Goblin attack (swipe)
-            return this.goblinAttack.attack(this.getPackCooldownMultiplier());
-        } else if (this.skeletonAttack) {
-            // Skeleton attack (ranged only - melee attack should not be called)
-            return false;
-        } else if (this.enemyAttack) {
-            // Fallback enemy attack (simple)
-            return this.enemyAttack.attack(this.getPackCooldownMultiplier());
+                if (combatRef.attackInputBuffered) {
+                    const b = combatRef.attackInputBuffered;
+                    combatRef.attackInputBuffered = null;
+                    combatRef.attack(b.targetX, b.targetY, b.chargeDuration, b.options);
+                }
+            }, durationMs);
+            return result;
         }
-        return false;
+
+        const stamina = this.entity ? this.entity.getComponent(Stamina) : null;
+        if (stamina) {
+            const ai = this.entity.getComponent(AI);
+            const enemyType = ai ? ai.enemyType : null;
+            const enemyConfig = enemyType && GameConfig.enemy && GameConfig.enemy.types ? GameConfig.enemy.types[enemyType] : null;
+            const cost = (enemyConfig && enemyConfig.attackStaminaCost != null) ? enemyConfig.attackStaminaCost : 12;
+            if (!stamina.use(cost)) return false;
+        }
+        const result = this.attackHandler.startAttack(targetX, targetY, this.entity, 0, { cooldownMultiplier: this.getPackCooldownMultiplier() });
+        if (!result || typeof result !== 'object' || result.range == null) return !!result;
+        this._applyAttackResult(result);
+        const durationMs = result.duration;
+        const combatRef = this;
+        setTimeout(() => {
+            combatRef._clearAttackState();
+            if (combatRef.attackHandler && combatRef.attackHandler.isAttacking && typeof combatRef.attackHandler.endAttack === 'function') combatRef.attackHandler.endAttack();
+        }, durationMs);
+        return result;
     }
     
     // Getters for compatibility
     get isAttacking() {
-        if (this.isPlayer && this.playerAttack) {
-            return this.playerAttack.isAttacking;
-        } else if (this.demonAttack) {
-            return this.demonAttack.isAttacking;
-        } else if (this.chieftainAttack) {
-            return this.chieftainAttack.isAttacking;
-        } else if (this.goblinAttack) {
-            return this.goblinAttack.isAttacking;
-        } else if (this.skeletonAttack) {
-            return this.skeletonAttack.isAttacking;
-        } else if (this.enemyAttack) {
-            return this.enemyAttack.isAttacking;
-        }
+        if (this.isPlayer && this.playerAttack) return this.playerAttack.isAttacking;
+        if (this.enemyAttackHandler) return this.enemyAttackHandler.isAttacking;
         return false;
     }
-    
+
     get isWindingUp() {
-        if (this.goblinAttack) {
-            return this.goblinAttack.isWindingUp;
-        } else if (this.chieftainAttack && this.chieftainAttack.isAttacking && !this.chieftainAttack.isInReleasePhase) {
-            return true; // charge phase = wind-up for visuals
-        } else if (this.skeletonAttack) {
-            return this.skeletonAttack.isWindingUp;
-        } else if (this.enemyAttack) {
-            return this.enemyAttack.isWindingUp;
+        if (this.enemyAttackHandler) {
+            if (this.enemyAttackHandler.isWindingUp) return true;
+            if (this.enemyAttackHandler.hasChargeRelease && this.enemyAttackHandler.isAttacking && !this.enemyAttackHandler.isInReleasePhase) return true;
         }
         return false;
     }
-    
+
     get attackProcessed() {
-        if (this.demonAttack) {
-            // For demons, check if player has been hit
-            return this.demonAttack.hasHitEnemy('player');
-        } else if (this.chieftainAttack) {
-            return this.chieftainAttack.hasHitEnemy('player');
-        } else if (this.goblinAttack) {
-            return this.goblinAttack.attackProcessed;
-        } else if (this.skeletonAttack) {
-            return this.skeletonAttack.attackProcessed;
-        } else if (this.enemyAttack) {
-            return this.enemyAttack.attackProcessed;
+        if (this.enemyAttackHandler) {
+            if (this.enemyAttackHandler.hasHitEnemy) return this.enemyAttackHandler.hasHitEnemy('player');
+            return this.enemyAttackHandler.attackProcessed;
         }
         return false;
     }
-    
+
     get comboStage() {
-        if (this.isPlayer && this.playerAttack) {
-            return this.playerAttack.comboStage;
-        } else if (this.demonAttack) {
-            return this.demonAttack.comboStage;
-        }
+        if (this.isPlayer && this.playerAttack) return this.playerAttack.comboStage;
+        if (this.enemyAttackHandler && this.enemyAttackHandler.comboStage != null) return this.enemyAttackHandler.comboStage;
         return 0;
     }
-    
+
     get attackTimer() {
-        if (this.isPlayer && this.playerAttack) {
-            return this.playerAttack.attackTimer;
-        } else if (this.demonAttack) {
-            return this.demonAttack.attackTimer;
-        } else if (this.chieftainAttack) {
-            return this.chieftainAttack.attackTimer;
-        }
+        if (this.isPlayer && this.playerAttack) return this.playerAttack.attackTimer;
+        if (this.enemyAttackHandler && this.enemyAttackHandler.attackTimer != null) return this.enemyAttackHandler.attackTimer;
         return 0;
     }
-    
+
     get attackDuration() {
-        if (this.isPlayer && this.playerAttack) {
-            return this.playerAttack.attackDuration;
-        } else if (this.demonAttack) {
-            return this.demonAttack.attackDuration;
-        } else if (this.chieftainAttack) {
-            return this.chieftainAttack.attackDuration;
-        }
+        if (this.isPlayer && this.attackHandler) return this.attackHandler.attackDuration != null ? this.attackHandler.attackDuration : 0;
+        if (this.attackHandler && this.attackHandler.attackDurationEnemy != null) return this.attackHandler.attackDurationEnemy;
         return 0;
     }
-    
+
     get hitEnemies() {
-        if (this.isPlayer && this.playerAttack) {
-            return this.playerAttack.hitEnemies;
-        } else if (this.demonAttack) {
-            return this.demonAttack.hitEnemies;
-        } else if (this.chieftainAttack) {
-            return this.chieftainAttack.hitEnemies;
-        }
+        if (this.isPlayer && this.playerAttack) return this.playerAttack.hitEnemies;
+        if (this.enemyAttackHandler && this.enemyAttackHandler.hitEnemies) return this.enemyAttackHandler.hitEnemies;
         return new Set();
     }
 
@@ -462,42 +350,29 @@ class Combat {
     }
     
     get windUpProgress() {
-        if (this.goblinAttack) {
-            return this.goblinAttack.windUpProgress;
-        } else if (this.chieftainAttack) {
-            return this.chieftainAttack.chargeProgress;
-        } else if (this.skeletonAttack) {
-            return this.skeletonAttack.windUpProgress;
-        } else if (this.enemyAttack) {
-            return this.enemyAttack.windUpProgress;
+        if (this.enemyAttackHandler) {
+            if (this.enemyAttackHandler.windUpProgress != null) return this.enemyAttackHandler.windUpProgress;
+            if (this.enemyAttackHandler.chargeProgress != null) return this.enemyAttackHandler.chargeProgress;
         }
         return 0;
     }
-    
+
+    /** For slash enemies (goblin): 0 = weapon back, 1 = end of swing. Used for side-to-side dagger swing. */
+    get enemySlashSweepProgress() {
+        if (!this.enemyAttackHandler || typeof this.enemyAttackHandler.getSlashSweepProgress !== 'function') return 0;
+        return this.enemyAttackHandler.getSlashSweepProgress();
+    }
+
     get cooldown() {
-        if (this.goblinAttack) {
-            return this.goblinAttack.cooldown;
-        } else if (this.skeletonAttack) {
-            return this.skeletonAttack.cooldown;
-        } else if (this.enemyAttack) {
-            return this.enemyAttack.cooldown;
-        } else if (this.demonAttack) {
-            // For demon attacks, return 0 if can attack, otherwise a small value
-            return this.demonAttack.canAttack() ? 0 : 0.1;
-        } else if (this.chieftainAttack) {
-            return this.chieftainAttack.canAttack() ? 0 : 0.1;
+        if (this.enemyAttackHandler) {
+            if (this.enemyAttackHandler.cooldown != null) return this.enemyAttackHandler.cooldown;
+            if (this.enemyAttackHandler.canAttack) return this.enemyAttackHandler.canAttack() ? 0 : 0.1;
         }
-        // For player attacks, return 0 (cooldown is managed by PlayerAttack)
         return 0;
     }
-    
+
     get isLunging() {
-        if (this.goblinAttack) {
-            return this.goblinAttack.isLunging;
-        } else if (this.enemyAttack) {
-            return this.enemyAttack.isLunging;
-        }
-        return false;
+        return this.enemyAttackHandler ? !!this.enemyAttackHandler.isLunging : false;
     }
 }
 

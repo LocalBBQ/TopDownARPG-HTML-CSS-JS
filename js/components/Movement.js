@@ -41,6 +41,8 @@ class Movement {
                 this.isKnockedBack = false;
                 this.knockbackVelocityX = 0;
                 this.knockbackVelocityY = 0;
+                this.velocityX = 0;
+                this.velocityY = 0;
             }
         } else {
             // Update speed based on blocking (shared)
@@ -201,6 +203,8 @@ class Movement {
 
     // Override in subclasses for specific facing angle behavior
     updateFacingAngle(deltaTime, systems) {
+        // Don't change facing during knockback – keep facing the direction they were before being hit
+        if (this.isKnockedBack) return;
         // Default: face movement direction
         if (this.velocityX !== 0 || this.velocityY !== 0) {
             this.facingAngle = Utils.angleTo(0, 0, this.velocityX, this.velocityY);
