@@ -89,7 +89,7 @@ class ScreenManager {
         // Game title
         this.ctx.fillStyle = '#c9a227';
         this.ctx.font = '700 52px Cinzel, Georgia, serif';
-        this.ctx.fillText('Dungeon Crawler', width / 2, height / 2 - 90);
+        this.ctx.fillText('Dungeon Crawl', width / 2, height / 2 - 90);
 
         // Subtitle / hint
         this.ctx.fillStyle = '#a08060';
