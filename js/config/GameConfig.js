@@ -26,7 +26,7 @@ const GameConfig = {
         speed: 100, // pixels per second (now properly scaled by deltaTime)
         maxHealth: 100,
         maxStamina: 100,
-        staminaRegen: 6.75, // stamina per second (scaled by deltaTime)
+        staminaRegen: 8, // stamina per second (scaled by deltaTime)
         // Melee attack range, damage, arc and cooldown come from the equipped weapon (see weapons/*.js), not from here
         color: '#8b8b9a', // steel (fallback when knight sprites not loaded)
         defaultWeapon: 'swordAndShield',

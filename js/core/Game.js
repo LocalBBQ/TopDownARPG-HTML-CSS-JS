@@ -60,8 +60,8 @@ class Game {
                 showPlayerHitboxIndicators: true,  // Player attack arc, thrust rect
                 showEnemyHitboxIndicators: true,   // Enemy cones, wind-up, attack indicator, lunge telegraph
                 showEnemyStaminaBars: false,      // Enemy stamina bars (e.g. goblins)
-                showPlayerHealthBarAlways: false, // Floating health (and stamina) bar above player
-                showEnemyHealthBars: false        // Floating health bars above all enemies
+                showPlayerHealthBarAlways: true,  // Floating health (and stamina) bar above player
+                showEnemyHealthBars: true         // Floating health bars above all enemies
             };
             
             // Initialize screen manager
