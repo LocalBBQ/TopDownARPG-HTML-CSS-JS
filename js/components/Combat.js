@@ -20,13 +20,7 @@ class Combat {
             this.attackHandler = HandlerClass ? new HandlerClass(weapon || Weapons.swordAndShield, { isPlayer: true }) : new PlayerAttack(weapon || Weapons.swordAndShield);
             this.playerAttack = this.attackHandler;
         } else {
-            this.attackHandler = (Enemies.createAttackHandler && Enemies.createAttackHandler(enemyType)) || null;
-            if (!this.attackHandler && typeof Enemies.getAttackFactory === 'function') {
-                const createAttack = Enemies.getAttackFactory(enemyType);
-                this.attackHandler = createAttack
-                    ? createAttack(attackRange, attackDamage, attackArc, cooldown, windUpTime)
-                    : new EnemyAttack(attackRange, attackDamage, attackArc, cooldown, windUpTime);
-            }
+            this.attackHandler = (Enemies.createAttackHandler && Enemies.createAttackHandler(enemyType)) || Combat._noOpAttackHandler(attackRange, attackDamage, attackArc);
             this.enemyAttackHandler = this.attackHandler;
         }
 
@@ -47,6 +41,40 @@ class Combat {
         // Current attack knockback (player only; from weapon/stage config, used when applying hit)
         this._currentAttackKnockbackForce = null;
         this._currentAttackStunBuildup = null;
+    }
+
+    /** No-op attack handler when Enemies.createAttackHandler returns null (legacy path removed). */
+    static _noOpAttackHandler(attackRange, attackDamage, attackArc) {
+        return {
+            attackRange: attackRange ?? 0,
+            attackDamage: attackDamage ?? 0,
+            attackArc: attackArc ?? 0,
+            weapon: null,
+            isAttacking: false,
+            attackTimer: 0,
+            attackDuration: null,
+            attackDurationEnemy: 0,
+            hitEnemies: new Set(),
+            comboStage: 0,
+            attackProcessed: false,
+            isWindingUp: false,
+            isInReleasePhase: false,
+            isLunging: false,
+            cooldown: 0,
+            windUpProgress: 0,
+            chargeProgress: 0,
+            hasChargeRelease: () => false,
+            hasHitEnemy: () => false,
+            canAttack: () => false,
+            canMeleeAttack: () => false,
+            getSlashSweepProgress: () => 0,
+            getWeapon: () => null,
+            update: () => {},
+            startAttack: () => null,
+            endAttack: () => {},
+            startLunge: () => {},
+            endLunge: () => {},
+        };
     }
     
     // Set weapon for player; sync displayed range/damage/arc from weapon (single source of truth)
