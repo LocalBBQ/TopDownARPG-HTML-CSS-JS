@@ -68,6 +68,24 @@ const shieldConfig: WeaponConfigInput = {
     }
 };
 
+const defenderConfig: WeaponConfigInput = {
+    name: 'Defender',
+    offhandOnly: true,
+    baseRange: 0,
+    baseDamage: 5,
+    baseArcDegrees: 90,
+    cooldown: 0,
+    comboWindow: 0,
+    stages: [],
+    block: {
+        enabled: true,
+        arcDegrees: 100,
+        damageReduction: 0.5,
+        staminaCost: 20,
+        animationKey: 'block'
+    }
+};
+
 const greatswordConfig: WeaponConfigInput = {
     name: 'greatsword',
     twoHanded: true,
@@ -273,4 +291,4 @@ export const BASE_WEAPON_CONFIGS: Record<string, WeaponConfigInput> = {
     mace: maceConfig,
     crossbow: crossbowConfig
 };
-export { shieldConfig };
+export { shieldConfig, defenderConfig };

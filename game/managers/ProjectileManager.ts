@@ -134,6 +134,7 @@ export class ProjectileManager {
     }
 
     render(ctx: CanvasRenderingContext2D, camera: CameraShape): void {
+        const z = camera.zoom;
         for (const projectile of this.projectiles) {
             if (!projectile.active) continue;
             const screenX = camera.toScreenX(projectile.x);
@@ -143,12 +144,23 @@ export class ProjectileManager {
             ctx.save();
             ctx.translate(screenX, screenY);
             ctx.rotate(projectile.angle);
+            // Arrow shape: shaft + head (drawn along local x-axis, pointing right)
+            const len = 14 * z;
+            const halfW = 1.5 * z;
+            const headLen = 5 * z;
             ctx.fillStyle = projectile.color;
-            ctx.beginPath();
-            ctx.arc(0, 0, projectile.width / 2 * camera.zoom, 0, Math.PI * 2);
-            ctx.fill();
             ctx.strokeStyle = '#000';
-            ctx.lineWidth = 1 / camera.zoom;
+            ctx.lineWidth = Math.max(0.5, 1 / z);
+            ctx.beginPath();
+            // Shaft (rounded rect from -len/2 to head start)
+            const shaftEnd = len / 2 - headLen;
+            ctx.moveTo(-len / 2, halfW);
+            ctx.lineTo(shaftEnd, halfW);
+            ctx.lineTo(shaftEnd + headLen, 0);
+            ctx.lineTo(shaftEnd, -halfW);
+            ctx.lineTo(-len / 2, -halfW);
+            ctx.closePath();
+            ctx.fill();
             ctx.stroke();
             ctx.restore();
         }

@@ -63,6 +63,23 @@ const skeletonNoMelee: EnemyWeaponLike = {
     cooldown: 1.5
 };
 
+const zombieClaw: EnemyWeaponLike = {
+    id: 'zombieClaw',
+    name: 'Zombie Claw',
+    visual: 'claw',
+    baseRange: 42,
+    baseDamage: 6,
+    baseArcDegrees: 80,
+    cooldown: 1.4,
+    getComboStageProperties(stage: number) {
+        if (stage !== 1) return null;
+        return { range: 42, damage: 6, arc: Utils.degToRad(80), knockbackForce: 140 };
+    },
+    getDashAttackProperties() {
+        return null;
+    }
+};
+
 export const EnemyWeapons: Record<string, EnemyWeaponLike> & {
     resolveWeapon(weaponId: string): EnemyWeaponLike | null;
     getGoblinWeapon(): EnemyWeaponLike | null;
@@ -73,6 +90,7 @@ export const EnemyWeapons: Record<string, EnemyWeaponLike> & {
     demonClaw,
     lesserDemonClaw,
     skeletonNoMelee,
+    zombieClaw,
 
     resolveWeapon(weaponId: string): EnemyWeaponLike | null {
         if (!weaponId) return null;

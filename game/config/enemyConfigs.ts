@@ -1,8 +1,20 @@
 // All enemy configs and type exports. Single module replacing Goblin, Skeleton, etc. files.
-import { EnemyType } from './EnemyType.';
-import { EnemyWeapons } from '../weapons/EnemyWeaponsRegistry.js';
-import { Weapons } from '../weapons/WeaponsRegistry.js';
-import type { ChieftainClubWeaponType } from '../weapons/ChieftainClubWeapon.js';
+import { EnemyType } from '../enemies/EnemyType.ts';
+import { EnemyWeapons } from '../weapons/EnemyWeaponsRegistry.ts';
+import { Weapons } from '../weapons/WeaponsRegistry.ts';
+
+type ChieftainClubWeaponType = {
+  heavySmash?: {
+    chargeTime?: number;
+    releaseDuration?: number;
+    damage?: number;
+    knockbackForce?: number;
+    aoeInFront?: boolean;
+    aoeOffset?: number;
+    aoeRadius?: number;
+    range?: number;
+  };
+};
 
 // Goblin: stats derived from goblinDagger weapon. Uses weapon dash attack (leap), not config lunge.
 const goblinWeapon = EnemyWeapons.getGoblinWeapon?.() ?? EnemyWeapons.resolveWeapon?.('goblinDagger') ?? null;
@@ -34,7 +46,8 @@ const goblinConfig = {
   knockback: { force: 160, decay: 0.88 },
   maxStamina: 30,
   staminaRegen: 4,
-  attackStaminaCost: 12
+  attackStaminaCost: 12,
+  goldDrop: 2
 };
 
 // Skeleton: ranged projectile, no melee
@@ -51,12 +64,13 @@ const skeletonConfig = {
   knockback: { force: 190, decay: 0.87 },
   projectile: {
     enabled: true,
-    speed: 200,
+    speed: 120,
     damage: 6,
     range: 280,
     cooldown: 3.5,
     stunBuildup: 15
-  }
+  },
+  goldDrop: 3
 };
 
 // Lesser demon: claw + lunge
@@ -80,7 +94,8 @@ const lesserDemonConfig = {
     lungeDistance: 130,
     lungeDamage: 10,
     knockback: { force: 260 }
-  }
+  },
+  goldDrop: 4
 };
 
 // Greater demon: pillar flame
@@ -104,7 +119,8 @@ const greaterDemonConfig = {
     damageInterval: 0.4,
     cooldown: 18.0,
     pillarRange: 220
-  }
+  },
+  goldDrop: 8
 };
 
 // Goblin chieftain: stats from ChieftainClub heavySmash
@@ -144,7 +160,8 @@ const goblinChieftainConfig = {
     buffDuration: 5.0,
     speedMultiplier: 1.2,
     damageMultiplier: 1.2
-  }
+  },
+  goldDrop: 5
 };
 
 // Bandit: mace — stats from Weapons.mace
@@ -179,7 +196,8 @@ const banditConfig = {
   lunge: { enabled: false },
   maxStamina: 50,
   staminaRegen: 3,
-  attackStaminaCost: 25
+  attackStaminaCost: 25,
+  goldDrop: 5
 };
 
 // Bandit dagger: stats from Weapons.dagger
@@ -236,7 +254,73 @@ const banditDaggerConfig = {
   packModifier: 'swift',
   maxStamina: 45,
   staminaRegen: 3,
-  attackStaminaCost: 10
+  attackStaminaCost: 10,
+  goldDrop: 3
+};
+
+// Tier-2: Goblin Brute — stronger goblin variant for harder quests
+const goblinBruteConfig = {
+  ...goblinConfig,
+  maxHealth: 45,
+  attackDamage: Math.ceil(goblinAttackDamage * 1.3),
+  moveSpeed: 22,
+  color: '#2d6a2d',
+  stunThreshold: 75,
+  stunBuildupPerHit: 22,
+  knockbackResist: 0.15,
+  goldDrop: 5
+};
+
+// Tier-2: Skeleton Veteran — stronger skeleton variant for harder quests
+const skeletonVeteranConfig = {
+  ...skeletonConfig,
+  maxHealth: 75,
+  attackDamage: 10,
+  moveSpeed: 22,
+  color: '#a0a0a0',
+  attackCooldown: 1.35,
+  projectile: {
+    enabled: true,
+    speed: 200,
+    damage: 8,
+    range: 280,
+    cooldown: 3.2,
+    stunBuildup: 18
+  },
+  stunBuildupPerHit: 18,
+  knockbackResist: 0.1,
+  goldDrop: 6
+};
+
+// Zombie: slow melee, no lunge — spawns in Cursed Wilds and Demon Approach
+const zombieWeapon = EnemyWeapons.resolveWeapon?.('zombieClaw') ?? null;
+let zombieAttackRange = 42, zombieAttackDamage = 6, zombieAttackCooldown = 1.4;
+if (zombieWeapon) {
+  const first = (zombieWeapon as { getComboStageProperties?(n: number): { range: number; damage: number } }).getComboStageProperties?.(1);
+  if (first) {
+    zombieAttackRange = first.range;
+    zombieAttackDamage = first.damage;
+  }
+  if ((zombieWeapon as { cooldown?: number }).cooldown != null) zombieAttackCooldown = (zombieWeapon as { cooldown: number }).cooldown;
+}
+
+const zombieConfig = {
+  maxHealth: 55,
+  moveSpeed: 18,
+  weaponId: 'zombieClaw',
+  attackRange: zombieAttackRange,
+  attackDamage: zombieAttackDamage,
+  detectionRange: 200,
+  color: '#3d5c3d',
+  attackCooldown: zombieAttackCooldown,
+  windUpTime: 0.4,
+  attackCooldownMultiplier: 1,
+  damageMultiplier: 1,
+  stunThreshold: 70,
+  stunBuildupPerHit: 16,
+  knockbackResist: 0.2,
+  knockback: { force: 140, decay: 0.88 },
+  goldDrop: 3
 };
 
 export const EnemyGoblin = EnemyType.fromConfig(goblinConfig);
@@ -246,3 +330,6 @@ export const EnemyGreaterDemon = EnemyType.fromConfig(greaterDemonConfig);
 export const EnemyGoblinChieftain = EnemyType.fromConfig(goblinChieftainConfig);
 export const EnemyBandit = EnemyType.fromConfig(banditConfig);
 export const EnemyBanditDagger = EnemyType.fromConfig(banditDaggerConfig);
+export const EnemyGoblinBrute = EnemyType.fromConfig(goblinBruteConfig);
+export const EnemySkeletonVeteran = EnemyType.fromConfig(skeletonVeteranConfig);
+export const EnemyZombie = EnemyType.fromConfig(zombieConfig);

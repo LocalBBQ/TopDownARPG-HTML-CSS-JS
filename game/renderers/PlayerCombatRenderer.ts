@@ -737,10 +737,54 @@ export const PlayerCombatRenderer = {
         ctx.restore();
     },
 
+    /** Draw Defender offhand as a simple small dagger (not the shield rect). */
+    drawDefenderDagger(ctx: CanvasRenderingContext2D, screenX: number, screenY: number, transform: { width: number; height: number }, movement: { facingAngle: number }, combat: { isBlocking: boolean }, camera: { zoom: number }) {
+        const off = (transform.width / 2 + 6) * camera.zoom;
+        const bladeLen = 14 * camera.zoom;
+        const guardW = 4 * camera.zoom;
+        let x: number, y: number, angle: number;
+        if (combat.isBlocking) {
+            x = screenX + Math.cos(movement.facingAngle) * off;
+            y = screenY + Math.sin(movement.facingAngle) * off;
+            angle = movement.facingAngle + Math.PI / 2;
+        } else {
+            const leftAngle = movement.facingAngle - Math.PI / 2;
+            x = screenX + Math.cos(leftAngle) * (transform.width / 2 + 2) * camera.zoom;
+            y = screenY + Math.sin(leftAngle) * (transform.height / 2 + 2) * camera.zoom;
+            angle = leftAngle + Math.PI / 2;
+        }
+        ctx.save();
+        ctx.translate(x, y);
+        ctx.rotate(angle);
+        if (!combat.isBlocking) ctx.globalAlpha = 0.85;
+        ctx.strokeStyle = '#4a4a52';
+        ctx.fillStyle = '#7a7a88';
+        ctx.lineWidth = Math.max(1, 1.5 / camera.zoom);
+        ctx.beginPath();
+        ctx.moveTo(0, -guardW);
+        ctx.lineTo(0, guardW);
+        ctx.lineTo(bladeLen, guardW * 0.4);
+        ctx.lineTo(bladeLen + 2, 0);
+        ctx.lineTo(bladeLen, -guardW * 0.4);
+        ctx.closePath();
+        ctx.fill();
+        ctx.stroke();
+        ctx.fillStyle = '#5a5a62';
+        ctx.fillRect(-3, -guardW * 0.5, 4, guardW);
+        ctx.strokeRect(-3, -guardW * 0.5, 4, guardW);
+        ctx.globalAlpha = 1;
+        ctx.restore();
+    },
+
     drawShield(ctx, screenX, screenY, transform, movement, combat, camera) {
         if (!movement || !combat || !transform) return;
         if (!isBlockable(combat.offhandWeapon)) return;
         if (combat.weapon && combat.weapon.twoHanded) return;
+        const offhandName = combat.offhandWeapon && (combat.offhandWeapon as { name?: string }).name;
+        if (offhandName === 'Defender') {
+            PlayerCombatRenderer.drawDefenderDagger(ctx, screenX, screenY, transform, movement, combat, camera);
+            return;
+        }
         const shieldDist = (transform.width / 2 + 8) * camera.zoom;
         const shieldW = 40 * camera.zoom;
         const shieldH = 8; // thickness constant when zooming

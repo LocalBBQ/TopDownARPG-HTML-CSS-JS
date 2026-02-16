@@ -6,8 +6,11 @@ import {
     EnemyGreaterDemon,
     EnemyGoblinChieftain,
     EnemyBandit,
-    EnemyBanditDagger
-} from './enemyConfigs.ts';
+    EnemyBanditDagger,
+    EnemyGoblinBrute,
+    EnemySkeletonVeteran,
+    EnemyZombie
+} from '../config/enemyConfigs.ts';
 import { GameConfig } from '../config/GameConfig.ts';
 import { EnemyWeapons } from '../weapons/EnemyWeaponsRegistry.ts';
 import { WeaponAttackHandler } from '../weapons/WeaponAttackHandler.ts';
@@ -20,12 +23,15 @@ export interface WeaponAndBehaviorEntry {
 
 const weaponAndBehavior: Record<string, WeaponAndBehaviorEntry> = {
   goblin: { weaponId: 'goblinDagger', behaviorId: 'slashAndLeap' },
+  goblinBrute: { weaponId: 'goblinDagger', behaviorId: 'slashAndLeap' },
   lesserDemon: { weaponId: 'lesserDemonClaw', behaviorId: 'slashAndLeap' },
   goblinChieftain: { weaponId: 'chieftainClub', behaviorId: 'chargeRelease' },
   greaterDemon: { weaponId: 'demonClaw', behaviorId: 'chargeRelease' },
   skeleton: { weaponId: 'skeletonNoMelee', behaviorId: 'rangedOnly' },
+  skeletonVeteran: { weaponId: 'skeletonNoMelee', behaviorId: 'rangedOnly' },
   bandit: { weaponId: 'mace', behaviorId: 'comboAndCharge' },
-  banditDagger: { weaponId: 'dagger', behaviorId: 'slashAndLeap' }
+  banditDagger: { weaponId: 'dagger', behaviorId: 'slashAndLeap' },
+  zombie: { weaponId: 'zombieClaw', behaviorId: 'slashOnly' }
 };
 
 export const Enemies: Record<string, EnemyTypeDefinition | undefined> & {
@@ -40,6 +46,9 @@ export const Enemies: Record<string, EnemyTypeDefinition | undefined> & {
   goblinChieftain: EnemyGoblinChieftain,
   bandit: EnemyBandit,
   banditDagger: EnemyBanditDagger,
+  goblinBrute: EnemyGoblinBrute,
+  skeletonVeteran: EnemySkeletonVeteran,
+  zombie: EnemyZombie,
   weaponAndBehavior,
 
   getConfig(type: string): Record<string, unknown> | null {

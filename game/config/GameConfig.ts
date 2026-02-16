@@ -190,7 +190,7 @@ const GameConfig: GameConfigShape = {
         packCountVariance: 0.35,
         minPackDistance: 240,
       },
-      enemyTypes: ['goblin', 'goblin', 'goblinChieftain', 'skeleton', 'skeleton'],
+      enemyTypes: ['goblin', 'goblin', 'goblinChieftain', 'skeleton', 'skeleton', 'zombie', 'zombie'],
       killsToUnlockPortal: 15,
       theme: {
         ground: { r: 28, g: 26, b: 24, variation: 10 },
@@ -229,7 +229,7 @@ const GameConfig: GameConfigShape = {
         packCountVariance: 0.4,
         minPackDistance: 260,
       },
-      enemyTypes: ['skeleton', 'skeleton', 'lesserDemon', 'lesserDemon'],
+      enemyTypes: ['skeleton', 'skeleton', 'lesserDemon', 'lesserDemon', 'greaterDemon', 'zombie', 'zombie'],
       killsToUnlockPortal: 20,
       theme: {
         ground: {
@@ -260,6 +260,48 @@ const GameConfig: GameConfigShape = {
             { id: 'demonApproach.ruinFragment', weight: 1 },
             { id: 'demonApproach.demonCamp', weight: 1 },
             { id: 'demonApproach.skeletonCamp', weight: 0.5 },
+          ],
+        },
+      },
+    },
+    4: {
+      name: 'The Fort',
+      packSpawn: {
+        density: 0.018,
+        packSize: { min: 4, max: 6 },
+        packSpread: { min: 50, max: 110 },
+        packCountVariance: 0.4,
+        minPackDistance: 260,
+      },
+      enemyTypes: ['skeleton', 'skeleton', 'bandit', 'lesserDemon', 'greaterDemon', 'goblinChieftain'],
+      killsToUnlockPortal: 22,
+      theme: {
+        ground: {
+          r: 52, g: 50, b: 48,
+          variation: 6,
+          patch: { r: 42, g: 44, b: 46, variation: 8, chance: 0.18 },
+        },
+        sky: 'rgba(70, 68, 75, 0.1)',
+      },
+      worldWidth: 4800,
+      worldHeight: 2400,
+      obstacles: {
+        border: { spacing: 50, type: 'rock' },
+        useSceneTiles: true,
+        sceneTileLayout: {
+          tileSize: 800,
+          cols: 6,
+          rows: 3,
+          pool: [
+            { id: 'fort.clearing', weight: 5 },
+            { id: 'fort.crossroads', weight: 4 },
+            { id: 'fort.barracks', weight: 3 },
+            { id: 'fort.gatehouse', weight: 3 },
+            { id: 'fort.tower', weight: 2 },
+            { id: 'fort.armory', weight: 2 },
+            { id: 'fort.ruinFragment', weight: 2 },
+            { id: 'fort.trainingYard', weight: 2 },
+            { id: 'fort.siegeCamp', weight: 1 },
           ],
         },
       },

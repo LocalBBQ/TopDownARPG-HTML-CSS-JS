@@ -4,6 +4,7 @@
 import { Entity } from '../entities/Entity.js';
 import { Transform } from '../components/Transform.js';
 import { Health } from '../components/Health.js';
+import { Rally } from '../components/Rally.ts';
 import { StatusEffects } from '../components/StatusEffects.js';
 import { Stamina } from '../components/Stamina.js';
 import { PlayerHealing } from '../components/PlayerHealing.js';
@@ -237,6 +238,7 @@ export function createPlayer(
     player
         .addComponent(new Transform(x, y, config.width, config.height))
         .addComponent(new Health(config.maxHealth))
+        .addComponent(new Rally(Math.floor(config.maxHealth * 0.3)))
         .addComponent(new StatusEffects(true))
         .addComponent(new Stamina(config.maxStamina, config.staminaRegen))
         .addComponent(new PlayerHealing())

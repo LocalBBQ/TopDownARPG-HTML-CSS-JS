@@ -2,6 +2,7 @@
  * Handles portal and hub (sanctuary) logic: cooldowns, E/B key, level transition, board/chest.
  */
 import { GameConfig } from '../config/GameConfig.js';
+import { getRandomQuestsForBoard } from '../config/questConfig.js';
 import { Utils } from '../utils/Utils.js';
 import { Transform } from '../components/Transform.js';
 import { Combat } from '../components/Combat.js';
@@ -28,6 +29,8 @@ export interface PlayingStateControllerContext {
         crossbowReloadProgress: number;
         crossbowReloadInProgress: boolean;
         crossbowPerfectReloadNext: boolean;
+        questList: { level: number; difficultyId: string; difficulty?: { goldMultiplier?: number }; seed?: number }[];
+        hubSelectedQuestIndex: number;
     };
     systems: {
         get(name: string): unknown;
@@ -185,6 +188,11 @@ export class PlayingStateController {
                 );
                 g.playingState.playerNearBoard = overlap;
                 if (overlap && g.playingState.boardUseCooldown <= 0 && inputSystem && inputSystem.isKeyPressed('e')) {
+                    g.playingState.questList = getRandomQuestsForBoard(3);
+                    g.playingState.hubSelectedQuestIndex = Math.min(
+                        g.playingState.hubSelectedQuestIndex,
+                        Math.max(0, g.playingState.questList.length - 1)
+                    );
                     g.playingState.boardOpen = true;
                     g.playingState.boardUseCooldown = 0.4;
                     g.clearPlayerInputsForMenu();

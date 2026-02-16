@@ -218,6 +218,10 @@ export class Combat implements Component {
             typeof w.baseArcDegrees === 'number' ? Utils.degToRad(w.baseArcDegrees) : this.attackArc;
         }
       }
+      const offhandWeapon = this._offhandWeapon as { name?: string; baseDamage?: number } | null;
+      if (offhandWeapon && offhandWeapon.name === 'Defender' && typeof offhandWeapon.baseDamage === 'number') {
+        this.attackDamage += offhandWeapon.baseDamage;
+      }
     }
   }
 
@@ -402,6 +406,10 @@ export class Combat implements Component {
     this._currentAttackStunBuildup = (result.stunBuildup as number) ?? 25;
     if (result.range != null) this.attackRange = result.range as number;
     if (result.damage != null) this.attackDamage = result.damage as number;
+    const offhand = this._offhandWeapon as { name?: string; baseDamage?: number } | null;
+    if (offhand && offhand.name === 'Defender' && typeof offhand.baseDamage === 'number') {
+      this.attackDamage += offhand.baseDamage;
+    }
     if (result.arc != null) this.attackArc = result.arc as number;
     this.attackArcOffset = (result.arcOffset as number) ?? 0;
     this.currentAttackReverseSweep = result.reverseSweep === true;

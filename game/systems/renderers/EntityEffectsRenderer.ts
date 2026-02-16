@@ -7,6 +7,7 @@ import { Renderable } from '../../components/Renderable.ts';
 import { StatusEffects } from '../../components/StatusEffects.ts';
 import { AI } from '../../components/AI.ts';
 import { Health } from '../../components/Health.ts';
+import { Rally } from '../../components/Rally.ts';
 import { Stamina } from '../../components/Stamina.ts';
 import type { RenderContext } from './RenderContext.ts';
 import type { EntityShape } from '../../types/entity.ts';
@@ -163,6 +164,16 @@ export const EntityEffectsRenderer = {
             const healthPercent = health.percent;
             ctx.fillStyle = healthPercent > 0.5 ? '#44ff44' : healthPercent > 0.25 ? '#ffff44' : '#ff4444';
             ctx.fillRect(barX, barY, barWidth * healthPercent, barHeight);
+            if (isPlayer) {
+                const rally = entity.getComponent(Rally);
+                if (rally && rally.rallyPool > 0 && health.maxHealth > 0) {
+                    const rallyWidth = barWidth * (rally.rallyPool / health.maxHealth);
+                    if (Number.isFinite(rallyWidth) && rallyWidth > 0) {
+                        ctx.fillStyle = '#cc8800';
+                        ctx.fillRect(barX + barWidth * healthPercent, barY, rallyWidth, barHeight);
+                    }
+                }
+            }
             ctx.strokeStyle = '#000';
             ctx.lineWidth = 1 / camera.zoom;
             ctx.strokeRect(barX, barY, barWidth, barHeight);

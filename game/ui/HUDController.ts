@@ -2,15 +2,26 @@
  * HUD and inventory panel updates: health/stamina orbs, inventory screen, player portrait, weapon chest overlay.
  */
 import type { Entity } from '../entities/Entity.js';
-import type { PlayingStateShape } from '../state/PlayingState.js';
-import { MAX_WEAPON_DURABILITY } from '../state/PlayingState.js';
+import type { InventorySlot, PlayingStateShape } from '../state/PlayingState.js';
+import { getSlotKey, INVENTORY_SLOT_COUNT, MAX_WEAPON_DURABILITY } from '../state/PlayingState.js';
+import {
+    equipFromChestToHand,
+    equipFromInventory,
+    putInChestFromInventory,
+    setInventorySlot,
+    swapEquipmentWithInventory,
+    swapInventorySlots,
+    unequipToInventory
+} from '../state/InventoryActions.js';
 import { Health } from '../components/Health.js';
+import { Rally } from '../components/Rally.ts';
 import { Stamina } from '../components/Stamina.js';
 import { Combat } from '../components/Combat.js';
 import { PlayerHealing } from '../components/PlayerHealing.js';
 import { StatusEffects } from '../components/StatusEffects.js';
 import { SpriteUtils } from '../utils/SpriteUtils.js';
 import { Weapons } from '../weapons/WeaponsRegistry.js';
+import { canEquipWeaponInSlot, getEquipSlotForWeapon } from '../weapons/weaponSlot.js';
 import { CHEST_WEAPON_ORDER, getWeaponDisplayName, getWeaponSymbol } from './InventoryChestCanvas.js';
 
 export interface SystemsLike {
@@ -73,10 +84,10 @@ export class HUDController {
         e.preventDefault();
         const sourceStr = e.dataTransfer?.getData(DRAG_SOURCE_SLOT) ?? '';
         const sourceIndex = sourceStr === '' ? -1 : parseInt(sourceStr, 10);
-        if (sourceIndex >= 0 && sourceIndex < 24 && !isNaN(sourceIndex)) {
+        if (sourceIndex >= 0 && sourceIndex < INVENTORY_SLOT_COUNT && !isNaN(sourceIndex)) {
             const ps = this.ctx.playingState;
-            if (ps.inventorySlots && ps.inventorySlots.length === 24) {
-                ps.inventorySlots[sourceIndex] = null;
+            if (ps.inventorySlots && ps.inventorySlots.length === INVENTORY_SLOT_COUNT) {
+                putInChestFromInventory(ps, sourceIndex);
                 this.refreshInventoryGridFromState();
             }
         }
@@ -121,18 +132,13 @@ export class HUDController {
         const weaponKey = this.getWeaponKeyFromDrag(e);
         if (!weaponKey) return;
         const targetIndex = parseInt((slot as HTMLElement).getAttribute('data-slot') ?? '', 10);
-        if (isNaN(targetIndex) || targetIndex < 0 || targetIndex > 23) return;
+        if (isNaN(targetIndex) || targetIndex < 0 || targetIndex >= INVENTORY_SLOT_COUNT) return;
         const ps = this.ctx.playingState;
-        if (!ps.inventorySlots || ps.inventorySlots.length !== 24) return;
+        if (!ps.inventorySlots || ps.inventorySlots.length !== INVENTORY_SLOT_COUNT) return;
         const sourceStr = e.dataTransfer?.getData(DRAG_SOURCE_SLOT) ?? '';
         const sourceIndex = sourceStr === '' ? -1 : parseInt(sourceStr, 10);
-        if (sourceIndex >= 0 && sourceIndex < 24 && !isNaN(sourceIndex)) {
-            const a = ps.inventorySlots[sourceIndex];
-            const b = ps.inventorySlots[targetIndex];
-            ps.inventorySlots[sourceIndex] = b;
-            ps.inventorySlots[targetIndex] = a;
-        } else {
-            ps.inventorySlots[targetIndex] = weaponKey;
+        if (sourceIndex >= 0 && sourceIndex < INVENTORY_SLOT_COUNT && !isNaN(sourceIndex)) {
+            swapInventorySlots(ps, sourceIndex, targetIndex);
         }
         this.refreshInventoryGridFromState();
     }
@@ -150,7 +156,12 @@ export class HUDController {
     }
 
     private handleDragOver(e: DragEvent): void {
-        if (!e.dataTransfer || !this.getWeaponKeyFromDrag(e)) return;
+        if (!e.dataTransfer) return;
+        const weaponKey = this.getWeaponKeyFromDrag(e);
+        if (!weaponKey) return;
+        const slot = (e.currentTarget as HTMLElement).getAttribute('data-equip-slot');
+        if (slot !== 'mainhand' && slot !== 'offhand') return;
+        if (!canEquipWeaponInSlot(weaponKey, slot)) return;
         e.preventDefault();
         e.dataTransfer.dropEffect = 'move';
         (e.currentTarget as HTMLElement).classList.add('drag-over');
@@ -171,37 +182,32 @@ export class HUDController {
         const weaponKey = this.getWeaponKeyFromDrag(e);
         const slot = (e.currentTarget as HTMLElement).getAttribute('data-equip-slot');
         if (!weaponKey || (slot !== 'mainhand' && slot !== 'offhand')) return;
-        this.applyWeaponToSlot(weaponKey, slot as 'mainhand' | 'offhand');
+        if (!canEquipWeaponInSlot(weaponKey, slot)) return;
+        const sourceStr = e.dataTransfer?.getData(DRAG_SOURCE_SLOT) ?? '';
+        const sourceIndex = sourceStr === '' ? -1 : parseInt(sourceStr, 10);
+        const ps = this.ctx.playingState;
+        if (sourceIndex >= 0 && sourceIndex < INVENTORY_SLOT_COUNT && !isNaN(sourceIndex)) {
+            equipFromInventory(ps, sourceIndex, slot as 'mainhand' | 'offhand', () => this.syncPlayerWeapons());
+        }
         this.refreshChestEquipmentLabels();
         this.refreshInventoryEquipmentLabels();
+        this.refreshChestGridEquippedState();
     }
 
-    private applyWeaponToSlot(weaponKey: string, slot: 'mainhand' | 'offhand'): void {
+    private syncPlayerWeapons(): void {
         const ps = this.ctx.playingState;
-        const weapon = Weapons[weaponKey] as { twoHanded?: boolean } | undefined;
-        if (slot === 'mainhand') {
-            ps.equippedMainhandKey = weaponKey;
-            ps.equippedMainhandDurability = MAX_WEAPON_DURABILITY;
-            if (weapon?.twoHanded) ps.equippedOffhandKey = 'none';
-        } else {
-            ps.equippedOffhandKey = weaponKey;
-            ps.equippedOffhandDurability = MAX_WEAPON_DURABILITY;
-        }
         const player = this.ctx.entities.get('player');
-        if (player) {
-            const combat = player.getComponent(Combat) as Combat | null;
-            if (combat && combat.isPlayer) {
-                combat.stopBlocking();
-                const mainhand = ps.equippedMainhandKey && ps.equippedMainhandKey !== 'none'
-                    ? (Weapons[ps.equippedMainhandKey] ?? null)
-                    : null;
-                const offhand = ps.equippedOffhandKey && ps.equippedOffhandKey !== 'none'
-                    ? (Weapons[ps.equippedOffhandKey] ?? null)
-                    : null;
-                (combat as Combat & { setWeapons(m: unknown, o?: unknown): void }).setWeapons(mainhand, offhand);
-            }
-        }
-        this.refreshChestGridEquippedState();
+        if (!player) return;
+        const combat = player.getComponent(Combat) as Combat | null;
+        if (!combat || !combat.isPlayer) return;
+        (combat as Combat & { stopBlocking?(): void }).stopBlocking?.();
+        const mainhand = ps.equippedMainhandKey && ps.equippedMainhandKey !== 'none'
+            ? (Weapons[ps.equippedMainhandKey] ?? null)
+            : null;
+        const offhand = ps.equippedOffhandKey && ps.equippedOffhandKey !== 'none'
+            ? (Weapons[ps.equippedOffhandKey] ?? null)
+            : null;
+        (combat as Combat & { setWeapons(m: unknown, o?: unknown): void }).setWeapons(mainhand, offhand);
     }
 
     private refreshChestEquipmentLabels(): void {
@@ -255,7 +261,8 @@ export class HUDController {
         if (weaponSlot) {
             const key = weaponSlot.getAttribute('data-weapon-key');
             if (key && Weapons[key]) {
-                this.applyWeaponToSlot(key, 'mainhand');
+                const slot = getEquipSlotForWeapon(key);
+                this.applyWeaponToSlot(key, slot);
                 this.refreshChestGridEquippedState();
                 this.refreshChestEquipmentLabels();
             }
@@ -263,6 +270,27 @@ export class HUDController {
             this.ctx.playingState.chestOpen = false;
             this.ctx.playingState.chestUseCooldown = 0;
             this.setChestOverlayVisible(false);
+        }
+    }
+
+    /** Equip weapon by key to the given slot; finds it in chest first, then inventory. */
+    private applyWeaponToSlot(key: string, slot: 'mainhand' | 'offhand'): void {
+        const ps = this.ctx.playingState;
+        const sync = () => this.syncPlayerWeapons();
+        const chestIndex = ps.chestSlots?.findIndex((i) => i.key === key) ?? -1;
+        if (chestIndex >= 0) {
+            const slotHasItem = slot === 'mainhand' ? (ps.equippedMainhandKey && ps.equippedMainhandKey !== 'none') : (ps.equippedOffhandKey && ps.equippedOffhandKey !== 'none');
+            if (slotHasItem) unequipToInventory(ps, slot, undefined, undefined, sync);
+            equipFromChestToHand(ps, chestIndex, slot, sync);
+            this.refreshInventoryPanel();
+            return;
+        }
+        const bagIndex = ps.inventorySlots?.findIndex((s) => s && getSlotKey(s) === key) ?? -1;
+        if (bagIndex >= 0) {
+            const slotHasItem = slot === 'mainhand' ? (ps.equippedMainhandKey && ps.equippedMainhandKey !== 'none') : (ps.equippedOffhandKey && ps.equippedOffhandKey !== 'none');
+            if (slotHasItem) swapEquipmentWithInventory(ps, slot, bagIndex, sync);
+            else equipFromInventory(ps, bagIndex, slot, sync);
+            this.refreshInventoryPanel();
         }
     }
 
@@ -331,8 +359,13 @@ export class HUDController {
             const healthFillEl = document.getElementById('health-orb-fill');
             if (healthFillEl) healthFillEl.style.height = healthPercent + '%';
             const healthTextEl = document.getElementById('health-text');
-            if (healthTextEl) healthTextEl.textContent =
-                Math.floor(health.currentHealth) + '/' + health.maxHealth;
+            const rally = player.getComponent(Rally);
+            const rallyAmount = rally && rally.rallyPool > 0 ? Math.floor(rally.rallyPool) : 0;
+            if (healthTextEl) {
+                healthTextEl.textContent = rallyAmount > 0
+                    ? Math.floor(health.currentHealth) + '/' + health.maxHealth + ' (+' + rallyAmount + ' rally)'
+                    : Math.floor(health.currentHealth) + '/' + health.maxHealth;
+            }
         }
 
         if (stamina) {
@@ -387,6 +420,7 @@ export class HUDController {
         const player = this.ctx.entities.get('player');
         if (!player) return;
         const health = player.getComponent(Health);
+        const rally = player.getComponent(Rally);
         const stamina = player.getComponent(Stamina);
         const combat = player.getComponent(Combat);
         const healing = player.getComponent(PlayerHealing);
@@ -394,6 +428,7 @@ export class HUDController {
         const healthEl = document.getElementById('inventory-stat-health');
         const staminaEl = document.getElementById('inventory-stat-stamina');
         const healthBarEl = document.getElementById('inventory-bar-health');
+        const healthRallyBarEl = document.getElementById('inventory-bar-health-rally');
         const staminaBarEl = document.getElementById('inventory-bar-stamina');
         const damageEl = document.getElementById('inventory-stat-damage');
         const mainhandEl = document.getElementById('inventory-equip-mainhand');
@@ -401,13 +436,24 @@ export class HUDController {
         const healChargesEl = document.getElementById('inventory-stat-heal');
         const killsEl = document.getElementById('inventory-stat-kills');
         const goldEl = document.getElementById('inventory-stat-gold');
-        if (healthEl && health) healthEl.textContent = Math.floor(health.currentHealth) + ' / ' + health.maxHealth;
+        if (healthEl && health) {
+            const rallyAmount = rally && rally.rallyPool > 0 ? Math.floor(rally.rallyPool) : 0;
+            healthEl.textContent = rallyAmount > 0
+                ? Math.floor(health.currentHealth) + ' / ' + health.maxHealth + ' (+' + rallyAmount + ' rally)'
+                : Math.floor(health.currentHealth) + ' / ' + health.maxHealth;
+        }
         if (staminaEl && stamina) staminaEl.textContent = Math.floor(stamina.currentStamina) + ' / ' + stamina.maxStamina;
         if (healthBarEl && health) healthBarEl.style.width = (health.percent * 100) + '%';
+        if (healthRallyBarEl && health && rally && health.maxHealth > 0) {
+            const rallyPct = rally.rallyPool > 0 ? (rally.rallyPool / health.maxHealth) * 100 : 0;
+            const safePct = Number.isFinite(rallyPct) ? Math.max(0, Math.min(100, rallyPct)) : 0;
+            healthRallyBarEl.style.width = safePct + '%';
+            healthRallyBarEl.style.display = safePct > 0 ? '' : 'none';
+        }
         if (staminaBarEl && stamina) staminaBarEl.style.width = (stamina.percent * 100) + '%';
         if (healChargesEl && healing) healChargesEl.textContent = healing.charges + ' / ' + healing.maxCharges;
-        if (damageEl && combat && combat.attackHandler) {
-            const dmg = combat.attackHandler.attackDamage != null ? Math.floor(combat.attackHandler.attackDamage) : '—';
+        if (damageEl && combat) {
+            const dmg = combat.attackDamage != null ? Math.floor(combat.attackDamage) : (combat.attackHandler?.attackDamage != null ? Math.floor(combat.attackHandler.attackDamage) : '—');
             damageEl.textContent = String(dmg);
         }
         if (killsEl) killsEl.textContent = String(this.ctx.playingState.killsThisLife);
@@ -449,15 +495,10 @@ export class HUDController {
 
     private ensureInventoryInitialized(): void {
         const ps = this.ctx.playingState;
-        if (!ps.inventorySlots || ps.inventorySlots.length !== 24) {
-            ps.inventorySlots = Array(24).fill(null) as (string | null)[];
+        if (!ps.inventorySlots || ps.inventorySlots.length !== INVENTORY_SLOT_COUNT) {
+            ps.inventorySlots = Array(INVENTORY_SLOT_COUNT).fill(null) as InventorySlot[];
         }
-        const hasAny = ps.inventorySlots.some((s) => s != null);
-        if (!hasAny) {
-            for (let i = 0; i < CHEST_WEAPON_ORDER.length && i < 24; i++) {
-                ps.inventorySlots[i] = CHEST_WEAPON_ORDER[i];
-            }
-        }
+        // Do not fill empty slots here: refresh runs after ctrl+equip and would overwrite inventory with default weapons.
     }
 
     private refreshInventoryGridFromState(): void {
@@ -466,14 +507,17 @@ export class HUDController {
         if (!grid) return;
         const slots = grid.querySelectorAll('.inventory-slot');
         const ps = this.ctx.playingState;
-        const list = ps.inventorySlots ?? Array(24).fill(null) as (string | null)[];
-        for (let i = 0; i < 24 && i < slots.length; i++) {
+        const list = ps.inventorySlots ?? [];
+        for (let i = 0; i < INVENTORY_SLOT_COUNT && i < slots.length; i++) {
             const slot = slots[i] as HTMLElement;
-            const key = list[i];
+            const item = list[i];
+            const key = getSlotKey(item);
             if (key && Weapons[key]) {
                 slot.setAttribute('data-weapon-key', key);
                 slot.textContent = getWeaponSymbol(key);
-                slot.title = getWeaponDisplayName(key);
+                const name = getWeaponDisplayName(key);
+                const pct = item && item.durability != null ? Math.round((100 * item.durability) / MAX_WEAPON_DURABILITY) : null;
+                slot.title = pct != null ? `${name} (${pct}%)` : name;
                 slot.draggable = true;
             } else {
                 slot.removeAttribute('data-weapon-key');

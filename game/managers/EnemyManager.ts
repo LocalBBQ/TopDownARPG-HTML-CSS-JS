@@ -7,6 +7,7 @@ import { Entity } from '../entities/Entity.ts';
 import { StatusEffects } from '../components/StatusEffects.ts';
 import { Transform } from '../components/Transform.ts';
 import { Health } from '../components/Health.ts';
+import { Rally } from '../components/Rally.ts';
 import { AI } from '../components/AI.ts';
 import { Combat } from '../components/Combat.ts';
 import { EnemyMovement } from '../components/EnemyMovement.ts';
@@ -23,6 +24,13 @@ import { GuardBehavior } from '../behaviors/GuardBehavior.ts';
 import { SleepBehavior } from '../behaviors/SleepBehavior.ts';
 import { PackFollowBehavior } from '../behaviors/PackFollowBehavior.ts';
 import { WanderBehavior } from '../behaviors/WanderBehavior.ts';
+import type { Quest } from '../types/quest.ts';
+
+/** Base enemy type -> tier-2 variant (used when difficulty has enemyTier2Chance > 0). */
+const TIER2_MAP: Record<string, string> = {
+    goblin: 'goblinBrute',
+    skeleton: 'skeletonVeteran',
+};
 
 interface EntityManagerLike {
     add(entity: Entity, group: string): void;
@@ -43,6 +51,7 @@ export class EnemyManager {
     enemiesKilledThisLevel = 0;
     _packUpdateTick = 0;
     private config: GameConfigShape = GameConfig;
+    private activeQuest: Quest | null = null;
 
     constructor() {
         this.maxEnemies = this.config.enemy.spawn.maxEnemies;
@@ -274,6 +283,7 @@ export class EnemyManager {
             // One type per pack so bandit packs and goblin packs stay separate (no mixed packs)
             const types = enemyTypes && enemyTypes.length > 0 ? enemyTypes : ['goblin', 'goblin', 'skeleton', 'greaterDemon'];
             const packType = types[Utils.randomInt(0, types.length - 1)];
+            const resolvedType = this.resolvePackType(packType);
             // Fewer bandits per pack (they're stronger than goblins)
             const banditPackSize = packType === 'bandit' || packType === 'banditDagger';
             const enemiesInPack = banditPackSize
@@ -300,7 +310,7 @@ export class EnemyManager {
                     ? PackFollowBehavior.createPackFollowConfig(packCenterX, packCenterY, packRadius, { offsetAngle: Math.random() * Math.PI * 2 })
                     : idleBehaviorConfig;
                 if (!obstacleManager || obstacleManager.canMoveTo(clampedX, clampedY, 25, 25)) {
-                    this.spawnEnemy(clampedX, clampedY, packType, entityManager, patrolConfig, packModifier, packHasNoModifier, roamConfig, idleBehavior, finalIdleConfig);
+                    this.spawnEnemy(clampedX, clampedY, resolvedType, entityManager, patrolConfig, packModifier, packHasNoModifier, roamConfig, idleBehavior, finalIdleConfig);
                     enemiesSpawnedInPack++;
                 }
             }
@@ -320,6 +330,7 @@ export class EnemyManager {
         // One type per pack so bandit packs and goblin packs stay separate (no mixed packs)
         const types = enemyTypes && enemyTypes.length > 0 ? enemyTypes : ['goblin'];
         const packType = types[Utils.randomInt(0, types.length - 1)];
+        const resolvedType = this.resolvePackType(packType);
         // Fewer bandits per pack (they're stronger than goblins)
         const banditPack = packType === 'bandit' || packType === 'banditDagger';
         const size = banditPack
@@ -353,7 +364,7 @@ export class EnemyManager {
             const x = centerX + Math.cos(angle) * dist;
             const y = centerY + Math.sin(angle) * dist;
             if (!obstacleManager || obstacleManager.canMoveTo(x, y, 25, 25)) {
-                this.spawnEnemy(x, y, packType, entityManager, patrolConfig, packModifier, packHasNoModifier, roamConfig, idleBehavior, idleBehaviorConfig);
+                this.spawnEnemy(x, y, resolvedType, entityManager, patrolConfig, packModifier, packHasNoModifier, roamConfig, idleBehavior, idleBehaviorConfig);
                 spawned++;
             }
         }
@@ -380,6 +391,14 @@ export class EnemyManager {
         const worldHeight = (levelConfig.worldHeight != null) ? levelConfig.worldHeight : worldConfig.height;
         const packConfig = levelConfig.packSpawn;
         const enemyTypes = levelConfig.enemyTypes || null;
+        const diff = this.activeQuest?.difficulty;
+        const density = (packConfig.density ?? 0.008) * (diff?.packDensityMultiplier ?? 1);
+        const basePackSize = packConfig.packSize ?? { min: 2, max: 5 };
+        const packSizeBonus = Math.max(0, diff?.packSizeBonus ?? 0);
+        const effectivePackSize = {
+            min: basePackSize.min,
+            max: Math.min(10, basePackSize.max + packSizeBonus),
+        };
         const packOptions = {
             patrol: !!packConfig.patrol,
             packSpread: packConfig.packSpread || null,
@@ -391,8 +410,8 @@ export class EnemyManager {
         this.generateEnemyPacks(
             worldWidth,
             worldHeight,
-            packConfig.density,
-            packConfig.packSize,
+            density,
+            effectivePackSize,
             entityManager,
             obstacleManager,
             enemyTypes,
@@ -430,7 +449,7 @@ export class EnemyManager {
                     this.spawnPackAt(
                         centerX, centerY,
                         tileSize * 0.35,
-                        packConfig.packSize,
+                        effectivePackSize,
                         entityManager,
                         obstacleManager,
                         tileEnemyTypes,
@@ -601,6 +620,13 @@ export class EnemyManager {
                     const died = enemyHealth.takeDamage(combat.attackDamage);
                     const enemyStatus = enemy.getComponent(StatusEffects);
                     if (enemyStatus) enemyStatus.addStunBuildup(combat.currentAttackStunBuildup || 0);
+                    // Rally: heal player from rally pool when dealing damage (e.g. 50% of damage dealt, capped by pool)
+                    const rally = player.getComponent(Rally);
+                    if (rally && rally.rallyPool > 0) {
+                        const healAmount = rally.consumeForHeal(combat.attackDamage * 0.5);
+                        const playerHealth = player.getComponent(Health);
+                        if (playerHealth && healAmount > 0) playerHealth.heal(healAmount);
+                    }
                     if (this.systems && this.systems.eventBus) {
                         this.systems.eventBus.emit(EventTypes.PLAYER_HIT_ENEMY, { killed: died });
                     }
@@ -851,6 +877,19 @@ export class EnemyManager {
 
     getEnemiesKilledThisLevel(): number {
         return this.enemiesKilledThisLevel;
+    }
+
+    setActiveQuest(quest: Quest | null): void {
+        this.activeQuest = quest;
+    }
+
+    /** Resolve pack type: optionally substitute tier-2 variant when difficulty has enemyTier2Chance. */
+    private resolvePackType(baseType: string): string {
+        const diff = this.activeQuest?.difficulty;
+        if (!diff || !(diff.enemyTier2Chance > 0)) return baseType;
+        const tier2 = TIER2_MAP[baseType];
+        if (!tier2) return baseType;
+        return Math.random() < diff.enemyTier2Chance ? tier2 : baseType;
     }
 }
 

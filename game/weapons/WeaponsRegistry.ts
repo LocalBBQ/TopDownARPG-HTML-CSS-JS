@@ -1,6 +1,6 @@
 // Registry of player weapons: tiered variants (sword_rusty, sword_bronze, ...) + single shield.
 import { Weapon } from './Weapon.js';
-import { BASE_WEAPON_CONFIGS, shieldConfig } from './weaponConfigs.js';
+import { BASE_WEAPON_CONFIGS, shieldConfig, defenderConfig } from './weaponConfigs.js';
 import { MATERIALS, TIERED_WEAPON_KEYS, getTierDamage } from './materialTiers.js';
 
 const BASE_DISPLAY_NAMES: Record<string, string> = {
@@ -35,6 +35,7 @@ function buildWeaponsRegistry(): Record<string, Weapon> {
     }
 
     registry['shield'] = Weapon.fromConfig(shieldConfig);
+    registry['defender'] = Weapon.fromConfig(defenderConfig);
     return registry;
 }
 

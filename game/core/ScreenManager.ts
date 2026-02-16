@@ -1,5 +1,7 @@
 // Screen Manager - handles game state and screen rendering
 import { GameConfig } from '../config/GameConfig.ts';
+import { getQuestDescription } from '../config/questConfig.ts';
+import type { Quest } from '../types/quest.ts';
 
 export type ScreenName = 'title' | 'hub' | 'playing' | 'death' | 'pause' | 'settings' | 'settings-controls' | 'help';
 
@@ -69,6 +71,98 @@ export class ScreenManager {
             const top = row.y - b.rowH / 2;
             const bottom = row.y + b.rowH / 2;
             if (x >= left && x <= right && y >= top && y <= bottom) return row.level;
+        }
+        return null;
+    }
+
+    /** Bulletin board: title, then buttons (side by side), then 3 page rects. */
+    getQuestBoardBounds(questList: Quest[], _levelNames: Record<number, string>): {
+        cx: number;
+        cy: number;
+        frameY: number;
+        boardW: number;
+        boardH: number;
+        pageW: number;
+        pageH: number;
+        pageGap: number;
+        rows: { index: number; x: number; y: number; w: number; h: number }[];
+        buttonY: number;
+        acceptX: number;
+        rerollX: number;
+        backX: number;
+        buttonW: number;
+        buttonH: number;
+        rerollButtonW: number;
+    } {
+        const width = this.canvas.width;
+        const height = this.canvas.height;
+        const cx = width / 2;
+        const cy = height / 2 - 72;
+        const framePad = 20;
+        const boardW = 780;
+        const boardH = 420;
+        const frameY = cy - boardH / 2 - framePad - 24;
+        const titleBottom = frameY + 48;
+        const buttonH = 40;
+        const buttonY = titleBottom + 24 + buttonH / 2;
+        const pageTop = buttonY + buttonH / 2 + 24;
+        const pageW = 228;
+        const pageH = 300;
+        const pageGap = 24;
+        const step = pageW + pageGap;
+        const rows: { index: number; x: number; y: number; w: number; h: number }[] = [];
+        for (let i = 0; i < Math.min(3, questList.length); i++) {
+            const pageCx = cx + (i - 1) * step;
+            rows.push({
+                index: i,
+                x: pageCx - pageW / 2,
+                y: pageTop,
+                w: pageW,
+                h: pageH,
+            });
+        }
+        const buttonW = 120;
+        const rerollButtonW = 140;
+        const buttonGap = 16;
+        const totalButtonsW = buttonW + buttonGap + rerollButtonW + buttonGap + buttonW;
+        const acceptX = cx - totalButtonsW / 2 + buttonW / 2;
+        const rerollX = cx;
+        const backX = cx + totalButtonsW / 2 - buttonW / 2;
+        return { cx, cy, frameY, boardW, boardH, pageW, pageH, pageGap, rows, buttonY, acceptX, rerollX, backX, buttonW, buttonH, rerollButtonW };
+    }
+
+    /** Board overlay button hit-test (Accept / Re-roll / Back), side by side. */
+    getHubBoardButtonAt(x: number, y: number, _questCount = 0): 'start' | 'reroll' | 'back' | null {
+        const height = this.canvas.height;
+        const cx = this.canvas.width / 2;
+        const buttonW = 120;
+        const buttonH = 40;
+        const rerollButtonW = 140;
+        const buttonGap = 16;
+        const cy = height / 2 - 72;
+        const framePad = 20;
+        const boardH = 420;
+        const frameY = cy - boardH / 2 - framePad - 24;
+        const buttonY = frameY + 48 + 24 + buttonH / 2;
+        const totalButtonsW = buttonW + buttonGap + rerollButtonW + buttonGap + buttonW;
+        const acceptX = cx - totalButtonsW / 2 + buttonW / 2;
+        const rerollX = cx;
+        const backX = cx + totalButtonsW / 2 - buttonW / 2;
+        const top = buttonY - buttonH / 2;
+        const bottom = buttonY + buttonH / 2;
+        if (y >= top && y <= bottom) {
+            if (x >= acceptX - buttonW / 2 && x <= acceptX + buttonW / 2) return 'start';
+            if (x >= rerollX - rerollButtonW / 2 && x <= rerollX + rerollButtonW / 2) return 'reroll';
+            if (x >= backX - buttonW / 2 && x <= backX + buttonW / 2) return 'back';
+        }
+        return null;
+    }
+
+    getQuestSelectAt(x: number, y: number, questList: Quest[], levelNames: Record<number, string>): number | null {
+        if (!questList.length) return null;
+        const b = this.getQuestBoardBounds(questList, levelNames);
+        for (const row of b.rows) {
+            if (x >= row.x && x <= row.x + row.w && y >= row.y && y <= row.y + row.h) return row.index;
         }
         return null;
     }
@@ -444,11 +538,11 @@ export class ScreenManager {
         this.ctx.fillText('Return to Sanctuary', buttonX, buttonY);
     }
 
-    checkButtonClick(x, y, screen) {
+    checkButtonClick(x: number, y: number, screen: ScreenName): boolean {
         const width = this.canvas.width;
         const height = this.canvas.height;
         const buttonX = width / 2;
-        const buttonY = screen === 'title' ? height / 2 + 88 : height / 2 + 48;
+        const buttonY = screen === 'title' ? height / 2 + 60 : height / 2 + 48;
         const buttonWidth = 160;
         const buttonHeight = 48;
 
@@ -460,75 +554,175 @@ export class ScreenManager {
         return x >= buttonLeft && x <= buttonRight && y >= buttonTop && y <= buttonBottom;
     }
 
-    // Hub board overlay: level select + Start / Back (canvas coords)
-    getHubBoardButtonAt(x, y) {
+    /** Hub UI (when board is closed): Spawn Portal button. */
+    getHubSpawnPortalButtonAt(x: number, y: number): boolean {
         const width = this.canvas.width;
         const height = this.canvas.height;
         const cx = width / 2;
-        const buttonWidth = 120;
-        const buttonHeight = 40;
-        const startY = height / 2 + 52;
-        const backY = height / 2 + 100;
-        const left = cx - buttonWidth / 2;
-        const right = cx + buttonWidth / 2;
-        if (x >= left && x <= right && y >= startY - buttonHeight / 2 && y <= startY + buttonHeight / 2) return 'start';
-        if (x >= left && x <= right && y >= backY - buttonHeight / 2 && y <= backY + buttonHeight / 2) return 'back';
-        return null;
+        const buttonW = 180;
+        const buttonH = 44;
+        const btnY = height - 76;
+        return x >= cx - buttonW / 2 && x <= cx + buttonW / 2 && y >= btnY - buttonH / 2 && y <= btnY + buttonH / 2;
     }
 
-    renderHubBoardOverlay(selectedLevel) {
+    renderHubBoardOverlay(questList: Quest[], selectedQuestIndex: number, levelNames: Record<number, string>, gold: number = 0): void {
         this.ctx.setTransform(1, 0, 0, 1, 0, 0);
         const width = this.canvas.width;
         const height = this.canvas.height;
         const cx = width / 2;
 
-        this.ctx.fillStyle = 'rgba(10, 8, 6, 0.75)';
+        this.ctx.fillStyle = 'rgba(10, 8, 6, 0.82)';
         this.ctx.fillRect(0, 0, width, height);
 
+        if (questList.length === 0) {
+            this.ctx.textAlign = 'center';
+            this.ctx.textBaseline = 'middle';
+            this.ctx.fillStyle = '#a08060';
+            this.ctx.font = '500 16px Cinzel, Georgia, serif';
+            this.ctx.fillText('No quests posted.', cx, height / 2);
+            return;
+        }
+
+        const b = this.getQuestBoardBounds(questList, levelNames);
+        const framePad = 20;
+        const frameX = cx - b.boardW / 2 - framePad;
+        const frameW = b.boardW + framePad * 2;
+        const frameH = b.boardH + framePad * 2 + 24;
+
+        // Wooden bulletin board frame
+        this.ctx.fillStyle = '#3d2817';
+        this.ctx.fillRect(frameX, b.frameY, frameW, frameH);
+        this.ctx.strokeStyle = '#5c3d22';
+        this.ctx.lineWidth = 4;
+        this.ctx.strokeRect(frameX, b.frameY, frameW, frameH);
+        this.ctx.fillStyle = '#2a1810';
+        this.ctx.fillRect(frameX + 6, b.frameY + 6, frameW - 12, frameH - 12);
+
+        // Title
         this.ctx.textAlign = 'center';
         this.ctx.textBaseline = 'middle';
         this.ctx.fillStyle = '#c9a227';
-        this.ctx.font = '700 28px Cinzel, Georgia, serif';
-        this.ctx.fillText('Select level', cx, height / 2 - 100);
+        this.ctx.font = '700 22px Cinzel, Georgia, serif';
+        this.ctx.fillText('Bulletin Board', cx, b.frameY + 22);
 
-        const b = this.getLevelSelectBounds();
-        const rowH = 32;
-        const rowW = 280;
-        for (let i = 0; i < b.rows.length; i++) {
-            const row = b.rows[i];
-            const isSelected = selectedLevel === row.level;
-            this.ctx.fillStyle = isSelected ? 'rgba(201, 162, 39, 0.25)' : 'rgba(20, 16, 8, 0.6)';
-            this.ctx.fillRect(b.cx - rowW / 2, row.y - rowH / 2, rowW, rowH);
-            this.ctx.strokeStyle = isSelected ? '#c9a227' : '#4a3020';
-            this.ctx.lineWidth = isSelected ? 2 : 1;
-            this.ctx.strokeRect(b.cx - rowW / 2, row.y - rowH / 2, rowW, rowH);
-            this.ctx.fillStyle = isSelected ? '#e8dcc8' : '#a08060';
-            this.ctx.font = isSelected ? '600 14px Cinzel, Georgia, serif' : '500 13px Cinzel, Georgia, serif';
-            this.ctx.fillText(`${row.level}. ${row.name}`, b.cx, row.y);
-        }
+        const REROLL_COST = 200;
+        const canReroll = gold >= REROLL_COST;
 
-        const buttonWidth = 120;
-        const buttonHeight = 40;
-        const startY_btn = height / 2 + 52;
-        const backY = height / 2 + 100;
-
+        // Buttons side by side (Accept | Re-roll | Back)
         this.ctx.fillStyle = '#1a1008';
-        this.ctx.fillRect(cx - buttonWidth / 2, startY_btn - buttonHeight / 2, buttonWidth, buttonHeight);
+        this.ctx.fillRect(b.acceptX - b.buttonW / 2, b.buttonY - b.buttonH / 2, b.buttonW, b.buttonH);
         this.ctx.strokeStyle = '#c9a227';
         this.ctx.lineWidth = 2;
-        this.ctx.strokeRect(cx - buttonWidth / 2, startY_btn - buttonHeight / 2, buttonWidth, buttonHeight);
+        this.ctx.strokeRect(b.acceptX - b.buttonW / 2, b.buttonY - b.buttonH / 2, b.buttonW, b.buttonH);
         this.ctx.fillStyle = '#e8dcc8';
         this.ctx.font = '600 14px Cinzel, Georgia, serif';
-        this.ctx.fillText('Start', cx, startY_btn);
+        this.ctx.fillText('Accept quest', b.acceptX, b.buttonY);
+
+        this.ctx.fillStyle = canReroll ? '#1a1008' : 'rgba(26, 16, 8, 0.6)';
+        this.ctx.fillRect(b.rerollX - b.rerollButtonW / 2, b.buttonY - b.buttonH / 2, b.rerollButtonW, b.buttonH);
+        this.ctx.strokeStyle = canReroll ? '#c9a227' : '#4a3020';
+        this.ctx.lineWidth = 2;
+        this.ctx.strokeRect(b.rerollX - b.rerollButtonW / 2, b.buttonY - b.buttonH / 2, b.rerollButtonW, b.buttonH);
+        this.ctx.fillStyle = canReroll ? '#e8dcc8' : '#6a5a50';
+        this.ctx.font = '600 13px Cinzel, Georgia, serif';
+        this.ctx.fillText('Re-roll (200g)', b.rerollX, b.buttonY);
 
         this.ctx.fillStyle = '#1a1008';
-        this.ctx.fillRect(cx - buttonWidth / 2, backY - buttonHeight / 2, buttonWidth, buttonHeight);
+        this.ctx.fillRect(b.backX - b.buttonW / 2, b.buttonY - b.buttonH / 2, b.buttonW, b.buttonH);
         this.ctx.strokeStyle = '#4a3020';
         this.ctx.lineWidth = 2;
-        this.ctx.strokeRect(cx - buttonWidth / 2, backY - buttonHeight / 2, buttonWidth, buttonHeight);
+        this.ctx.strokeRect(b.backX - b.buttonW / 2, b.buttonY - b.buttonH / 2, b.buttonW, b.buttonH);
         this.ctx.fillStyle = '#a08060';
-        this.ctx.font = '600 13px Cinzel, Georgia, serif';
-        this.ctx.fillText('Back', cx, backY);
+        this.ctx.fillText('Back', b.backX, b.buttonY);
+
+        // Word-wrap a string to fit within maxChars per line (break on spaces when possible).
+        const wrapText = (text: string, maxChars: number): string[] => {
+            const out: string[] = [];
+            let rest = text.trim();
+            while (rest.length > 0) {
+                if (rest.length <= maxChars) {
+                    out.push(rest);
+                    break;
+                }
+                let breakAt = rest.slice(0, maxChars + 1).lastIndexOf(' ');
+                if (breakAt <= 0) breakAt = maxChars;
+                out.push(rest.slice(0, breakAt).trim());
+                rest = rest.slice(breakAt).trim();
+            }
+            return out;
+        };
+
+        // Three quest pages (pinned paper look)
+        const maxCharsPerLine = 34;
+        const descLineHeight = 18;
+        for (let i = 0; i < b.rows.length; i++) {
+            const row = b.rows[i];
+            const quest = questList[row.index];
+            const isSelected = selectedQuestIndex === row.index;
+            const levelName = levelNames[quest.level] ?? 'Level ' + quest.level;
+            const diffLabel = quest.difficulty?.label ?? quest.difficultyId;
+            const descLines = getQuestDescription(quest);
+            const wrappedLines: string[] = [];
+            for (const line of descLines) {
+                wrappedLines.push(...wrapText(line, maxCharsPerLine));
+            }
+
+            this.ctx.save();
+            const slightRotate = (i - 1) * 0.018;
+            this.ctx.translate(row.x + row.w / 2, row.y + row.h / 2);
+            this.ctx.rotate(slightRotate);
+            this.ctx.translate(-(row.x + row.w / 2), -(row.y + row.h / 2));
+
+            this.ctx.fillStyle = isSelected ? '#f4ecd8' : '#e8dfc8';
+            this.ctx.strokeStyle = isSelected ? '#c9a227' : '#8b7355';
+            this.ctx.lineWidth = isSelected ? 3 : 1.5;
+            this.ctx.fillRect(row.x, row.y, row.w, row.h);
+            this.ctx.strokeRect(row.x, row.y, row.w, row.h);
+
+            const pad = 12;
+            let ty = row.y + pad + 8;
+            this.ctx.fillStyle = '#1a1008';
+            this.ctx.font = '700 20px Cinzel, Georgia, serif';
+            this.ctx.textAlign = 'center';
+            this.ctx.textBaseline = 'middle';
+            this.ctx.fillText(levelName, row.x + row.w / 2, ty);
+            ty += 26;
+            this.ctx.fillStyle = '#4a3020';
+            this.ctx.font = '600 16px Cinzel, Georgia, serif';
+            this.ctx.fillText(diffLabel, row.x + row.w / 2, ty);
+            ty += 22;
+            this.ctx.fillStyle = '#2a1810';
+            this.ctx.font = '500 14px Cinzel, Georgia, serif';
+            for (const line of wrappedLines) {
+                this.ctx.fillText(line, row.x + row.w / 2, ty);
+                ty += descLineHeight;
+            }
+            this.ctx.restore();
+        }
+    }
+
+    /** Draw the hub UI "Spawn Portal" button (when board is closed). */
+    renderHubSpawnPortalButton(questList: Quest[], selectedQuestIndex: number, levelNames: Record<number, string>): void {
+        const width = this.canvas.width;
+        const height = this.canvas.height;
+        const cx = width / 2;
+        const buttonW = 180;
+        const buttonH = 44;
+        const btnY = height - 76;
+        this.ctx.fillStyle = '#1a1008';
+        this.ctx.fillRect(cx - buttonW / 2, btnY - buttonH / 2, buttonW, buttonH);
+        this.ctx.strokeStyle = '#c9a227';
+        this.ctx.lineWidth = 2;
+        this.ctx.strokeRect(cx - buttonW / 2, btnY - buttonH / 2, buttonW, buttonH);
+        this.ctx.fillStyle = '#e8dcc8';
+        this.ctx.font = '600 14px Cinzel, Georgia, serif';
+        this.ctx.textAlign = 'center';
+        this.ctx.textBaseline = 'middle';
+        const hasQuest = questList.length > 0 && questList[selectedQuestIndex];
+        const label = hasQuest
+            ? `Spawn Portal — ${levelNames[questList[selectedQuestIndex].level] ?? 'Level ' + questList[selectedQuestIndex].level}`
+            : 'Spawn Portal';
+        this.ctx.fillText(label, cx, btnY);
     }
 
     getWeaponChestOverlayBounds() {

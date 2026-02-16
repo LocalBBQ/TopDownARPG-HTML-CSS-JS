@@ -2,6 +2,8 @@
  * Centralized state for the playing/hub phase. Single source of truth for portal,
  * board, chest, cooldowns, crossbow, inventory, etc.
  */
+import type { Quest } from '../types/quest.ts';
+
 export interface PortalState {
   x: number;
   y: number;
@@ -32,6 +34,18 @@ export interface ShopState {
   width: number;
   height: number;
 }
+
+/** One weapon instance: key + durability. Used for inventory slots and chest. */
+export type WeaponInstance = { key: string; durability: number };
+
+/** One inventory bag slot: weapon instance or empty. */
+export type InventorySlot = WeaponInstance | null;
+
+export function getSlotKey(slot: InventorySlot): string | null {
+  return slot?.key ?? null;
+}
+
+export const INVENTORY_SLOT_COUNT = 24;
 
 export interface PlayingStateShape {
   portal: PortalState | null;
@@ -67,18 +81,31 @@ export interface PlayingStateShape {
   equippedMainhandDurability: number;
   /** Current durability for equipped offhand (0..MAX_WEAPON_DURABILITY). */
   equippedOffhandDurability: number;
-  /** 24 slots: weapon key or null. Starts empty; filled only by taking from chest. */
-  inventorySlots: (string | null)[];
-  /** Weapon instances in the chest (weapon keys). Only source of weapon instances. */
-  chestSlots: string[];
+  /** 24 slots: weapon instance or null. Starts empty; filled only by taking from chest. */
+  inventorySlots: InventorySlot[];
+  /** Weapon instances in the chest. Each instance has its own durability. */
+  chestSlots: WeaponInstance[];
   hubSelectedLevel: number;
+  /** Index into questList for the selected quest on the board. */
+  hubSelectedQuestIndex: number;
+  /** Current quest list shown on the board (set when board opens). */
+  questList: Quest[];
+  /** Quest chosen when starting a run; null when in hub or after clearing. */
+  activeQuest: Quest | null;
+  /** Gold multiplier from active quest difficulty; 1 when no quest. */
+  questGoldMultiplier: number;
   screenBeforePause: 'playing' | 'hub' | null;
 }
 
-/** Initial chest contents: one of each base weapon at Rusty tier (shield has no tier). */
-export const INITIAL_CHEST_WEAPONS: string[] = [
-  'sword_rusty', 'shield', 'dagger_rusty', 'greatsword_rusty', 'crossbow_rusty', 'mace_rusty'
-];
+/** Initial chest weapon keys (one of each base at Rusty tier; shield and defender have no tier). */
+const INITIAL_CHEST_WEAPON_KEYS = [
+  'sword_rusty', 'shield', 'defender', 'dagger_rusty', 'greatsword_rusty', 'crossbow_rusty', 'mace_rusty'
+] as const;
+
+/** Initial chest contents: one instance of each, full durability. */
+export function getInitialChestWeapons(): WeaponInstance[] {
+  return INITIAL_CHEST_WEAPON_KEYS.map((key) => ({ key, durability: MAX_WEAPON_DURABILITY }));
+}
 
 /** Max durability per weapon. Each confirmed hit costs 1. */
 export const MAX_WEAPON_DURABILITY = 100;
@@ -88,7 +115,7 @@ export function resolveDefaultWeapons(defaultWeapon: string, defaultOffhand?: st
   return { mainhand: defaultWeapon, offhand: defaultOffhand ?? 'none' };
 }
 
-const defaultPlayingState = (defaultMainhand: string, defaultOffhand: string, chestSlots: string[]): PlayingStateShape => ({
+const defaultPlayingState = (defaultMainhand: string, defaultOffhand: string, chestSlots: WeaponInstance[]): PlayingStateShape => ({
   portal: null,
   portalUseCooldown: 0,
   playerNearPortal: false,
@@ -118,9 +145,13 @@ const defaultPlayingState = (defaultMainhand: string, defaultOffhand: string, ch
   equippedOffhandKey: defaultOffhand,
   equippedMainhandDurability: MAX_WEAPON_DURABILITY,
   equippedOffhandDurability: MAX_WEAPON_DURABILITY,
-  inventorySlots: Array(24).fill(null) as (string | null)[],
-  chestSlots: [...chestSlots],
+  inventorySlots: Array(INVENTORY_SLOT_COUNT).fill(null) as InventorySlot[],
+  chestSlots: chestSlots.map((i) => ({ key: i.key, durability: i.durability })),
   hubSelectedLevel: 1,
+  hubSelectedQuestIndex: 0,
+  questList: [],
+  activeQuest: null,
+  questGoldMultiplier: 1,
   screenBeforePause: null
 });
 
@@ -154,9 +185,13 @@ export class PlayingState implements PlayingStateShape {
   equippedOffhandKey: string;
   equippedMainhandDurability = MAX_WEAPON_DURABILITY;
   equippedOffhandDurability = MAX_WEAPON_DURABILITY;
-  inventorySlots: (string | null)[] = Array(24).fill(null) as (string | null)[];
-  chestSlots: string[] = [...INITIAL_CHEST_WEAPONS];
+  inventorySlots: InventorySlot[] = Array(INVENTORY_SLOT_COUNT).fill(null) as InventorySlot[];
+  chestSlots: WeaponInstance[] = getInitialChestWeapons();
   hubSelectedLevel = 1;
+  hubSelectedQuestIndex = 0;
+  questList: Quest[] = [];
+  activeQuest: Quest | null = null;
+  questGoldMultiplier = 1;
   screenBeforePause: 'playing' | 'hub' | null = null;
 
   constructor(defaultMainhand: string, defaultOffhand: string = 'none') {
@@ -165,7 +200,7 @@ export class PlayingState implements PlayingStateShape {
   }
 
   reset(_defaultWeapon?: string): void {
-    Object.assign(this, defaultPlayingState('none', 'none', INITIAL_CHEST_WEAPONS));
-    this.chestSlots = [...INITIAL_CHEST_WEAPONS];
+    Object.assign(this, defaultPlayingState('none', 'none', getInitialChestWeapons()));
+    this.chestSlots = getInitialChestWeapons();
   }
 }

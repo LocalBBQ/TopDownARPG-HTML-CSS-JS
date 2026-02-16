@@ -2,9 +2,10 @@
  * Canvas-based inventory and weapon chest UI: layout, render, and hit-test.
  * Used when inventoryOpen or chestOpen; pointer events handled by Game.
  */
-import type { PlayingStateShape } from '../state/PlayingState.js';
-import { MAX_WEAPON_DURABILITY } from '../state/PlayingState.js';
+import type { InventorySlot, PlayingStateShape, WeaponInstance } from '../state/PlayingState.js';
+import { getSlotKey, INVENTORY_SLOT_COUNT, MAX_WEAPON_DURABILITY } from '../state/PlayingState.js';
 import { Weapons } from '../weapons/WeaponsRegistry.js';
+import { canEquipWeaponInSlot } from '../weapons/weaponSlot.js';
 import type { Weapon } from '../weapons/Weapon.js';
 import {
     getShopByWeaponType,
@@ -19,6 +20,7 @@ function isWeaponInstance(w: unknown): w is Weapon {
 const WEAPON_SYMBOLS: Record<string, string> = {
     sword: '∿',
     shield: '▣',
+    defender: '‡',
     dagger: '†',
     greatsword: '⋔',
     crossbow: '⊗',
@@ -27,12 +29,12 @@ const WEAPON_SYMBOLS: Record<string, string> = {
 };
 
 export const CHEST_WEAPON_ORDER: string[] = [
-    'sword_rusty', 'shield', 'dagger_rusty', 'greatsword_rusty', 'crossbow_rusty', 'mace_rusty'
+    'sword_rusty', 'shield', 'defender', 'dagger_rusty', 'greatsword_rusty', 'crossbow_rusty', 'mace_rusty'
 ];
 
 const INVENTORY_COLS = 6;
 const INVENTORY_ROWS = 4;
-const INVENTORY_SLOT_COUNT = INVENTORY_COLS * INVENTORY_ROWS;
+const INVENTORY_GRID_SLOTS = INVENTORY_COLS * INVENTORY_ROWS;
 
 /** Base weapon key from variant key (e.g. sword_rusty -> sword). */
 function getBaseWeaponKey(key: string): string {
@@ -48,7 +50,7 @@ export function getWeaponSymbol(key: string): string {
 }
 
 const BASE_DISPLAY_NAMES: Record<string, string> = {
-    sword: 'Sword', shield: 'Shield',
+    sword: 'Sword', shield: 'Shield', defender: 'Defender',
     greatsword: 'Greatsword', mace: 'Mace', dagger: 'Dagger', crossbow: 'Crossbow', none: '—'
 };
 
@@ -70,9 +72,184 @@ export function getWeaponDisplayName(key: string): string {
     return key.replace(/([A-Z])/g, ' $1').replace(/^./, (s) => s.toUpperCase()).trim();
 }
 
+/** Metal fill and stroke for weapon icon from registry (material tier color). */
+function getWeaponIconColors(key: string): { fill: string; stroke: string } {
+    const w = Weapons[key];
+    const hex = isWeaponInstance(w) && (w as Weapon).color ? (w as Weapon).color : null;
+    if (!hex || typeof hex !== 'string') return { fill: '#a8a8b0', stroke: '#3d3d42' };
+    const m = hex.match(/^#?([0-9a-fA-F]{2})([0-9a-fA-F]{2})([0-9a-fA-F]{2})$/);
+    if (!m) return { fill: hex, stroke: '#3d3d42' };
+    const r = Math.max(0, Math.floor(parseInt(m[1], 16) * 0.55));
+    const g = Math.max(0, Math.floor(parseInt(m[2], 16) * 0.55));
+    const b = Math.max(0, Math.floor(parseInt(m[3], 16) * 0.55));
+    return { fill: hex, stroke: `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}` };
+}
+
+/**
+ * Draw a miniature weapon icon centered at (cx, cy). size = half-width of icon (e.g. slot width / 2 - 4).
+ * Weapon is drawn at a fixed display angle (blade/shaft toward top-right) so it fits in grid slots.
+ */
+export function drawWeaponIcon(ctx: CanvasRenderingContext2D, cx: number, cy: number, size: number, weaponKey: string): void {
+    if (!weaponKey || weaponKey === 'none') return;
+    const base = getBaseWeaponKey(weaponKey);
+    const colors = getWeaponIconColors(weaponKey);
+    const angle = Math.PI / 4;
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.rotate(angle);
+    const s = size;
+    const lw = Math.max(1, size / 12);
+
+    if (base === 'sword' || base === 'dagger') {
+        const bladeLen = base === 'dagger' ? s * 0.85 : s * 1.0;
+        const guardW = base === 'dagger' ? s * 0.25 : s * 0.3;
+        const tipW = guardW * 0.4;
+        ctx.lineWidth = lw;
+        ctx.strokeStyle = colors.stroke;
+        ctx.fillStyle = colors.fill;
+        ctx.beginPath();
+        ctx.moveTo(0, -guardW);
+        ctx.lineTo(0, guardW);
+        ctx.lineTo(bladeLen, tipW);
+        ctx.lineTo(bladeLen + tipW * 1.2, 0);
+        ctx.lineTo(bladeLen, -tipW);
+        ctx.closePath();
+        ctx.fill();
+        ctx.stroke();
+        ctx.fillStyle = '#6b6b75';
+        ctx.strokeStyle = '#4a4a52';
+        ctx.fillRect(-s * 0.35, -guardW * 0.4, s * 0.25, guardW * 0.8);
+        ctx.strokeRect(-s * 0.35, -guardW * 0.4, s * 0.25, guardW * 0.8);
+        ctx.fillStyle = '#4a4a52';
+        ctx.beginPath();
+        ctx.arc(-s * 0.45, 0, s * 0.08, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+    } else if (base === 'greatsword') {
+        const bladeLen = s * 1.15;
+        const guardW = s * 0.35;
+        const tipW = guardW * 0.5;
+        ctx.lineWidth = lw;
+        ctx.strokeStyle = colors.stroke;
+        ctx.fillStyle = colors.fill;
+        ctx.beginPath();
+        ctx.moveTo(0, -guardW);
+        ctx.lineTo(0, guardW);
+        ctx.lineTo(bladeLen, tipW);
+        ctx.lineTo(bladeLen + tipW * 1.5, 0);
+        ctx.lineTo(bladeLen, -tipW);
+        ctx.closePath();
+        ctx.fill();
+        ctx.stroke();
+        ctx.fillStyle = '#6b6b75';
+        ctx.strokeStyle = '#4a4a52';
+        ctx.fillRect(-s * 0.4, -guardW * 0.5, s * 0.35, guardW);
+        ctx.strokeRect(-s * 0.4, -guardW * 0.5, s * 0.35, guardW);
+        ctx.fillStyle = '#4a4a52';
+        ctx.beginPath();
+        ctx.arc(-s * 0.55, 0, s * 0.1, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+    } else if (base === 'mace') {
+        const shaftLen = s * 0.5;
+        const headR = s * 0.45;
+        ctx.lineWidth = lw;
+        ctx.fillStyle = '#5a5a62';
+        ctx.strokeStyle = '#3a3a42';
+        ctx.fillRect(-s * 0.4, -s * 0.08, shaftLen, s * 0.16);
+        ctx.strokeRect(-s * 0.4, -s * 0.08, shaftLen, s * 0.16);
+        ctx.fillStyle = colors.fill;
+        ctx.strokeStyle = colors.stroke;
+        const flangeCount = 6;
+        ctx.beginPath();
+        for (let i = 0; i <= flangeCount; i++) {
+            const a = (i / flangeCount) * Math.PI * 2;
+            const x = shaftLen - s * 0.4 + Math.cos(a) * (headR + s * 0.08);
+            const y = Math.sin(a) * (headR + s * 0.08);
+            if (i === 0) ctx.moveTo(x, y);
+            else ctx.lineTo(x, y);
+        }
+        ctx.closePath();
+        ctx.fill();
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.arc(shaftLen - s * 0.4, 0, headR, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+    } else if (base === 'crossbow') {
+        const stockLen = s * 0.9;
+        const limbH = s * 0.5;
+        ctx.fillStyle = '#3d2817';
+        ctx.strokeStyle = '#2a1a0c';
+        ctx.fillRect(-stockLen / 2, -s * 0.08, stockLen, s * 0.16);
+        ctx.strokeRect(-stockLen / 2, -s * 0.08, stockLen, s * 0.16);
+        ctx.strokeStyle = '#4a3520';
+        ctx.lineWidth = lw * 1.5;
+        ctx.beginPath();
+        ctx.moveTo(stockLen * 0.2, 0);
+        ctx.quadraticCurveTo(stockLen * 0.45, -limbH, stockLen * 0.4, -limbH * 0.6);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(stockLen * 0.2, 0);
+        ctx.quadraticCurveTo(stockLen * 0.45, limbH, stockLen * 0.4, limbH * 0.6);
+        ctx.stroke();
+        ctx.fillStyle = colors.fill;
+        ctx.strokeStyle = colors.stroke;
+        ctx.beginPath();
+        ctx.arc(stockLen * 0.4, 0, s * 0.12, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+        ctx.strokeStyle = '#c0b090';
+        ctx.lineWidth = lw * 0.8;
+        ctx.beginPath();
+        ctx.moveTo(stockLen * 0.4, -limbH * 0.4);
+        ctx.lineTo(stockLen * 0.4, limbH * 0.4);
+        ctx.stroke();
+    } else if (base === 'defender') {
+        const bladeLen = s * 0.7;
+        const guardW = s * 0.2;
+        const tipW = guardW * 0.5;
+        ctx.lineWidth = lw;
+        ctx.strokeStyle = '#4a5a6a';
+        ctx.fillStyle = '#7a8a9a';
+        ctx.beginPath();
+        ctx.moveTo(0, -guardW);
+        ctx.lineTo(0, guardW);
+        ctx.lineTo(bladeLen, tipW);
+        ctx.lineTo(bladeLen + tipW, 0);
+        ctx.lineTo(bladeLen, -tipW);
+        ctx.closePath();
+        ctx.fill();
+        ctx.stroke();
+        ctx.fillStyle = '#5a6a72';
+        ctx.strokeStyle = '#3a4a52';
+        ctx.fillRect(-s * 0.12, -guardW * 0.6, s * 0.14, guardW * 1.2);
+        ctx.strokeRect(-s * 0.12, -guardW * 0.6, s * 0.14, guardW * 1.2);
+    } else if (base === 'shield') {
+        const shieldW = s * 0.9;
+        const shieldH = s * 0.5;
+        ctx.fillStyle = '#8b6914';
+        ctx.strokeStyle = '#5d4a0c';
+        ctx.lineWidth = lw;
+        ctx.beginPath();
+        ctx.roundRect(-shieldW / 2, -shieldH / 2, shieldW, shieldH, 4);
+        ctx.fill();
+        ctx.stroke();
+    } else {
+        ctx.fillStyle = '#e0c8a0';
+        ctx.font = `600 ${Math.round(size)}px Cinzel, Georgia, serif`;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(getWeaponSymbol(weaponKey), 0, 0);
+    }
+    ctx.restore();
+}
+
 export interface DragState {
     isDragging: boolean;
     weaponKey: string;
+    /** When dragging from equipment, current durability of that item. */
+    durability?: number;
     sourceSlotIndex: number;
     sourceContext: 'inventory' | 'chest' | 'equipment';
     pointerX: number;
@@ -92,7 +269,7 @@ export function createDragState(): DragState {
 
 export function ensureInventoryInitialized(ps: PlayingStateShape): void {
     if (!ps.inventorySlots || ps.inventorySlots.length !== INVENTORY_SLOT_COUNT) {
-        ps.inventorySlots = Array(INVENTORY_SLOT_COUNT).fill(null) as (string | null)[];
+        ps.inventorySlots = Array(INVENTORY_SLOT_COUNT).fill(null) as InventorySlot[];
     }
 }
 
@@ -165,7 +342,7 @@ export function getInventoryLayout(canvas: HTMLCanvasElement): InventoryLayout {
 }
 
 export type InventoryHit =
-    | { type: 'inventory-slot'; index: number; weaponKey: string | null }
+    | { type: 'inventory-slot'; index: number; weaponKey: string | null; durability?: number }
     | { type: 'equipment'; slot: 'mainhand' | 'offhand' }
     | { type: 'close' }
     | null;
@@ -178,8 +355,9 @@ export function hitTestInventory(x: number, y: number, ps: PlayingStateShape, la
     if (inRect(x, y, equipmentOffhand)) return { type: 'equipment', slot: 'offhand' };
     for (const s of slots) {
         if (inRect(x, y, s)) {
-            const key = ps.inventorySlots?.[s.index] ?? null;
-            return { type: 'inventory-slot', index: s.index, weaponKey: key };
+            const slot = ps.inventorySlots?.[s.index] ?? null;
+            const key = getSlotKey(slot);
+            return { type: 'inventory-slot', index: s.index, weaponKey: key, durability: slot?.durability };
         }
     }
     return null;
@@ -205,6 +383,8 @@ export interface ChestLayout {
     back: { x: number; y: number; w: number; h: number };
 }
 
+const CHEST_ROWS = Math.ceil(CHEST_MAX_SLOTS / CHEST_COLS);
+
 export function getChestLayout(canvas: HTMLCanvasElement): ChestLayout {
     const W = canvas.width;
     const H = canvas.height;
@@ -223,9 +403,12 @@ export function getChestLayout(canvas: HTMLCanvasElement): ChestLayout {
         const y = gridTop + row * (CHEST_SLOT_SIZE + CHEST_GAP);
         weaponSlots.push({ x, y, w: CHEST_SLOT_SIZE, h: CHEST_SLOT_SIZE, index: i });
     }
-    const backW = 120;
-    const backH = 40;
-    const backY = H / 2 + 88;
+    const gridBottom = gridTop + CHEST_ROWS * (CHEST_SLOT_SIZE + CHEST_GAP) - CHEST_GAP;
+    const backMargin = Math.max(CHEST_GAP * 1.5, CHEST_SLOT_SIZE * 0.25);
+    const backW = CHEST_SLOT_SIZE * 2.2;
+    const backH = CHEST_SLOT_SIZE * 0.7;
+    const backTop = gridBottom + backMargin;
+    const backY = backTop + backH / 2;
 
     return {
         overlay,
@@ -239,12 +422,13 @@ export type ChestHit =
     | { type: 'back' }
     | null;
 
-export function hitTestChest(x: number, y: number, layout: ChestLayout, chestSlots: string[]): ChestHit {
+export function hitTestChest(x: number, y: number, layout: ChestLayout, chestSlots: WeaponInstance[]): ChestHit {
     if (inRect(x, y, layout.back)) return { type: 'back' };
     for (const s of layout.weaponSlots) {
         if (inRect(x, y, s)) {
-            const key = s.index < chestSlots.length ? chestSlots[s.index] : '';
-            return { type: 'weapon-slot', index: s.index, key: key ?? '' };
+            const instance = s.index < chestSlots.length ? chestSlots[s.index] : undefined;
+            const key = instance?.key ?? '';
+            return { type: 'weapon-slot', index: s.index, key };
         }
     }
     return null;
@@ -456,7 +640,7 @@ const TOOLTIP_DURABILITY_LABEL_HEIGHT = 12;
 export function renderWeaponTooltip(
     ctx: CanvasRenderingContext2D,
     canvas: HTMLCanvasElement,
-    hover: { weaponKey: string; x: number; y: number } | null,
+    hover: { weaponKey: string; x: number; y: number; durability?: number } | null,
     playingState?: PlayingStateShape
 ): void {
     if (!hover || !Weapons[hover.weaponKey]) return;
@@ -474,12 +658,15 @@ export function renderWeaponTooltip(
     if (titleW > boxW) boxW = Math.min(TOOLTIP_MAX_WIDTH, titleW);
 
     let durabilityPercent: number | null = null;
-    if (playingState && playingState.equippedMainhandDurability != null && hover.weaponKey === playingState.equippedMainhandKey) {
+    if (hover.durability != null) {
+        durabilityPercent = (100 * hover.durability) / MAX_WEAPON_DURABILITY;
+    } else if (playingState && playingState.equippedMainhandDurability != null && hover.weaponKey === playingState.equippedMainhandKey) {
         durabilityPercent = (100 * playingState.equippedMainhandDurability) / MAX_WEAPON_DURABILITY;
     } else if (playingState && playingState.equippedOffhandDurability != null && hover.weaponKey === playingState.equippedOffhandKey) {
         durabilityPercent = (100 * playingState.equippedOffhandDurability) / MAX_WEAPON_DURABILITY;
     }
-    const showDurabilityBar = durabilityPercent !== null;
+    const showDurabilityBar = true;
+    if (durabilityPercent === null) durabilityPercent = 100;
     const durabilitySectionH = showDurabilityBar
         ? TOOLTIP_DURABILITY_BAR_PAD + TOOLTIP_DURABILITY_LABEL_HEIGHT + 4 + TOOLTIP_DURABILITY_BAR_HEIGHT + TOOLTIP_DURABILITY_BAR_PAD
         : 0;
@@ -550,7 +737,7 @@ function roundRect(ctx: CanvasRenderingContext2D, x: number, y: number, w: numbe
     ctx.roundRect(x, y, w, h, r);
 }
 
-function drawSlot(ctx: CanvasRenderingContext2D, r: { x: number; y: number; w: number; h: number }, options: { filled?: boolean; symbol?: string; label?: string; highlight?: boolean; emptyLabel?: string; durabilityPercent?: number }) {
+function drawSlot(ctx: CanvasRenderingContext2D, r: { x: number; y: number; w: number; h: number }, options: { filled?: boolean; symbol?: string; weaponKey?: string; label?: string; highlight?: boolean; emptyLabel?: string }) {
     ctx.fillStyle = options.filled ? 'rgba(18, 12, 8, 0.88)' : 'rgba(20, 16, 8, 0.6)';
     if (options.highlight) ctx.fillStyle = 'rgba(201, 162, 39, 0.2)';
     roundRect(ctx, r.x, r.y, r.w, r.h, SLOT_RADIUS);
@@ -561,28 +748,28 @@ function drawSlot(ctx: CanvasRenderingContext2D, r: { x: number; y: number; w: n
     ctx.stroke();
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    const fontSize = r.w >= 56 ? 24 : 20;
-    if (options.symbol) {
-        ctx.fillStyle = '#e0c8a0';
-        ctx.font = `600 ${fontSize}px Cinzel, Georgia, serif`;
-        ctx.fillText(options.symbol, r.x + r.w / 2, r.y + r.h / 2);
-    } else if (options.emptyLabel) {
-        ctx.fillStyle = '#5a4a38';
-        ctx.font = `500 ${fontSize - 4}px Cinzel, Georgia, serif`;
-        ctx.fillText(options.emptyLabel, r.x + r.w / 2, r.y + r.h / 2);
+    const cx = r.x + r.w / 2;
+    const cy = r.y + r.h / 2;
+    const iconSize = Math.min(r.w, r.h) / 2 - 4;
+    if (options.weaponKey) {
+        drawWeaponIcon(ctx, cx, cy, iconSize, options.weaponKey);
+    } else {
+        const fontSize = r.w >= 56 ? 24 : 20;
+        if (options.symbol) {
+            ctx.fillStyle = '#e0c8a0';
+            ctx.font = `600 ${fontSize}px Cinzel, Georgia, serif`;
+            ctx.fillText(options.symbol, cx, cy);
+        } else if (options.emptyLabel) {
+            ctx.fillStyle = '#5a4a38';
+            ctx.font = `500 ${fontSize - 4}px Cinzel, Georgia, serif`;
+            ctx.fillText(options.emptyLabel, cx, cy);
+        }
     }
     let labelY = r.y + r.h + 10;
     if (options.label) {
         ctx.fillStyle = '#8a7048';
         ctx.font = '500 10px Cinzel, Georgia, serif';
         ctx.fillText(options.label, r.x + r.w / 2, labelY);
-        labelY += 14;
-    }
-    if (options.durabilityPercent !== undefined) {
-        const pct = Math.round(Math.max(0, Math.min(100, options.durabilityPercent)));
-        ctx.fillStyle = pct > 25 ? '#8a7048' : pct > 0 ? '#a06030' : '#6a3030';
-        ctx.font = '500 10px Cinzel, Georgia, serif';
-        ctx.fillText(pct + '%', r.x + r.w / 2, labelY);
     }
 }
 
@@ -659,30 +846,24 @@ export function renderInventory(
     ctx.font = '600 12px Cinzel, Georgia, serif';
     ctx.fillText(goldText, panel.x + 20, equipmentMainhand.y - 6);
 
-    // Main hand & Off hand as grid slots (symbol, label, durability %)
+    // Main hand & Off hand as grid slots (symbol, label)
     const mainKey = ps.equippedMainhandKey && ps.equippedMainhandKey !== 'none' ? ps.equippedMainhandKey : null;
     const offKey = ps.equippedOffhandKey && ps.equippedOffhandKey !== 'none' ? ps.equippedOffhandKey : null;
-    const mainDurabilityPct = mainKey && ps.equippedMainhandDurability != null
-        ? (100 * ps.equippedMainhandDurability) / MAX_WEAPON_DURABILITY
-        : undefined;
-    const offDurabilityPct = offKey && ps.equippedOffhandDurability != null
-        ? (100 * ps.equippedOffhandDurability) / MAX_WEAPON_DURABILITY
-        : undefined;
+    const dragValidMain = dragState.isDragging && dragState.weaponKey && canEquipWeaponInSlot(dragState.weaponKey, 'mainhand');
+    const dragValidOff = dragState.isDragging && dragState.weaponKey && canEquipWeaponInSlot(dragState.weaponKey, 'offhand');
     drawSlot(ctx, equipmentMainhand, {
         filled: true,
-        symbol: mainKey ? getWeaponSymbol(mainKey) : undefined,
+        weaponKey: mainKey ?? undefined,
         emptyLabel: mainKey ? undefined : '—',
         label: 'Main hand',
-        highlight: !!mainKey,
-        durabilityPercent: mainDurabilityPct
+        highlight: !!mainKey || !!dragValidMain
     });
     drawSlot(ctx, equipmentOffhand, {
         filled: true,
-        symbol: offKey ? getWeaponSymbol(offKey) : undefined,
+        weaponKey: offKey ?? undefined,
         emptyLabel: offKey ? undefined : '—',
         label: 'Off hand',
-        highlight: !!offKey,
-        durabilityPercent: offDurabilityPct
+        highlight: !!offKey || !!dragValidOff
     });
 
     // Inventory section label (slightly muted)
@@ -694,11 +875,15 @@ export function renderInventory(
     // Inventory grid
     const list = ps.inventorySlots ?? [];
     for (const s of slots) {
-        const key = list[s.index] ?? null;
-        drawSlot(ctx, s, { filled: true, symbol: key ? getWeaponSymbol(key) : undefined });
+        const slot = list[s.index] ?? null;
+        const key = getSlotKey(slot);
+        drawSlot(ctx, s, {
+            filled: !!key,
+            weaponKey: key || undefined
+        });
     }
 
-    // Drag ghost (rounded)
+    // Drag ghost (rounded) — miniature weapon icon
     if (dragState.isDragging && dragState.weaponKey) {
         const ghostSize = 44;
         const gx = dragState.pointerX - ghostSize / 2;
@@ -711,11 +896,7 @@ export function renderInventory(
         ctx.lineWidth = 2;
         roundRect(ctx, gx, gy, ghostSize, ghostSize, 8);
         ctx.stroke();
-        ctx.fillStyle = '#e0c8a0';
-        ctx.font = '600 22px Cinzel, Georgia, serif';
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
-        ctx.fillText(getWeaponSymbol(dragState.weaponKey), dragState.pointerX, dragState.pointerY);
+        drawWeaponIcon(ctx, dragState.pointerX, dragState.pointerY, ghostSize / 2 - 4, dragState.weaponKey);
         ctx.globalAlpha = 1;
     }
 
@@ -748,11 +929,12 @@ export function renderChest(
     ctx.fillText('Choose weapon', cx, layout.weaponSlots[0]?.y ? layout.weaponSlots[0].y - 50 : canvas.height / 2 - 80);
 
     for (const s of layout.weaponSlots) {
-        const key = s.index < chestSlots.length ? chestSlots[s.index] : undefined;
+        const instance = s.index < chestSlots.length ? chestSlots[s.index] : undefined;
+        const key = instance?.key;
         const isEquipped = key && (ps.equippedMainhandKey === key || ps.equippedOffhandKey === key);
         drawSlot(ctx, s, {
             filled: !!key,
-            symbol: key ? getWeaponSymbol(key) : undefined,
+            weaponKey: key ?? undefined,
             emptyLabel: key ? undefined : '—',
             highlight: !!isEquipped
         });
@@ -767,7 +949,8 @@ export function renderChest(
     roundRect(ctx, back.x, back.y, back.w, back.h, 6);
     ctx.stroke();
     ctx.fillStyle = '#a08060';
-    ctx.font = '600 14px Cinzel, Georgia, serif';
+    const backFontSize = Math.max(12, Math.round(back.h * 0.4));
+    ctx.font = `600 ${backFontSize}px Cinzel, Georgia, serif`;
     ctx.fillText('Back', back.x + back.w / 2, back.y + back.h / 2);
 
     if (dragState.isDragging && dragState.weaponKey) {
@@ -782,9 +965,7 @@ export function renderChest(
         ctx.lineWidth = 2;
         roundRect(ctx, gx, gy, ghostSize, ghostSize, 8);
         ctx.stroke();
-        ctx.fillStyle = '#e0c8a0';
-        ctx.font = '600 22px Cinzel, Georgia, serif';
-        ctx.fillText(getWeaponSymbol(dragState.weaponKey), dragState.pointerX, dragState.pointerY);
+        drawWeaponIcon(ctx, dragState.pointerX, dragState.pointerY, ghostSize / 2 - 4, dragState.weaponKey);
         ctx.globalAlpha = 1;
     }
 
@@ -870,13 +1051,15 @@ export function renderShop(
             roundRect(ctx, row.x, row.y, row.w, row.h, 4);
             ctx.stroke();
 
-            const sym = getWeaponSymbol(row.weaponKey);
+            const iconCx = row.x + 20;
+            const iconCy = row.y + row.h / 2;
+            drawWeaponIcon(ctx, iconCx, iconCy, 12, row.weaponKey);
             const name = getWeaponDisplayName(row.weaponKey);
             ctx.fillStyle = canAfford ? '#e0c8a0' : '#6a5a4a';
-            ctx.font = '600 16px Cinzel, Georgia, serif';
-            ctx.fillText(sym, row.x + 12, row.y + row.h / 2);
             ctx.font = '500 13px Cinzel, Georgia, serif';
-            ctx.fillText(name, row.x + 36, row.y + row.h / 2);
+            ctx.textAlign = 'left';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(name, row.x + 44, row.y + row.h / 2);
             ctx.textAlign = 'right';
             ctx.fillStyle = canAfford ? '#c9a227' : '#5a4a38';
             ctx.fillText(row.price + ' g', row.x + row.w - 10, row.y + row.h / 2);

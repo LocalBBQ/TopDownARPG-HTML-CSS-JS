@@ -2,6 +2,7 @@
  * Handles screen-driven input: canvas click (title/hub/death/pause/settings) and global keys (Tab, Escape, Space, Enter).
  */
 import { EventTypes } from './EventTypes.js';
+import { getRandomQuestsForBoard } from '../config/questConfig.js';
 import type { ScreenName } from './ScreenManager.js';
 import type { SettingsLike } from './ScreenManager.js';
 
@@ -12,7 +13,9 @@ export interface ScreenControllerContext {
         selectedStartLevel: number;
         setScreen(screen: ScreenName): void;
         getLevelSelectAt(x: number, y: number): number | null;
-        getHubBoardButtonAt(x: number, y: number): string | null;
+        getQuestSelectAt(x: number, y: number, questList: { level: number; difficultyId: string; difficulty?: { label?: string } }, levelNames: Record<number, string>): number | null;
+        getHubBoardButtonAt(x: number, y: number, questCount?: number): 'start' | 'reroll' | 'back' | null;
+        getHubSpawnPortalButtonAt(x: number, y: number): boolean;
         getPauseButtonAt(x: number, y: number): string | null;
         getHelpBackButtonAt(x: number, y: number): boolean;
         getSettingsItemAt(x: number, y: number, settings: SettingsLike): string | null;
@@ -26,11 +29,16 @@ export interface ScreenControllerContext {
         equippedMainhandKey: string;
         equippedOffhandKey: string;
         hubSelectedLevel: number;
+        hubSelectedQuestIndex: number;
+        questList: { level: number; difficultyId: string; difficulty?: { goldMultiplier?: number; label?: string } }[];
+        activeQuest: { level: number; difficulty?: { goldMultiplier?: number } } | null;
+        questGoldMultiplier: number;
         chestUseCooldown: number;
         boardUseCooldown: number;
         shopUseCooldown: number;
         screenBeforePause: 'playing' | 'hub' | null;
     };
+    config?: { levels?: Record<number, { name?: string }> };
     entities: { get(id: string): { getComponent(c: unknown): unknown } | undefined };
     settings: SettingsLike;
     setInventoryPanelVisible(visible: boolean): void;
@@ -59,18 +67,50 @@ export class ScreenController {
                 ctx.startGame();
             }
         } else if (sm.isScreen('hub') && ps.boardOpen) {
-            const levelAt = sm.getLevelSelectAt(x, y);
-            if (levelAt !== null) {
-                ps.hubSelectedLevel = levelAt;
+            const levelNames: Record<number, string> = ctx.config?.levels
+                ? Object.fromEntries(
+                    Object.entries(ctx.config.levels).map(([k, v]) => [
+                        Number(k),
+                        (v as { name?: string }).name ?? 'Level ' + k
+                    ])
+                ) : {};
+            const questIndex = ps.questList.length > 0 ? sm.getQuestSelectAt(x, y, ps.questList, levelNames) : null;
+            if (questIndex !== null) {
+                ps.hubSelectedQuestIndex = questIndex;
+                ps.hubSelectedLevel = ps.questList[questIndex].level;
             } else {
-                const btn = sm.getHubBoardButtonAt(x, y);
-                if (btn === 'start') {
+                const btn = sm.getHubBoardButtonAt(x, y, ps.questList.length);
+                if (btn === 'start' && ps.questList.length > 0) {
+                    const quest = ps.questList[ps.hubSelectedQuestIndex];
+                    if (quest) {
+                        ps.activeQuest = quest;
+                        ps.questGoldMultiplier = quest.difficulty?.goldMultiplier ?? 1;
+                        sm.selectedStartLevel = quest.level;
+                    }
                     ps.boardOpen = false;
-                    sm.selectedStartLevel = ps.hubSelectedLevel;
                     ctx.startGame();
+                } else if (btn === 'reroll') {
+                    const REROLL_COST = 200;
+                    const currentGold = ps.gold ?? 0;
+                    if (currentGold >= REROLL_COST) {
+                        ps.gold = currentGold - REROLL_COST;
+                        ps.questList = getRandomQuestsForBoard(3);
+                        ps.hubSelectedQuestIndex = 0;
+                        if (ps.questList.length > 0) ps.hubSelectedLevel = ps.questList[0].level;
+                    }
                 } else if (btn === 'back') {
                     ps.boardOpen = false;
                 }
+            }
+        } else if (sm.isScreen('hub') && !ps.boardOpen) {
+            if (sm.getHubSpawnPortalButtonAt(x, y) && ps.questList.length > 0) {
+                const quest = ps.questList[ps.hubSelectedQuestIndex];
+                if (quest) {
+                    ps.activeQuest = quest;
+                    ps.questGoldMultiplier = quest.difficulty?.goldMultiplier ?? 1;
+                    sm.selectedStartLevel = quest.level;
+                }
+                ctx.startGame();
             }
         } else if (sm.isScreen('death')) {
             if (sm.checkButtonClick(x, y, 'death')) {
@@ -150,10 +190,6 @@ export class ScreenController {
                     ctx.startGame();
                 } else if (sm.isScreen('death')) {
                     ctx.returnToSanctuaryOnDeath();
-                } else if (sm.isScreen('hub') && ps.boardOpen) {
-                    ps.boardOpen = false;
-                    sm.selectedStartLevel = ps.hubSelectedLevel;
-                    ctx.startGame();
                 }
             } else if (isEscapeKey) {
                 if (ps.inventoryOpen) {
