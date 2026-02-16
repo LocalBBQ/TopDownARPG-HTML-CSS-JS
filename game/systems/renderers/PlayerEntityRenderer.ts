@@ -27,7 +27,7 @@ export const PlayerEntityRenderer = {
         const inputSystem = systems ? systems.get('input') : null;
         const weapon = combat && combat.attackHandler ? combat.attackHandler.weapon : (combat && combat.playerAttack ? combat.playerAttack.weapon : null);
         const isCrossbow = weapon && weapon.isRanged === true;
-        const isMace = weapon && weapon.name === 'mace';
+        const isMace = weapon && weapon.name && String(weapon.name).toLowerCase().includes('mace');
 
         if (movement && movement.path.length > 0) {
             ctx.strokeStyle = 'rgba(255, 255, 0, 0.3)';
@@ -63,7 +63,7 @@ export const PlayerEntityRenderer = {
             ctx.beginPath();
             ctx.ellipse(screenX, screenY + (transform.height / 2 + 6) * camera.zoom, (transform.width * 0.65) * camera.zoom, (transform.height / 3.5) * camera.zoom, 0, 0, Math.PI * 2);
             ctx.fill();
-            if (showWeapon && !isCrossbow && !isMace) {
+            if (weapon && showWeapon && !isCrossbow && !isMace) {
                 PlayerCombatRenderer.drawSword(ctx, screenX, screenY, transform, movement, combat, camera, { part: 'handle' });
             }
             const isDodging = movement && movement.isDodging;
@@ -111,7 +111,7 @@ export const PlayerEntityRenderer = {
             ctx.stroke();
             ctx.restore();
             ctx.globalAlpha = 1.0;
-            if (showWeapon) {
+            if (weapon && showWeapon) {
                 if (isCrossbow) {
                     PlayerCombatRenderer.drawCrossbow(ctx, screenX, screenY, transform, movement, combat, camera);
                 } else if (isMace) {
@@ -221,7 +221,7 @@ export const PlayerEntityRenderer = {
         const stamina = entity.getComponent(Stamina);
         const weapon = combat && combat.attackHandler ? combat.attackHandler.weapon : (combat && combat.playerAttack ? combat.playerAttack.weapon : null);
         const isCrossbow = weapon && weapon.isRanged === true;
-        const isMace = weapon && weapon.name === 'mace';
+        const isMace = weapon && weapon.name && String(weapon.name).toLowerCase().includes('mace');
         const showWeapon = !healing || !healing.isHealing;
         const useCharacterSprites = !settings || settings.useCharacterSprites !== false;
         if (!useCharacterSprites && showWeapon) {

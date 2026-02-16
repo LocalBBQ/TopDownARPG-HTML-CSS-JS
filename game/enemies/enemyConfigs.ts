@@ -33,7 +33,8 @@ const goblinConfig = {
   knockback: { force: 320, decay: 0.88 },
   maxStamina: 30,
   staminaRegen: 8,
-  attackStaminaCost: 12
+  attackStaminaCost: 12,
+  goldDrop: 1
 };
 
 // Skeleton: ranged projectile, no melee
@@ -48,6 +49,7 @@ const skeletonConfig = {
   stunBuildupPerHit: 15,
   knockbackResist: 0,
   knockback: { force: 380, decay: 0.87 },
+  goldDrop: 1,
   projectile: {
     enabled: true,
     speed: 400,
@@ -71,6 +73,7 @@ const lesserDemonConfig = {
   stunBuildupPerHit: 18,
   knockbackResist: 0.1,
   knockback: { force: 360, decay: 0.87 },
+  goldDrop: 2,
   lunge: {
     enabled: true,
     chargeRange: 160,
@@ -95,6 +98,7 @@ const greaterDemonConfig = {
   stunBuildupPerHit: 22,
   knockbackResist: 0.2,
   knockback: { force: 460, decay: 0.86 },
+  goldDrop: 3,
   pillarFlame: {
     castDelay: 1.0,
     activeDuration: 1.0,
@@ -127,6 +131,7 @@ const goblinChieftainConfig = {
   stunBuildupPerHit: 24,
   knockbackResist: 0.5,
   knockback: { force: 400, decay: 0.86 },
+  goldDrop: 4,
   warCry: {
     enabled: true,
     radius: 180,
@@ -170,7 +175,8 @@ const banditConfig = {
   lunge: { enabled: false },
   maxStamina: 50,
   staminaRegen: 6,
-  attackStaminaCost: 25
+  attackStaminaCost: 25,
+  goldDrop: 2
 };
 
 // Bandit dagger: stats from Weapons.dagger
@@ -210,6 +216,7 @@ const banditDaggerConfig = {
   stunBuildupPerHit: 20,
   knockbackResist: 0,
   knockback: { force: 300, decay: 0.88 },
+  goldDrop: 1,
   lunge: {
     enabled: true,
     chargeRange: 155,

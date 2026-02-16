@@ -2,6 +2,7 @@
 // Animation (anticipation, easing, follow-through) applies to all melee weapon types:
 // sword, greatsword, mace, and spin attacks — all use getSweepProgress + getAnticipationPullBack.
 import { Utils } from '../utils/Utils.ts';
+import { isBlockable } from '../weapons/weaponBehavior.ts';
 
 export const PlayerCombatRenderer = {
     SWEEP_SPEED: 1,
@@ -41,6 +42,19 @@ export const PlayerCombatRenderer = {
         const camel = parts[0].toLowerCase() + parts.slice(1).map(p => p.charAt(0).toUpperCase() + p.slice(1).toLowerCase()).join('');
         const value = visual[camel] !== undefined && visual[camel] !== null ? visual[camel] : visual[key];
         return value !== undefined && value !== null ? value : this[key];
+    },
+
+    /** Resolve weapon metal color: if weapon has color use it (and darkened stroke), else return defaults. */
+    weaponMetalColors(combat: unknown, defaultFill: string, defaultStroke: string): { fill: string; stroke: string } {
+        const w = combat?.weapon;
+        const hex = w?.color;
+        if (!hex || typeof hex !== 'string') return { fill: defaultFill, stroke: defaultStroke };
+        const m = hex.match(/^#?([0-9a-fA-F]{2})([0-9a-fA-F]{2})([0-9a-fA-F]{2})$/);
+        if (!m) return { fill: hex, stroke: defaultStroke };
+        const r = Math.max(0, Math.floor(parseInt(m[1], 16) * 0.55));
+        const g = Math.max(0, Math.floor(parseInt(m[2], 16) * 0.55));
+        const b = Math.max(0, Math.floor(parseInt(m[3], 16) * 0.55));
+        return { fill: hex, stroke: `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}` };
     },
 
     /** Raw linear progress 0..1 over the attack duration. */
@@ -111,11 +125,12 @@ export const PlayerCombatRenderer = {
         const animKey = (combat && (combat.currentAttackAnimationKey || 'melee')) || 'melee';
         const lw = 3 / camera.zoom;
         const lwCombo = 4 / camera.zoom;
-        // Medieval palette: steel edge, shadow/vellum fill; combo = bronze/gold; telegraph = dimmer
-        let edgeColor = '#5a5a62';
-        let edgeHighlight = 'rgba(180, 175, 165, 0.9)';
+        // Weapon tier color for arc edge when present; else medieval steel palette
+        const weaponEdge = combat?.weapon?.color;
+        let edgeColor = (weaponEdge && typeof weaponEdge === 'string') ? weaponEdge : '#5a5a62';
+        let edgeHighlight = (weaponEdge && typeof weaponEdge === 'string') ? `rgba(${parseInt(weaponEdge.slice(1, 3), 16)}, ${parseInt(weaponEdge.slice(3, 5), 16)}, ${parseInt(weaponEdge.slice(5, 7), 16)}, 0.9)` : 'rgba(180, 175, 165, 0.9)';
         let fillStyle = isTelegraph ? 'rgba(50, 45, 40, 0.18)' : 'rgba(40, 35, 30, 0.22)';
-        if (!isTelegraph && useComboColors) {
+        if (!isTelegraph && useComboColors && !weaponEdge) {
             if (combat.currentAttackIsDashAttack) {
                 edgeColor = '#c99830';
                 edgeHighlight = 'rgba(255, 220, 100, 0.9)';
@@ -269,11 +284,20 @@ export const PlayerCombatRenderer = {
         const facingAngle = movement.facingAngle;
         let gripX = screenX + Math.cos(facingAngle + Math.PI / 2) * gripOrbitRadius;
         let gripY = screenY + Math.sin(facingAngle + Math.PI / 2) * gripOrbitRadius;
+        let swordAngle = facingAngle;
+
+        if (combat.isBlocking && !isBlockable(combat.offhandWeapon)) {
+            const blockGripDist = (transform.width / 2 + 10) * camera.zoom;
+            gripX = screenX + Math.cos(facingAngle) * blockGripDist;
+            gripY = screenY + Math.sin(facingAngle) * blockGripDist;
+            swordAngle = facingAngle + Math.PI / 3;
+            return { gripX, gripY, swordAngle, facingAngle, gripOrbitRadius };
+        }
+
         const animKey = combat.currentAttackAnimationKey || 'melee';
         const isMeleeSpinWithPlayer = animKey === 'meleeSpin';
         const isChop = animKey === 'meleeChop';
         const isThrust = combat.currentAttackIsThrust === true && !isChop;
-        let swordAngle = facingAngle;
         if (combat.isAttacking && combat.attackDuration > 0 && !isMeleeSpinWithPlayer) {
             if (isChop) {
                 // Overhead chop: blade sweeps from raised (-90°) to forward (0°); pull-back during anticipation
@@ -316,7 +340,7 @@ export const PlayerCombatRenderer = {
 
     /**
      * Draw the one-handed sword/dagger shape at a given grip and angle.
-     * Shared by player (dagger/sword-and-shield) and goblin. options.style === 'goblin' draws a Goblin Shiv (jagged, rusty).
+     * Shared by player (e.g. dagger, sword; off-hand shield when equipped) and goblin. options.style === 'goblin' draws a Goblin Shiv (jagged, rusty).
      * part: 'handle' = pommel + grip only; 'blade' = guard + blade only; 'all' = full (default).
      */
     drawDaggerAt(ctx, gripX, gripY, angle, baseLength, camera, options = {}) {
@@ -325,6 +349,10 @@ export const PlayerCombatRenderer = {
             return;
         }
         const part = options.part || 'all';
+        const weaponColor = options.weaponColor;
+        const bladeFill = (weaponColor && typeof weaponColor === 'string') ? weaponColor : '#a8a8b0';
+        const m = weaponColor && typeof weaponColor === 'string' && weaponColor.match(/^#?([0-9a-fA-F]{2})([0-9a-fA-F]{2})([0-9a-fA-F]{2})$/);
+        const bladeStroke = m ? `#${Math.max(0, Math.floor(parseInt(m[1], 16) * 0.55)).toString(16).padStart(2, '0')}${Math.max(0, Math.floor(parseInt(m[2], 16) * 0.55)).toString(16).padStart(2, '0')}${Math.max(0, Math.floor(parseInt(m[3], 16) * 0.55)).toString(16).padStart(2, '0')}` : '#3d3d42';
         const swordLength = baseLength * camera.zoom;
         const bladeWidthAtGuard = 7;
         const lw = 1;
@@ -361,8 +389,8 @@ export const PlayerCombatRenderer = {
             const hw = bladeWidthAtGuard / 2;
             const tipWidth = hw * 0.65;
             const tipLength = tipWidth * 1.8;
-            ctx.fillStyle = '#a8a8b0';
-            ctx.strokeStyle = '#3d3d42';
+            ctx.fillStyle = bladeFill;
+            ctx.strokeStyle = bladeStroke;
             ctx.beginPath();
             ctx.moveTo(0, -hw);
             ctx.lineTo(0, hw);
@@ -469,7 +497,7 @@ export const PlayerCombatRenderer = {
         const baseLength = (combat.weapon && combat.weapon.weaponLength != null) ? combat.weapon.weaponLength : (combat.attackRange ?? defaultRange) * 0.48;
 
         if (!twoHanded) {
-            this.drawDaggerAt(ctx, gripX, gripY, swordAngle, baseLength, camera, { part });
+            this.drawDaggerAt(ctx, gripX, gripY, swordAngle, baseLength, camera, { part, weaponColor: combat.weapon?.color });
             return;
         }
 
@@ -484,6 +512,7 @@ export const PlayerCombatRenderer = {
         ctx.lineWidth = lw;
         const gripScale = 1.35;
 
+        const bladeMetal = this.weaponMetalColors(combat, '#a8a8b0', '#3d3d42');
         if (part === 'handle' || part === 'all') {
             const pommelX = -16 * gripScale;
             const pommelR = 3 * 1.2;
@@ -511,8 +540,8 @@ export const PlayerCombatRenderer = {
             const hw = bladeWidthAtGuard / 2;
             const tipWidth = hw * 0.65;
             const tipLength = tipWidth * 1.8;
-            ctx.fillStyle = '#a8a8b0';
-            ctx.strokeStyle = '#3d3d42';
+            ctx.fillStyle = bladeMetal.fill;
+            ctx.strokeStyle = bladeMetal.stroke;
             ctx.beginPath();
             ctx.moveTo(0, -hw);
             ctx.lineTo(0, hw);
@@ -540,11 +569,17 @@ export const PlayerCombatRenderer = {
         const baseLength = (combat.weapon && combat.weapon.weaponLength != null) ? combat.weapon.weaponLength : (combat.attackRange ?? defaultRange) * 0.5;
         const maceLength = baseLength * zoom * 1.5;
         const sideOffset = (transform.width / 2 + 4) * zoom;
-        const gripX = screenX + Math.cos(movement.facingAngle + Math.PI / 2) * sideOffset;
-        const gripY = screenY + Math.sin(movement.facingAngle + Math.PI / 2) * sideOffset;
+        let gripX = screenX + Math.cos(movement.facingAngle + Math.PI / 2) * sideOffset;
+        let gripY = screenY + Math.sin(movement.facingAngle + Math.PI / 2) * sideOffset;
         const animKey = combat.currentAttackAnimationKey || 'melee';
         const isMeleeSpinWithPlayer = animKey === 'meleeSpin';
         let maceAngle = movement.facingAngle;
+        if (combat.isBlocking && !isBlockable(combat.offhandWeapon)) {
+            const blockGripDist = (transform.width / 2 + 10) * zoom;
+            gripX = screenX + Math.cos(movement.facingAngle) * blockGripDist;
+            gripY = screenY + Math.sin(movement.facingAngle) * blockGripDist;
+            maceAngle = movement.facingAngle + Math.PI / 3;
+        } else {
         const useOverrideSweep = options && typeof options.sweepProgress === 'number';
         if (combat.isAttacking && (combat.attackDuration > 0 || useOverrideSweep) && !isMeleeSpinWithPlayer) {
             const weaponSweep = useOverrideSweep ? options.sweepProgress! : this.getWeaponSweepProgress(combat);
@@ -565,12 +600,14 @@ export const PlayerCombatRenderer = {
         if (isMeleeSpinWithPlayer) {
             maceAngle = movement.facingAngle + Math.PI / 2;
         }
+        }
         ctx.save();
         ctx.translate(gripX, gripY);
         ctx.rotate(maceAngle);
         const lw = 1;
+        const headMetal = this.weaponMetalColors(combat, '#5a5a62', '#3a3a42');
 
-        // Pommel / end cap (behind grip, -X) — thickness constant when zooming
+        // Pommel / end cap (behind grip) — hilt, default metal
         const pommelX = -16 * zoom;
         const pommelR = 4;
         ctx.fillStyle = '#4a4a52';
@@ -581,7 +618,7 @@ export const PlayerCombatRenderer = {
         ctx.fill();
         ctx.stroke();
 
-        // Grip (leather wrap)
+        // Grip (leather wrap) — hilt
         const gripLen = 18 * zoom;
         const gripW = 5;
         ctx.fillStyle = '#6b4423';
@@ -589,7 +626,7 @@ export const PlayerCombatRenderer = {
         ctx.fillRect(pommelX, -gripW / 2, gripLen, gripW);
         ctx.strokeRect(pommelX, -gripW / 2, gripLen, gripW);
 
-        // Shaft (metal), from grip to head
+        // Shaft (metal), from grip to head — hilt, default metal
         const shaftStart = pommelX + gripLen;
         const shaftLen = maceLength * 0.5;
         const shaftW = 4;
@@ -598,13 +635,13 @@ export const PlayerCombatRenderer = {
         ctx.fillRect(shaftStart, -shaftW / 2, shaftLen, shaftW);
         ctx.strokeRect(shaftStart, -shaftW / 2, shaftLen, shaftW);
 
-        // Mace head: flanged metal ball at end of shaft
+        // Mace head: flanged metal ball — tier color
         const headCenterX = shaftStart + shaftLen;
         const headR = 12 * zoom;
         const flangeCount = 6;
         const flangeOut = 3;
-        ctx.fillStyle = '#4a4a52';
-        ctx.strokeStyle = '#2a2a32';
+        ctx.fillStyle = headMetal.fill;
+        ctx.strokeStyle = headMetal.stroke;
         ctx.lineWidth = lw;
         ctx.beginPath();
         for (let i = 0; i <= flangeCount; i++) {
@@ -617,8 +654,8 @@ export const PlayerCombatRenderer = {
         ctx.closePath();
         ctx.fill();
         ctx.stroke();
-        ctx.fillStyle = '#5a5a62';
-        ctx.strokeStyle = '#3a3a42';
+        ctx.fillStyle = headMetal.fill;
+        ctx.strokeStyle = headMetal.stroke;
         ctx.beginPath();
         ctx.arc(headCenterX, 0, headR, 0, Math.PI * 2);
         ctx.fill();
@@ -637,11 +674,18 @@ export const PlayerCombatRenderer = {
         const zoom = camera.zoom;
         const lw = 1;
         const dist = (transform.width / 2 + 12) * zoom;
-        const cx = screenX + Math.cos(movement.facingAngle) * dist;
-        const cy = screenY + Math.sin(movement.facingAngle) * dist;
+        let cx = screenX + Math.cos(movement.facingAngle) * dist;
+        let cy = screenY + Math.sin(movement.facingAngle) * dist;
+        let drawAngle = movement.facingAngle;
+        if (combat.isBlocking && !isBlockable(combat.offhandWeapon)) {
+            const blockDist = (transform.width / 2 + 16) * zoom;
+            cx = screenX + Math.cos(movement.facingAngle) * blockDist;
+            cy = screenY + Math.sin(movement.facingAngle) * blockDist;
+            drawAngle = movement.facingAngle + Math.PI / 4;
+        }
         ctx.save();
         ctx.translate(cx, cy);
-        ctx.rotate(movement.facingAngle);
+        ctx.rotate(drawAngle);
 
         const stockLen = 28 * zoom;
         const limbHalf = 22 * zoom;
@@ -667,9 +711,10 @@ export const PlayerCombatRenderer = {
         ctx.quadraticCurveTo(stockLen * 0.55, limbHalf, stockLen * 0.5, limbHalf * 0.6);
         ctx.stroke();
 
-        // Stirrup (metal at front) — thickness constant when zooming
-        ctx.fillStyle = '#5a5a62';
-        ctx.strokeStyle = '#3a3a42';
+        // Stirrup and trigger (metal) — use weapon tier color when present
+        const metal = this.weaponMetalColors(combat, '#5a5a62', '#3a3a42');
+        ctx.fillStyle = metal.fill;
+        ctx.strokeStyle = metal.stroke;
         ctx.beginPath();
         ctx.arc(stockLen * 0.5, 0, 4, 0, Math.PI * 2);
         ctx.fill();
@@ -684,9 +729,9 @@ export const PlayerCombatRenderer = {
         ctx.stroke();
 
         // Trigger area (metal) — thickness constant when zooming
-        ctx.fillStyle = '#4a4a52';
+        ctx.fillStyle = metal.fill;
         ctx.fillRect(-8 * zoom, -stockW / 2 - 2, 6, stockW + 4);
-        ctx.strokeStyle = '#3a3a42';
+        ctx.strokeStyle = metal.stroke;
         ctx.strokeRect(-8 * zoom, -stockW / 2 - 2, 6, stockW + 4);
 
         ctx.restore();
@@ -694,6 +739,7 @@ export const PlayerCombatRenderer = {
 
     drawShield(ctx, screenX, screenY, transform, movement, combat, camera) {
         if (!movement || !combat || !transform) return;
+        if (!isBlockable(combat.offhandWeapon)) return;
         if (combat.weapon && combat.weapon.twoHanded) return;
         const shieldDist = (transform.width / 2 + 8) * camera.zoom;
         const shieldW = 40 * camera.zoom;

@@ -76,8 +76,12 @@ export const EnemyWeapons: Record<string, EnemyWeaponLike> & {
 
     resolveWeapon(weaponId: string): EnemyWeaponLike | null {
         if (!weaponId) return null;
-        const w = (Weapons as Record<string, EnemyWeaponLike>)[weaponId];
+        const weapons = Weapons as Record<string, EnemyWeaponLike>;
+        const w = weapons[weaponId];
         if (w) return w;
+        // Player registry uses tiered keys (e.g. mace_rusty); enemies use base id and get rusty tier
+        if (weaponId === 'mace') return weapons['mace_rusty'] ?? null;
+        if (weaponId === 'dagger') return weapons['dagger_rusty'] ?? null;
         const e = EnemyWeapons[weaponId];
         if (e && typeof e === 'object') return e;
         return null;
@@ -85,6 +89,6 @@ export const EnemyWeapons: Record<string, EnemyWeaponLike> & {
 
     getGoblinWeapon(): EnemyWeaponLike | null {
         if (EnemyWeapons.goblinDagger) return EnemyWeapons.goblinDagger;
-        return (Weapons as Record<string, EnemyWeaponLike>).dagger ?? null;
+        return (Weapons as Record<string, EnemyWeaponLike>)['dagger_rusty'] ?? null;
     }
 };

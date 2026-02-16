@@ -4,6 +4,7 @@ import { ObstacleLayerRenderer } from './renderers/ObstacleLayerRenderer.ts';
 import { PortalRenderer } from './renderers/PortalRenderer.ts';
 import { BoardRenderer } from './renderers/BoardRenderer.ts';
 import { ChestRenderer } from './renderers/ChestRenderer.ts';
+import { ShopkeeperRenderer } from './renderers/ShopkeeperRenderer.ts';
 import { EntityLayerRenderer } from './renderers/EntityLayerRenderer.ts';
 import { MinimapRenderer } from './renderers/MinimapRenderer.ts';
 import { createRenderContext } from './renderers/RenderContext.ts';
@@ -19,6 +20,7 @@ export class RenderSystem {
     portalRenderer: PortalRenderer;
     boardRenderer: BoardRenderer;
     chestRenderer: ChestRenderer;
+    shopkeeperRenderer: ShopkeeperRenderer;
     entityLayer: EntityLayerRenderer;
     minimapRenderer: MinimapRenderer;
 
@@ -32,6 +34,7 @@ export class RenderSystem {
         this.portalRenderer = new PortalRenderer();
         this.boardRenderer = new BoardRenderer();
         this.chestRenderer = new ChestRenderer();
+        this.shopkeeperRenderer = new ShopkeeperRenderer();
         this.entityLayer = new EntityLayerRenderer();
         this.minimapRenderer = new MinimapRenderer();
     }
@@ -81,6 +84,10 @@ export class RenderSystem {
 
     renderChestInteractionPrompt(chest, camera, showPrompt) {
         this.chestRenderer.render(this._getContext(camera), { chest, playerNearChest: showPrompt });
+    }
+
+    renderShopkeeper(shop, camera, playerNearShop) {
+        this.shopkeeperRenderer.render(this._getContext(camera), { shop, playerNearShop });
     }
 
     /** Draw entities and depth-sort obstacles (trees, etc.) interleaved by Y so layering respects player and enemies. */

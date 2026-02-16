@@ -20,6 +20,11 @@ export interface PlayingStateControllerContext {
         chestOpen: boolean;
         chestUseCooldown: number;
         playerNearChest: boolean;
+        shop: { x: number; y: number; width: number; height: number } | null;
+        shopOpen: boolean;
+        shopUseCooldown: number;
+        shopScrollOffset: number;
+        playerNearShop: boolean;
         crossbowReloadProgress: number;
         crossbowReloadInProgress: boolean;
         crossbowPerfectReloadNext: boolean;
@@ -36,6 +41,7 @@ export interface PlayingStateControllerContext {
     setCurrentWorldSize(width: number, height: number): void;
     startGame(): void;
     handleCameraZoom(): void;
+    clearPlayerInputsForMenu(): void;
 }
 
 export class PlayingStateController {
@@ -131,7 +137,10 @@ export class PlayingStateController {
         if (g.playingState.chestUseCooldown > 0) {
             g.playingState.chestUseCooldown = Math.max(0, g.playingState.chestUseCooldown - deltaTime);
         }
-        if (g.playingState.boardOpen || g.playingState.chestOpen) return;
+        if (g.playingState.shopUseCooldown > 0) {
+            g.playingState.shopUseCooldown = Math.max(0, g.playingState.shopUseCooldown - deltaTime);
+        }
+        if (g.playingState.boardOpen || g.playingState.chestOpen || g.playingState.shopOpen) return;
 
         g.handleCameraZoom();
 
@@ -178,6 +187,7 @@ export class PlayingStateController {
                 if (overlap && g.playingState.boardUseCooldown <= 0 && inputSystem && inputSystem.isKeyPressed('e')) {
                     g.playingState.boardOpen = true;
                     g.playingState.boardUseCooldown = 0.4;
+                    g.clearPlayerInputsForMenu();
                 }
             } else {
                 g.playingState.playerNearBoard = false;
@@ -196,12 +206,33 @@ export class PlayingStateController {
                 if (overlap && g.playingState.chestUseCooldown <= 0 && inputSystem && inputSystem.isKeyPressed('e')) {
                     g.playingState.chestOpen = true;
                     g.playingState.chestUseCooldown = 0.4;
+                    g.clearPlayerInputsForMenu();
                 }
             } else {
                 g.playingState.playerNearChest = false;
             }
         } else {
             g.playingState.playerNearChest = false;
+        }
+        if (player && g.playingState.shop) {
+            const transform = player.getComponent(Transform);
+            if (transform) {
+                const overlap = Utils.rectCollision(
+                    transform.left, transform.top, transform.width, transform.height,
+                    g.playingState.shop.x, g.playingState.shop.y, g.playingState.shop.width, g.playingState.shop.height
+                );
+                g.playingState.playerNearShop = overlap;
+                if (overlap && g.playingState.shopUseCooldown <= 0 && inputSystem && inputSystem.isKeyPressed('e')) {
+                    g.playingState.shopOpen = true;
+                    g.playingState.shopUseCooldown = 0.4;
+                    g.playingState.shopScrollOffset = 0;
+                    g.clearPlayerInputsForMenu();
+                }
+            } else {
+                g.playingState.playerNearShop = false;
+            }
+        } else {
+            g.playingState.playerNearShop = false;
         }
     }
 }

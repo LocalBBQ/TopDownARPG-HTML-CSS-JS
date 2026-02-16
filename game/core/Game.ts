@@ -34,14 +34,39 @@ import { EventTypes } from './EventTypes.ts';
 import { Movement } from '../components/Movement.ts';
 import { Weapons } from '../weapons/WeaponsRegistry.ts';
 import type { GameRef, GameConfigShape } from '../types/index.js';
-import { PlayingState } from '../state/PlayingState.js';
+import { PlayingState, MAX_WEAPON_DURABILITY } from '../state/PlayingState.js';
 import { createPlayer as createPlayerEntity } from './PlayerFactory.js';
 import { ScreenController } from './ScreenController.js';
 import { PlayingStateController } from './PlayingStateController.js';
 import { HUDController } from '../ui/HUDController.js';
 import { AI } from '../components/AI.js';
+import {
+    renderInventory,
+    renderChest,
+    renderShop,
+    getInventoryLayout,
+    getChestLayout,
+    getShopLayout,
+    hitTestInventory,
+    hitTestChest,
+    hitTestShop,
+    createDragState,
+    ensureInventoryInitialized,
+    type DragState
+} from '../ui/InventoryChestCanvas.js';
+
+/** When the pointer hovers a weapon slot in chest or inventory (canvas UI), used to draw tooltip. */
+export interface WeaponTooltipHover {
+    weaponKey: string;
+    x: number;
+    y: number;
+}
 
 class Game {
+    inventoryDragState!: DragState;
+    /** Set when pointer is over a weapon slot (chest or inventory); cleared when moving away or closing. */
+    weaponTooltipHover: WeaponTooltipHover | null = null;
+
     constructor() {
         try {
             this.canvas = document.getElementById('gameCanvas');
@@ -58,8 +83,8 @@ class Game {
             this.systems = null;
             this.config = GameConfig;
 
-            const defaultWeapon = (this.config.player && this.config.player.defaultWeapon) ? this.config.player.defaultWeapon : 'swordAndShield';
-            this.playingState = new PlayingState(defaultWeapon);
+            this.playingState = new PlayingState('none', 'none');
+            this.inventoryDragState = createDragState();
 
             // Game-wide settings (toggled from pause/settings screen)
             this.settings = {
@@ -115,10 +140,19 @@ class Game {
         }
     }
 
+    /** Clear key/mouse state and cancel charge/movement so opening a menu doesn't cause accidental attack/move on close. */
+    clearPlayerInputsForMenu(): void {
+        const inputSystem = this.systems?.get('input') as { clearAllKeys?: () => void } | undefined;
+        if (inputSystem?.clearAllKeys) inputSystem.clearAllKeys();
+        this.playerInputController?.cancelMenuInputs();
+    }
+
     get inventoryOpen() { return this.playingState.inventoryOpen; }
     set inventoryOpen(v) { this.playingState.inventoryOpen = v; }
     get chestOpen() { return this.playingState.chestOpen; }
     set chestOpen(v) { this.playingState.chestOpen = v; }
+    get shopOpen() { return this.playingState.shopOpen; }
+    set shopOpen(v) { this.playingState.shopOpen = v; }
     get boardOpen() { return this.playingState.boardOpen; }
     set boardOpen(v) { this.playingState.boardOpen = v; }
     get playerInGatherableRange() { return this.playingState.playerInGatherableRange; }
@@ -138,8 +172,8 @@ class Game {
         this.canvas.width = window.innerWidth;
         this.canvas.height = window.innerHeight;
         
-        // Initialize screen manager after canvas is set up
-        this.screenManager = new ScreenManager(this.canvas, this.ctx);
+        // Initialize screen manager after canvas is set up (callback clears inputs when entering menu screens)
+        this.screenManager = new ScreenManager(this.canvas, this.ctx, () => this.clearPlayerInputsForMenu());
     }
 
     async initializeSystems() {
@@ -517,7 +551,8 @@ class Game {
         const spriteManager = this.systems.get('sprites');
         const player = createPlayerEntity(overrideStart, {
             spriteManager,
-            equippedWeaponKey: this.playingState.equippedWeaponKey,
+            equippedMainhandKey: this.playingState.equippedMainhandKey,
+            equippedOffhandKey: this.playingState.equippedOffhandKey,
             playerConfig: this.config.player
         });
         if (!this.playerInputController) {
@@ -538,12 +573,23 @@ class Game {
         
         // Handle screen button clicks (scale to canvas buffer coords for correct hit-testing)
         this.canvas.addEventListener('click', (e) => {
-            const rect = this.canvas.getBoundingClientRect();
-            const scaleX = this.canvas.width / rect.width;
-            const scaleY = this.canvas.height / rect.height;
-            const x = (e.clientX - rect.left) * scaleX;
-            const y = (e.clientY - rect.top) * scaleY;
+            const { x, y } = this.getCanvasCoords(e);
+            if (this.handleInventoryChestClick(x, y)) return;
             this.screenController.handleCanvasClick(x, y);
+        });
+
+        // Pointer events for inventory/chest drag-and-drop
+        this.canvas.addEventListener('mousedown', (e) => {
+            const { x, y } = this.getCanvasCoords(e);
+            if (this.handleInventoryChestPointerDown(x, y)) e.preventDefault();
+        });
+        this.canvas.addEventListener('mousemove', (e) => {
+            const { x, y } = this.getCanvasCoords(e);
+            this.handleInventoryChestPointerMove(x, y);
+        });
+        this.canvas.addEventListener('mouseup', (e) => {
+            const { x, y } = this.getCanvasCoords(e);
+            if (this.handleInventoryChestPointerUp(x, y)) e.preventDefault();
         });
     }
 
@@ -573,8 +619,16 @@ class Game {
             });
         }
 
-        this.systems.eventBus.on(EventTypes.PLAYER_KILLED_ENEMY, () => {
+        this.systems.eventBus.on(EventTypes.PLAYER_KILLED_ENEMY, (data: { goldDrop?: number }) => {
             this.playingState.killsThisLife++;
+            this.playingState.gold += data?.goldDrop ?? 0;
+        });
+
+        this.systems.eventBus.on(EventTypes.PLAYER_HIT_ENEMY, () => {
+            const ps = this.playingState;
+            if (ps.equippedMainhandDurability > 0) {
+                ps.equippedMainhandDurability = Math.max(0, ps.equippedMainhandDurability - 1);
+            }
         });
     }
 
@@ -705,7 +759,12 @@ class Game {
             this.playingState.chest = hubLevel.weaponChest ? { ...hubLevel.weaponChest } : null;
             this.playingState.chestOpen = false;
             this.playingState.chestUseCooldown = 0;
+            this.weaponTooltipHover = null;
             this.playingState.playerNearChest = false;
+            this.playingState.shop = hubLevel.shopkeeper ? { ...hubLevel.shopkeeper } : null;
+            this.playingState.shopOpen = false;
+            this.playingState.shopUseCooldown = 0;
+            this.playingState.playerNearShop = false;
             this.playingState.hubSelectedLevel = 1;
             this.screenManager.setScreen('hub');
         } else {
@@ -749,6 +808,7 @@ class Game {
         }
         if (!visible) {
             this.playingState.inventoryOpen = false;
+            this.weaponTooltipHover = null;
             this.hudController.setInventoryPanelVisible(false);
         }
     }
@@ -773,6 +833,19 @@ class Game {
 
     update(deltaTime: number) {
         if (this.screenManager.currentScreen === 'hub') {
+            if (this.playingState.shopOpen) {
+                const inputSystem = this.systems.get('input') as { getWheelDelta?(): number } | undefined;
+                const wheelDelta = inputSystem?.getWheelDelta?.() ?? 0;
+                if (wheelDelta !== 0) {
+                    const layout = getShopLayout(
+                        this.canvas,
+                        this.playingState.shopScrollOffset,
+                        this.playingState.shopExpandedWeapons
+                    );
+                    const newOffset = this.playingState.shopScrollOffset + wheelDelta * 0.4;
+                    this.playingState.shopScrollOffset = Math.max(0, Math.min(newOffset, layout.maxScrollOffset));
+                }
+            }
             this.playingStateController.updateHub(deltaTime);
             this.hudController.update(this.entities.get('player'));
             return;
@@ -864,6 +937,302 @@ class Game {
         this.hudController.refreshInventoryPanel();
     }
 
+    /** Handle Back/Close on inventory or chest canvas UI. Returns true if click was consumed. */
+    handleInventoryChestClick(x: number, y: number): boolean {
+        if (this.playingState.shopOpen) {
+            const layout = getShopLayout(
+                this.canvas,
+                this.playingState.shopScrollOffset,
+                this.playingState.shopExpandedWeapons
+            );
+            const hit = hitTestShop(x, y, layout);
+            if (hit?.type === 'back') {
+                this.playingState.shopOpen = false;
+                this.playingState.shopUseCooldown = 0.4;
+                return true;
+            }
+            if (hit?.type === 'dropdown') {
+                const exp = this.playingState.shopExpandedWeapons ?? {};
+                const wasExpanded = exp[hit.weaponKey] !== false;
+                this.playingState.shopExpandedWeapons = { ...exp, [hit.weaponKey]: !wasExpanded };
+                return true;
+            }
+            if (hit?.type === 'item') {
+                const gold = this.playingState.gold ?? 0;
+                if (gold >= hit.price) {
+                    ensureInventoryInitialized(this.playingState);
+                    const slots = this.playingState.inventorySlots;
+                    const idx = slots.findIndex((s) => s == null);
+                    if (idx >= 0) {
+                        this.playingState.gold = gold - hit.price;
+                        this.playingState.inventorySlots[idx] = hit.weaponKey;
+                        this.refreshInventoryPanel();
+                    }
+                }
+            }
+            return true;
+        }
+        if (this.playingState.inventoryOpen) {
+            const layout = getInventoryLayout(this.canvas);
+            const hit = hitTestInventory(x, y, this.playingState, layout);
+            if (hit?.type === 'close') {
+                this.playingState.inventoryOpen = false;
+                this.weaponTooltipHover = null;
+                this.hudController.setInventoryPanelVisible(false);
+                return true;
+            }
+        }
+        if (this.playingState.chestOpen) {
+            const invLayout = getInventoryLayout(this.canvas);
+            const invHit = hitTestInventory(x, y, this.playingState, invLayout);
+            if (invHit?.type === 'close') {
+                this.playingState.chestOpen = false;
+                this.playingState.chestUseCooldown = 0;
+                this.weaponTooltipHover = null;
+                return true;
+            }
+            const layout = getChestLayout(this.canvas);
+            const hit = hitTestChest(x, y, layout, this.playingState.chestSlots ?? []);
+            if (hit?.type === 'back') {
+                this.playingState.chestOpen = false;
+                this.playingState.chestUseCooldown = 0;
+                this.weaponTooltipHover = null;
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private applyWeaponToSlot(weaponKey: string, slot: 'mainhand' | 'offhand'): void {
+        const ps = this.playingState;
+        const weapon = Weapons[weaponKey] as { twoHanded?: boolean; offhandOnly?: boolean } | undefined;
+        if (slot === 'mainhand') {
+            if (weapon?.offhandOnly) return;
+            ps.equippedMainhandKey = weaponKey;
+            ps.equippedMainhandDurability = MAX_WEAPON_DURABILITY;
+            if (weapon?.twoHanded) ps.equippedOffhandKey = 'none';
+        } else {
+            ps.equippedOffhandKey = weaponKey;
+            ps.equippedOffhandDurability = MAX_WEAPON_DURABILITY;
+        }
+        const player = this.entities.get('player');
+        if (player) {
+            const combat = player.getComponent(Combat) as Combat | null;
+            if (combat && combat.isPlayer) {
+                combat.stopBlocking();
+                const mainhand = ps.equippedMainhandKey && ps.equippedMainhandKey !== 'none'
+                    ? (Weapons[ps.equippedMainhandKey] ?? null)
+                    : null;
+                const offhand = ps.equippedOffhandKey && ps.equippedOffhandKey !== 'none'
+                    ? (Weapons[ps.equippedOffhandKey] ?? null)
+                    : null;
+                (combat as Combat & { setWeapons(m: unknown, o?: unknown): void }).setWeapons(mainhand, offhand);
+            }
+        }
+    }
+
+    private getCanvasCoords(e: { clientX: number; clientY: number }): { x: number; y: number } {
+        const rect = this.canvas.getBoundingClientRect();
+        const scaleX = this.canvas.width / rect.width;
+        const scaleY = this.canvas.height / rect.height;
+        return {
+            x: (e.clientX - rect.left) * scaleX,
+            y: (e.clientY - rect.top) * scaleY
+        };
+    }
+
+    handleInventoryChestPointerDown(x: number, y: number): boolean {
+        if (!this.playingState.inventoryOpen && !this.playingState.chestOpen && !this.playingState.shopOpen) return false;
+        ensureInventoryInitialized(this.playingState);
+        const ds = this.inventoryDragState;
+        // Character sheet (inventory layout) is used for both Tab and chest open
+        const invLayout = getInventoryLayout(this.canvas);
+        const invHit = hitTestInventory(x, y, this.playingState, invLayout);
+        if (invHit?.type === 'inventory-slot' && invHit.weaponKey) {
+            ds.isDragging = true;
+            ds.weaponKey = invHit.weaponKey;
+            ds.sourceSlotIndex = invHit.index;
+            ds.sourceContext = 'inventory';
+            ds.pointerX = x;
+            ds.pointerY = y;
+            return true;
+        }
+        if (invHit?.type === 'equipment') {
+            const key = invHit.slot === 'mainhand' ? this.playingState.equippedMainhandKey : this.playingState.equippedOffhandKey;
+            if (key && key !== 'none') {
+                ds.isDragging = true;
+                ds.weaponKey = key;
+                ds.sourceSlotIndex = invHit.slot === 'mainhand' ? 0 : 1;
+                ds.sourceContext = 'equipment';
+                ds.pointerX = x;
+                ds.pointerY = y;
+                return true;
+            }
+        }
+        if (this.playingState.chestOpen) {
+            const layout = getChestLayout(this.canvas);
+            const hit = hitTestChest(x, y, layout, this.playingState.chestSlots ?? []);
+            if (hit?.type === 'weapon-slot' && hit.key) {
+                ds.isDragging = true;
+                ds.weaponKey = hit.key;
+                ds.sourceSlotIndex = hit.index;
+                ds.sourceContext = 'chest';
+                ds.pointerX = x;
+                ds.pointerY = y;
+                return true;
+            }
+        }
+        return false;
+    }
+
+    handleInventoryChestPointerMove(x: number, y: number): void {
+        const ds = this.inventoryDragState;
+        if (ds.isDragging) {
+            ds.pointerX = x;
+            ds.pointerY = y;
+            return;
+        }
+        this.updateWeaponTooltipHover(x, y);
+    }
+
+    private updateWeaponTooltipHover(x: number, y: number): void {
+        if (this.playingState.inventoryOpen || this.playingState.chestOpen) {
+            ensureInventoryInitialized(this.playingState);
+            const invLayout = getInventoryLayout(this.canvas);
+            const invHit = hitTestInventory(x, y, this.playingState, invLayout);
+            if (invHit?.type === 'inventory-slot' && invHit.weaponKey) {
+                this.weaponTooltipHover = { weaponKey: invHit.weaponKey, x, y };
+                return;
+            }
+            if (invHit?.type === 'equipment') {
+                const key = invHit.slot === 'mainhand' ? this.playingState.equippedMainhandKey : this.playingState.equippedOffhandKey;
+                if (key && key !== 'none') {
+                    this.weaponTooltipHover = { weaponKey: key, x, y };
+                    return;
+                }
+            }
+        }
+        if (this.playingState.chestOpen) {
+            const layout = getChestLayout(this.canvas);
+            const hit = hitTestChest(x, y, layout, this.playingState.chestSlots ?? []);
+            if (hit?.type === 'weapon-slot' && hit.key) {
+                this.weaponTooltipHover = { weaponKey: hit.key, x, y };
+                return;
+            }
+        }
+        this.weaponTooltipHover = null;
+    }
+
+    handleInventoryChestPointerUp(x: number, y: number): boolean {
+        const ds = this.inventoryDragState;
+        if (!ds.isDragging) return false;
+        const weaponKey = ds.weaponKey;
+        const sourceIndex = ds.sourceSlotIndex;
+        const sourceContext = ds.sourceContext;
+        ds.isDragging = false;
+        ds.weaponKey = '';
+        ds.sourceSlotIndex = -1;
+
+        const ps = this.playingState;
+        if (!ps.inventorySlots || ps.inventorySlots.length < 24) return true;
+
+        // Character sheet (inventory layout) is shared: check first when either inventory or chest is open
+        if (this.playingState.inventoryOpen || this.playingState.chestOpen) {
+            const invLayout = getInventoryLayout(this.canvas);
+            const invHit = hitTestInventory(x, y, ps, invLayout);
+            if (invHit?.type === 'equipment') {
+                if (sourceContext === 'equipment') {
+                    const targetKey = invHit.slot === 'mainhand' ? ps.equippedMainhandKey : ps.equippedOffhandKey;
+                    const prevTarget = (targetKey && targetKey !== 'none') ? targetKey : 'none';
+                    this.applyWeaponToSlot(weaponKey, invHit.slot);
+                    if (sourceIndex === 0) ps.equippedMainhandKey = prevTarget;
+                    else if (sourceIndex === 1) ps.equippedOffhandKey = prevTarget;
+                    const player = this.entities.get('player');
+                    if (player) {
+                        const combat = player.getComponent(Combat) as Combat | null;
+                        if (combat && combat.isPlayer) {
+                            combat.stopBlocking();
+                            const mainhand = ps.equippedMainhandKey && ps.equippedMainhandKey !== 'none' ? (Weapons[ps.equippedMainhandKey] ?? null) : null;
+                            const offhand = ps.equippedOffhandKey && ps.equippedOffhandKey !== 'none' ? (Weapons[ps.equippedOffhandKey] ?? null) : null;
+                            (combat as Combat & { setWeapons(m: unknown, o?: unknown): void }).setWeapons(mainhand, offhand);
+                        }
+                    }
+                } else {
+                    if (sourceContext === 'chest') {
+                        if (ps.chestSlots && sourceIndex >= 0 && sourceIndex < ps.chestSlots.length) {
+                            ps.chestSlots.splice(sourceIndex, 1);
+                        }
+                    }
+                    this.applyWeaponToSlot(weaponKey, invHit.slot);
+                    if (sourceContext === 'inventory' && sourceIndex >= 0 && sourceIndex < 24) {
+                        ps.inventorySlots[sourceIndex] = null;
+                    }
+                }
+                return true;
+            }
+            if (invHit?.type === 'inventory-slot') {
+                const targetIndex = invHit.index;
+                if (sourceContext === 'inventory' && sourceIndex >= 0 && sourceIndex < 24) {
+                    const a = ps.inventorySlots[sourceIndex];
+                    const b = ps.inventorySlots[targetIndex];
+                    ps.inventorySlots[sourceIndex] = b;
+                    ps.inventorySlots[targetIndex] = a;
+                } else {
+                    ps.inventorySlots[targetIndex] = weaponKey;
+                    if (sourceContext === 'chest') {
+                        if (ps.chestSlots && sourceIndex >= 0 && sourceIndex < ps.chestSlots.length) {
+                            ps.chestSlots.splice(sourceIndex, 1);
+                        }
+                    }
+                    if (sourceContext === 'equipment') {
+                        if (sourceIndex === 0) ps.equippedMainhandKey = 'none';
+                        else if (sourceIndex === 1) ps.equippedOffhandKey = 'none';
+                        const player = this.entities.get('player');
+                        if (player) {
+                            const combat = player.getComponent(Combat) as Combat | null;
+                            if (combat && combat.isPlayer) {
+                                combat.stopBlocking();
+                                const mainhand = ps.equippedMainhandKey && ps.equippedMainhandKey !== 'none' ? (Weapons[ps.equippedMainhandKey] ?? null) : null;
+                                const offhand = ps.equippedOffhandKey && ps.equippedOffhandKey !== 'none' ? (Weapons[ps.equippedOffhandKey] ?? null) : null;
+                                (combat as Combat & { setWeapons(m: unknown, o?: unknown): void }).setWeapons(mainhand, offhand);
+                            }
+                        }
+                    }
+                }
+                return true;
+            }
+        }
+
+        // Chest-only: drop on back or weapon grid (return to chest)
+        if (this.playingState.chestOpen) {
+            const layout = getChestLayout(this.canvas);
+            const hit = hitTestChest(x, y, layout, ps.chestSlots ?? []);
+            if (hit?.type === 'weapon-slot' || hit?.type === 'back') {
+                if (sourceContext === 'inventory' && sourceIndex >= 0 && sourceIndex < 24) {
+                    ps.inventorySlots[sourceIndex] = null;
+                    ps.chestSlots = ps.chestSlots ?? [];
+                    ps.chestSlots.push(weaponKey);
+                } else if (sourceContext === 'equipment') {
+                    if (sourceIndex === 0) ps.equippedMainhandKey = 'none';
+                    else if (sourceIndex === 1) ps.equippedOffhandKey = 'none';
+                    const player = this.entities.get('player');
+                    if (player) {
+                        const combat = player.getComponent(Combat) as Combat | null;
+                        if (combat && combat.isPlayer) {
+                            combat.stopBlocking();
+                            const mainhand = ps.equippedMainhandKey && ps.equippedMainhandKey !== 'none' ? (Weapons[ps.equippedMainhandKey] ?? null) : null;
+                            const offhand = ps.equippedOffhandKey && ps.equippedOffhandKey !== 'none' ? (Weapons[ps.equippedOffhandKey] ?? null) : null;
+                            (combat as Combat & { setWeapons(m: unknown, o?: unknown): void }).setWeapons(mainhand, offhand);
+                        }
+                    }
+                    ps.chestSlots = ps.chestSlots ?? [];
+                    ps.chestSlots.push(weaponKey);
+                }
+            }
+        }
+        return true;
+    }
+
     /** Get enemy entity at screen position (for hover tooltip). Returns null if none. */
     getEnemyAtScreenPoint(screenX, screenY) {
         const cameraSystem = this.systems && this.systems.get('camera');
@@ -943,6 +1312,9 @@ class Game {
                             renderSystem.renderChestInteractionPrompt(this.playingState.chest, cameraSystem, true);
                         }
                     }
+                    if (this.playingState.shop) {
+                        renderSystem.renderShopkeeper(this.playingState.shop, cameraSystem, this.playingState.playerNearShop);
+                    }
                     const hubEntities = this.entities.getAll();
                     renderSystem.renderEntities(hubEntities, cameraSystem);
                 } finally {
@@ -956,14 +1328,24 @@ class Game {
                         this.screenManager.renderHubBoardOverlay(this.playingState.hubSelectedLevel);
                     }
                     if (this.playingState.chestOpen) {
-                        this.screenManager.renderWeaponChestOverlay(this.playingState.equippedWeaponKey);
+                        renderChest(this.ctx, this.canvas, this.playingState, this.inventoryDragState, this.weaponTooltipHover);
+                        renderInventory(this.ctx, this.canvas, this.playingState, this.inventoryDragState, this.weaponTooltipHover);
                     }
+                    if (this.playingState.shopOpen) {
+                        renderShop(this.ctx, this.canvas, this.playingState);
+                    }
+                    if (this.playingState.inventoryOpen) {
+                        renderInventory(this.ctx, this.canvas, this.playingState, this.inventoryDragState, this.weaponTooltipHover);
+                    }
+                    this.hudController.setChestOverlayVisible(false);
                     if (this.screenManager.isScreen('pause') || this.screenManager.isScreen('settings') || this.screenManager.isScreen('settings-controls')) {
                         this.screenManager.render(this.settings);
                     }
                 }
                 return;
             }
+
+            this.hudController.setChestOverlayVisible(false);
 
             // Game world and entities (draw for both 'playing' and 'pause' so pause shows over frozen frame)
             const currentLevel = this.systems.get('enemies') ? this.systems.get('enemies').getCurrentLevel() : 1;
@@ -1039,6 +1421,9 @@ class Game {
                 }
                 if (this.screenManager.isScreen('pause') || this.screenManager.isScreen('settings') || this.screenManager.isScreen('settings-controls') || this.screenManager.isScreen('help')) {
                     this.screenManager.render(this.settings);
+                }
+                if (this.playingState.inventoryOpen) {
+                    renderInventory(this.ctx, this.canvas, this.playingState, this.inventoryDragState, this.weaponTooltipHover);
                 }
             }
         } catch (error) {

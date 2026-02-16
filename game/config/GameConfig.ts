@@ -26,7 +26,8 @@ const GameConfig: GameConfigShape = {
     maxStamina: 100,
     staminaRegen: 16,
     color: '#8b8b9a',
-    defaultWeapon: 'swordAndShield',
+    defaultWeapon: 'sword_rusty',
+    defaultOffhand: 'shield',
     sprint: { multiplier: 1.66, staminaCost: 12 },
     dodge: { speed: 800, duration: 0.15, cooldown: 0.5, staminaCost: 15 },
     knockback: {
@@ -103,6 +104,7 @@ const GameConfig: GameConfigShape = {
     playerStart: { x: 800, y: 800 },
     board: { x: 750, y: 765, width: 100, height: 70 },
     weaponChest: { x: 340, y: 780, width: 80, height: 60 },
+    shopkeeper: { x: 772, y: 280, width: 56, height: 56 },
     theme: {
       ground: { r: 42, g: 38, b: 32, variation: 6 },
       sky: 'rgba(100, 90, 80, 0.06)',
@@ -124,6 +126,7 @@ const GameConfig: GameConfigShape = {
       playerStart: { x: 800, y: 800 },
       board: { x: 750, y: 765, width: 100, height: 70 },
       weaponChest: { x: 340, y: 780, width: 80, height: 60 },
+      shopkeeper: { x: 772, y: 280, width: 56, height: 56 },
       theme: {
         ground: { r: 42, g: 38, b: 32, variation: 6 },
         sky: 'rgba(100, 90, 80, 0.06)',
@@ -229,7 +232,11 @@ const GameConfig: GameConfigShape = {
       enemyTypes: ['skeleton', 'skeleton', 'lesserDemon', 'lesserDemon'],
       killsToUnlockPortal: 20,
       theme: {
-        ground: { r: 34, g: 16, b: 18, variation: 12 },
+        ground: {
+          r: 42, g: 38, b: 32,
+          variation: 6,
+          patch: { r: 58, g: 22, b: 26, variation: 10, chance: 0.22 },
+        },
         sky: 'rgba(80, 20, 30, 0.12)',
       },
       worldWidth: 4800,

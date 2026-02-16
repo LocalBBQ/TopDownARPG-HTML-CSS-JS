@@ -17,6 +17,7 @@ export interface PlayerConfig {
   maxStamina: number;
   staminaRegen: number;
   defaultWeapon?: string;
+  defaultOffhand?: string;
   crossbow?: Record<string, number>;
   [key: string]: unknown;
 }
@@ -43,6 +44,7 @@ export interface LevelConfig {
   playerStart?: { x: number; y: number };
   board?: { x: number; y: number; width: number; height: number };
   weaponChest?: { x: number; y: number; width: number; height: number };
+  shopkeeper?: { x: number; y: number; width: number; height: number };
   walls?: Array<{ x: number; y: number; width: number; height: number }>;
 }
 
@@ -67,6 +69,7 @@ export interface GameConfigShape {
     playerStart?: { x: number; y: number };
     board?: { x: number; y: number; width: number; height: number };
     weaponChest?: { x: number; y: number; width: number; height: number };
+    shopkeeper?: { x: number; y: number; width: number; height: number };
     theme?: { ground?: unknown; sky?: string };
     walls?: Array<{ x: number; y: number; width: number; height: number }>;
   };

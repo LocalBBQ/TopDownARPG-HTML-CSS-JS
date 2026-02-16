@@ -22,7 +22,7 @@ interface EntityWithComponents {
 }
 
 /**
- * Apply a single melee hit: damage, stun buildup, knockback (unless blocked), and optional event.
+ * Apply a single melee hit: damage, stun buildup, knockback (always, even when blocked), and optional event.
  * Caller is responsible for hit detection and block check; pass blocked: true and reduced damage if blocked.
  */
 export function applyMeleeHit(
@@ -46,7 +46,7 @@ export function applyMeleeHit(
   if (targetStatus && stunBuildup > 0) {
     targetStatus.addStunBuildup(stunBuildup);
   }
-  if (targetMovement && !blocked && knockbackForce > 0 && attackerTransform && targetTransform) {
+  if (targetMovement && knockbackForce > 0 && attackerTransform && targetTransform) {
     const dx = targetTransform.x - attackerTransform.x;
     const dy = targetTransform.y - attackerTransform.y;
     const dist = Math.sqrt(dx * dx + dy * dy);

@@ -457,7 +457,7 @@ export const EnemyEntityRenderer = {
             ctx.stroke();
             ctx.restore();
             // Bandit mace: same path as player (arc and mace from PlayerCombatRenderer)
-            if (typeof PlayerCombatRenderer !== 'undefined' && combat && combat.weapon && combat.weapon.name === 'mace') {
+            if (typeof PlayerCombatRenderer !== 'undefined' && combat && combat.weapon && combat.weapon.name && String(combat.weapon.name).toLowerCase().includes('mace')) {
                 if (showEnemyHitboxIndicators && combat.isAttacking && movement) {
                     PlayerCombatRenderer.drawAttackArc(ctx, screenX, screenY, combat, movement, camera, { comboColors: false });
                 }

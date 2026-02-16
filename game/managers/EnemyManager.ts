@@ -460,8 +460,14 @@ export class EnemyManager {
             const health = enemy.getComponent(Health);
             if (health && health.isDead) {
                 this.enemiesKilledThisLevel++;
+                let goldDrop = 0;
+                const ai = enemy.getComponent(AI);
+                if (ai?.enemyType) {
+                    const typeConfig = this.config.enemy.types[ai.enemyType] as { goldDrop?: number } | undefined;
+                    goldDrop = typeConfig?.goldDrop ?? 0;
+                }
                 if (this.systems && this.systems.eventBus) {
-                    this.systems.eventBus.emit(EventTypes.PLAYER_KILLED_ENEMY, {});
+                    this.systems.eventBus.emit(EventTypes.PLAYER_KILLED_ENEMY, { goldDrop });
                 }
                 if (entityManager) {
                     entityManager.remove(enemy.id);
@@ -781,8 +787,8 @@ export class EnemyManager {
                         playerStatus.addStunBuildup(baseStun * mult);
                     }
 
-                    // Apply knockback only when not blocked (blocking stops push entirely)
-                    if (playerMovement && !blocked) {
+                    // Apply knockback even when blocked (blocking reduces damage/stun but not push)
+                    if (playerMovement) {
                         const knockbackConfig = enemyConfigForStun.knockback || { force: 160, decay: 0.88 };
                         const baseForce = enemyCombat.currentAttackKnockbackForce ?? knockbackConfig.force;
                         // AOE-in-front: knockback away from slam center; otherwise away from enemy

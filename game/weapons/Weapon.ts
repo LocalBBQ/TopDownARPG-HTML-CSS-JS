@@ -13,6 +13,8 @@ import type {
 export type WeaponConfigInput = Parameters<typeof WeaponBehavior.parseWeaponConfig>[0] & {
     isRanged?: boolean;
     visual?: string;
+    color?: string;
+    material?: string;
 };
 
 export class Weapon {
@@ -20,13 +22,14 @@ export class Weapon {
     baseRange: number;
     baseDamage: number;
     baseArcDegrees: number;
-    attackSpeed: number;
-    cooldown: number;
+    speed: number;
+    baseCooldown: number;
     comboConfig: StageConfigInput[];
     comboWindow: number;
     knockback: ParseWeaponConfigResult['knockback'];
     block: BlockResult | null;
     twoHanded: boolean;
+    offhandOnly: boolean;
     dashAttack: StageConfigInput | null;
     rangeMultiplier: number;
     weaponLength: number | null;
@@ -35,6 +38,8 @@ export class Weapon {
     _maxComboStage: number | null;
     isRanged: boolean;
     visual: string | undefined;
+    color: string | undefined;
+    material: string | undefined;
     chargeRelease: ChargeReleaseResult | null;
 
     constructor(config: WeaponConfigInput) {
@@ -43,13 +48,14 @@ export class Weapon {
         this.baseRange = p.baseRange;
         this.baseDamage = p.baseDamage;
         this.baseArcDegrees = p.baseArcDegrees;
-        this.attackSpeed = p.attackSpeed ?? 1;
-        this.cooldown = p.cooldown;
+        this.speed = p.speed ?? 1;
+        this.baseCooldown = p.baseCooldown ?? 0;
         this.comboConfig = p.comboConfig;
         this.comboWindow = p.comboWindow;
         this.knockback = p.knockback;
         this.block = p.block;
         this.twoHanded = p.twoHanded;
+        this.offhandOnly = p.offhandOnly;
         this.dashAttack = p.dashAttack;
         this.rangeMultiplier = p.rangeMultiplier;
         this.weaponLength = p.weaponLength;
@@ -58,11 +64,18 @@ export class Weapon {
         this._maxComboStage = p.maxComboStage;
         this.isRanged = config.isRanged === true;
         this.visual = config.visual;
+        this.color = config.color;
+        this.material = config.material;
         this.chargeRelease = p.chargeRelease ?? null;
     }
 
     static fromConfig(config: WeaponConfigInput): Weapon {
         return new Weapon(config);
+    }
+
+    /** Cooldown in seconds; derived from baseCooldown/speed so speed scales both cooldown and attack duration as one unit. */
+    get cooldown(): number {
+        return this.speed > 0 ? this.baseCooldown / this.speed : 0;
     }
 
     getBlockConfig(): BlockResult | null {

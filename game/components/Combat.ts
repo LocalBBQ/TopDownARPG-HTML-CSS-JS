@@ -90,6 +90,7 @@ export class Combat implements Component {
   attackInputBuffered: AttackInputBuffered | null;
   _currentAttackKnockbackForce: number | null;
   _currentAttackStunBuildup: number | null;
+  _offhandWeapon: unknown;
 
   constructor(
     attackRange: number,
@@ -118,8 +119,9 @@ export class Combat implements Component {
     this.enemyAttackHandler = null;
     this.playerAttack = null;
 
+    this._offhandWeapon = null;
     if (isPlayer) {
-      this.attackHandler = new WeaponAttackHandler(weapon || Weapons.swordAndShield, { isPlayer: true });
+      this.attackHandler = new WeaponAttackHandler(weapon, { isPlayer: true });
       this.playerAttack = this.attackHandler;
     } else {
       this.attackHandler =
@@ -132,6 +134,11 @@ export class Combat implements Component {
     this.attackRange = h ? (h.attackRange ?? attackRange) : attackRange;
     this.attackDamage = h ? (h.attackDamage ?? attackDamage) : attackDamage;
     this.attackArc = h ? (h.attackArc ?? attackArc) : attackArc;
+    if (isPlayer && weapon == null) {
+      this.attackRange = attackRange;
+      this.attackDamage = attackDamage;
+      this.attackArc = attackArc;
+    }
     this.windUpTime = windUpTime;
     this.isBlocking = false;
     this.blockInputBuffered = false;
@@ -179,18 +186,25 @@ export class Combat implements Component {
   }
 
   setWeapon(weapon: unknown): void {
-    if (
-      this.isPlayer &&
-      this.attackHandler &&
-      typeof (this.attackHandler as AttackHandlerLike & { setWeapon?(w: unknown): void }).setWeapon === 'function'
-    ) {
-      (this.attackHandler as AttackHandlerLike & { setWeapon(w: unknown): void }).setWeapon(weapon);
-      if (weapon) {
-        const w = weapon as {
+    this.setWeapons(weapon, this._offhandWeapon);
+  }
+
+  setWeapons(mainhand: unknown, offhand?: unknown | null): void {
+    if (this.isPlayer) {
+      this._offhandWeapon = offhand ?? null;
+      if (
+        this.attackHandler &&
+        typeof (this.attackHandler as AttackHandlerLike & { setWeapon?(w: unknown): void }).setWeapon === 'function'
+      ) {
+        (this.attackHandler as AttackHandlerLike & { setWeapon(w: unknown): void }).setWeapon(mainhand);
+      }
+      if (mainhand) {
+        const w = mainhand as {
           getComboStageProperties?(n: number): { range?: number; damage?: number; arc?: number } | null;
           baseRange?: number;
           baseDamage?: number;
           baseArcDegrees?: number;
+          twoHanded?: boolean;
         };
         const first = w.getComboStageProperties ? w.getComboStageProperties(1) : null;
         if (first) {
@@ -209,6 +223,14 @@ export class Combat implements Component {
 
   get weapon(): unknown {
     return this.attackHandler ? this.attackHandler.weapon : null;
+  }
+
+  get mainhandWeapon(): unknown {
+    return this.weapon;
+  }
+
+  get offhandWeapon(): unknown {
+    return this._offhandWeapon;
   }
 
   getPackCooldownMultiplier(): number {
@@ -247,9 +269,18 @@ export class Combat implements Component {
   }
 
   _getBlockConfig(): unknown {
-    if (!this.isPlayer || !this.weapon) return null;
-    const w = this.weapon as { getBlockConfig?(): unknown };
-    return w.getBlockConfig ? w.getBlockConfig() : null;
+    if (!this.isPlayer) return null;
+    const mainhand = this.mainhandWeapon as { getBlockConfig?(): unknown; twoHanded?: boolean } | null;
+    const offhand = this._offhandWeapon as { getBlockConfig?(): unknown } | null;
+    const mainhandTwoHanded = mainhand && (mainhand as { twoHanded?: boolean }).twoHanded === true;
+    if (!mainhandTwoHanded && offhand) {
+      const offBlock = offhand.getBlockConfig ? offhand.getBlockConfig() : null;
+      const offEnabled = offBlock && (offBlock as { enabled?: boolean }).enabled !== false;
+      if (offEnabled) return offBlock;
+    }
+    if (!mainhand) return null;
+    const mainBlock = mainhand.getBlockConfig ? mainhand.getBlockConfig() : null;
+    return mainBlock;
   }
 
   get blockDamageReduction(): number {
