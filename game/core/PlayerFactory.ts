@@ -34,7 +34,8 @@ export interface SpriteManagerLike {
 
 export interface PlayerFactoryOptions {
     spriteManager: SpriteManagerLike;
-    equippedWeaponKey: string;
+    equippedMainhandKey: string;
+    equippedOffhandKey: string;
     playerConfig: PlayerConfigLike;
 }
 
@@ -42,7 +43,7 @@ export function createPlayer(
     overrideStart: { x: number; y: number } | null,
     options: PlayerFactoryOptions
 ): Entity {
-    const { spriteManager, equippedWeaponKey, playerConfig: config } = options;
+    const { spriteManager, equippedMainhandKey, equippedOffhandKey, playerConfig: config } = options;
     const x = overrideStart ? overrideStart.x : config.startX;
     const y = overrideStart ? overrideStart.y : config.startY;
     const player = new Entity(x, y, 'player');
@@ -218,12 +219,24 @@ export function createPlayer(
         }
     }
 
-    const weapon = Weapons[equippedWeaponKey] || Weapons.swordAndShield;
-    const firstStage = weapon.getComboStageProperties ? weapon.getComboStageProperties(1) : null;
-    const initialRange = firstStage ? firstStage.range : weapon.baseRange;
-    const initialDamage = firstStage ? firstStage.damage : weapon.baseDamage;
-    const initialArc = firstStage ? firstStage.arc : Utils.degToRad(weapon.baseArcDegrees);
-    const initialCooldown = weapon.cooldown != null ? weapon.cooldown : 0.25;
+    const unarmed = !equippedMainhandKey || equippedMainhandKey === 'none';
+    const mainhand = unarmed
+        ? null
+        : (Weapons[equippedMainhandKey] ?? null);
+    const offhand =
+        equippedOffhandKey && equippedOffhandKey !== 'none'
+            ? (Weapons[equippedOffhandKey] ?? null)
+            : null;
+    const initialRange = mainhand
+        ? (mainhand.getComboStageProperties?.(1)?.range ?? mainhand.baseRange ?? 0)
+        : 0;
+    const initialDamage = mainhand
+        ? (mainhand.getComboStageProperties?.(1)?.damage ?? mainhand.baseDamage ?? 0)
+        : 0;
+    const initialArc = mainhand
+        ? (mainhand.getComboStageProperties?.(1)?.arc ?? Utils.degToRad(mainhand.baseArcDegrees ?? 0))
+        : 0;
+    const initialCooldown = mainhand ? (mainhand.cooldown != null ? mainhand.cooldown : 0.25) : 0.25;
 
     player
         .addComponent(new Transform(x, y, config.width, config.height))
@@ -232,10 +245,15 @@ export function createPlayer(
         .addComponent(new Stamina(config.maxStamina, config.staminaRegen))
         .addComponent(new PlayerHealing())
         .addComponent(new PlayerMovement(config.speed))
-        .addComponent(new Combat(initialRange, initialDamage, initialArc, initialCooldown, 0, true, weapon))
+        .addComponent(new Combat(initialRange, initialDamage, initialArc, initialCooldown, 0, true, mainhand))
         .addComponent(new Renderable('player', { color: config.color }))
         .addComponent(new Sprite(defaultSheetKey, config.width * 3, config.height * 3))
         .addComponent(new Animation(animationConfig));
+
+    const combat = player.getComponent(Combat);
+    if (combat && typeof (combat as Combat & { setWeapons?(m: unknown, o?: unknown): void }).setWeapons === 'function') {
+        (combat as Combat & { setWeapons(m: unknown, o?: unknown): void }).setWeapons(mainhand, offhand);
+    }
 
     return player;
 }

@@ -169,7 +169,7 @@ export class EntitySpriteRenderer {
                     }
                 }
                 // Bandit mace: same path as player (arc and mace from PlayerCombatRenderer)
-                if (ai.enemyType === 'bandit' && combat && combat.weapon && combat.weapon.name === 'mace' && typeof PlayerCombatRenderer !== 'undefined') {
+                if (ai.enemyType === 'bandit' && combat && combat.weapon && combat.weapon.name && String(combat.weapon.name).toLowerCase().includes('mace') && typeof PlayerCombatRenderer !== 'undefined') {
                     if (showEnemyHitboxIndicators && combat.isAttacking && movement) {
                         PlayerCombatRenderer.drawAttackArc(ctx, screenX, screenY, combat, movement, camera, { comboColors: false });
                     }

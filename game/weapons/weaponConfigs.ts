@@ -3,31 +3,22 @@ import { Weapon } from './Weapon.js';
 import type { WeaponConfigInput } from './Weapon.js';
 import type { StageConfigInput } from './weaponBehavior.js';
 
-const swordAndShieldConfig: WeaponConfigInput = {
-    name: 'swordAndShield',
+const swordConfig: WeaponConfigInput = {
+    name: 'sword',
     baseRange: 80,
     baseDamage: 15,
     baseArcDegrees: 60,
-    cooldown: 0.23,
-    attackSpeed: 1.2,
-    cooldownMultiplier: 0.5,
+    cooldown: 0.115,
+    speed: 1.2,
     comboWindow: 1.5,
     baseStunBuildup: 25,
     weaponLength: 55,
     block: {
         enabled: true,
-        arcDegrees: 180,
-        damageReduction: 1.0,
-        staminaCost: 25,
-        animationKey: 'block',
-        shieldBash: {
-            knockback: 1500,
-            dashSpeed: 380,
-            dashDuration: 0.11,
-            staminaCost: 14,
-            range: 100,
-            arcDegrees: 120
-        }
+        arcDegrees: 100,
+        damageReduction: 0.5,
+        staminaCost: 22,
+        animationKey: 'block'
     },
     stages: [
         { name: 'slash', arcDegrees: 90, duration: 450, staminaCost: 10, range: 92, damageMultiplier: 1.2, animationKey: 'melee', knockbackForce: 100, stunBuildup: 28 },
@@ -51,19 +42,51 @@ const swordAndShieldConfig: WeaponConfigInput = {
     }
 };
 
+const shieldConfig: WeaponConfigInput = {
+    name: 'shield',
+    offhandOnly: true,
+    baseRange: 0,
+    baseDamage: 0,
+    baseArcDegrees: 180,
+    cooldown: 0, // defensive-only; no attack cooldown
+    comboWindow: 0,
+    stages: [],
+    block: {
+        enabled: true,
+        arcDegrees: 180,
+        damageReduction: 1.0,
+        staminaCost: 25,
+        animationKey: 'block',
+        shieldBash: {
+            knockback: 1500,
+            dashSpeed: 380,
+            dashDuration: 0.11,
+            staminaCost: 14,
+            range: 100,
+            arcDegrees: 120
+        }
+    }
+};
+
 const greatswordConfig: WeaponConfigInput = {
     name: 'greatsword',
     twoHanded: true,
     baseRange: 120,
     baseDamage: 20,
     baseArcDegrees: 100,
-    cooldown: 0.2,
-    attackSpeed: 1.0,
-    cooldownMultiplier: 0.5,
+    cooldown: 0.1,
+    speed: 1.0,
     comboWindow: 1.5,
     baseStunBuildup: 35,
     weaponLength: 52,
     maxComboStage: 3,
+    block: {
+        enabled: true,
+        arcDegrees: 100,
+        damageReduction: 0.6,
+        staminaCost: 22,
+        animationKey: 'block'
+    },
     stages: [
         { name: 'slash1', arcDegrees: 120, duration: 480, staminaCost: 16, range: 100, damageMultiplier: 1.0, animationKey: 'melee', stunBuildup: 35 },
         { name: 'slash2', arcDegrees: 110, duration: 520, staminaCost: 18, range: 100, damageMultiplier: 1.4, animationKey: 'melee2', stunBuildup: 42, reverseSweep: true },
@@ -101,9 +124,16 @@ const daggerConfig: WeaponConfigInput = {
     baseArcDegrees: 90,
     cooldown: 0.125,
     comboWindow: 1.2,
-    attackSpeed: 2,
+    speed: 2,
     baseStunBuildup: 18,
     weaponLength: 35,
+    block: {
+        enabled: true,
+        arcDegrees: 90,
+        damageReduction: 0.5,
+        staminaCost: 20,
+        animationKey: 'block'
+    },
     stages: [
         { name: 'slash', arcDegrees: 90, duration: 280, staminaCost: 6, range: 42, damageMultiplier: 1.0, animationKey: 'melee', knockbackForce: 80, stunBuildup: 18 },
         { name: 'slash', arcDegrees: 90, duration: 280, staminaCost: 6, range: 42, damageMultiplier: 1.0, animationKey: 'melee', knockbackForce: 80, stunBuildup: 18, reverseSweep: true },
@@ -133,7 +163,14 @@ const crossbowConfig: WeaponConfigInput = {
     cooldown: 0,
     comboWindow: 0,
     stages: [],
-    isRanged: true
+    isRanged: true,
+    block: {
+        enabled: true,
+        arcDegrees: 60,
+        damageReduction: 0.4,
+        staminaCost: 18,
+        animationKey: 'block'
+    }
 };
 
 const maceConfig: WeaponConfigInput = {
@@ -142,12 +179,18 @@ const maceConfig: WeaponConfigInput = {
     baseRange: 95,
     baseDamage: 22,
     baseArcDegrees: 90,
-    cooldown: 0.175,
-    attackSpeed: 0.8,
-    cooldownMultiplier: 2,
+    cooldown: 0.35,
+    speed: 0.8,
     comboWindow: 1.0,
     knockback: { force: 1200 },
     weaponLength: 60,
+    block: {
+        enabled: true,
+        arcDegrees: 120,
+        damageReduction: 0.65,
+        staminaCost: 24,
+        animationKey: 'block'
+    },
     stages: [
         { name: 'sweep1', arcDegrees: 220, duration: 460, staminaCost: 20, range: 95, damageMultiplier: 1.0, animationKey: 'melee', stunBuildup: 40 },
         { name: 'sweep2', arcDegrees: 220, duration: 500, staminaCost: 22, range: 100, damageMultiplier: 1.3, animationKey: 'melee2', stunBuildup: 45, reverseSweep: true },
@@ -187,9 +230,8 @@ const goblinDaggerConfig: WeaponConfigInput = {
     baseRange: 36,
     baseDamage: 4,
     baseArcDegrees: 90,
-    cooldown: 1.5,
-    attackSpeed: 0.85,
-    cooldownMultiplier: 1.2,
+    cooldown: 1.8,
+    speed: 0.85,
     comboWindow: 0.5,
     baseStunBuildup: 16,
     weaponLength: 30,
@@ -214,10 +256,21 @@ const goblinDaggerConfig: WeaponConfigInput = {
     }
 };
 
-export const SwordAndShieldWeapon = Weapon.fromConfig(swordAndShieldConfig);
+export const SwordWeaponInstance = Weapon.fromConfig(swordConfig);
+export const ShieldWeaponInstance = Weapon.fromConfig(shieldConfig);
 export const GreatswordWeaponInstance = Weapon.fromConfig(greatswordConfig);
 export const DaggerWeaponInstance = Weapon.fromConfig(daggerConfig);
 export const CrossbowWeaponInstance = Weapon.fromConfig(crossbowConfig);
 export const MaceWeaponInstance = Weapon.fromConfig(maceConfig);
 export const ChieftainClubWeaponInstance = Weapon.fromConfig(chieftainClubConfig);
 export const GoblinDaggerWeaponInstance = Weapon.fromConfig(goblinDaggerConfig);
+
+/** Base configs for tiered player weapons (used by WeaponsRegistry to build material variants). */
+export const BASE_WEAPON_CONFIGS: Record<string, WeaponConfigInput> = {
+    sword: swordConfig,
+    greatsword: greatswordConfig,
+    dagger: daggerConfig,
+    mace: maceConfig,
+    crossbow: crossbowConfig
+};
+export { shieldConfig };

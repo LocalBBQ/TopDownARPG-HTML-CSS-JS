@@ -2,8 +2,6 @@
  * Handles screen-driven input: canvas click (title/hub/death/pause/settings) and global keys (Tab, Escape, Space, Enter).
  */
 import { EventTypes } from './EventTypes.js';
-import { Combat } from '../components/Combat.js';
-import { Weapons } from '../weapons/WeaponsRegistry.js';
 import type { ScreenName } from './ScreenManager.js';
 import type { SettingsLike } from './ScreenManager.js';
 
@@ -13,8 +11,6 @@ export interface ScreenControllerContext {
         checkButtonClick(x: number, y: number, screen: string): boolean;
         selectedStartLevel: number;
         setScreen(screen: ScreenName): void;
-        getWeaponChestWeaponAt(x: number, y: number): string | null;
-        getWeaponChestBackAt(x: number, y: number): boolean;
         getLevelSelectAt(x: number, y: number): number | null;
         getHubBoardButtonAt(x: number, y: number): string | null;
         getPauseButtonAt(x: number, y: number): string | null;
@@ -26,10 +22,13 @@ export interface ScreenControllerContext {
         inventoryOpen: boolean;
         chestOpen: boolean;
         boardOpen: boolean;
-        equippedWeaponKey: string;
+        shopOpen: boolean;
+        equippedMainhandKey: string;
+        equippedOffhandKey: string;
         hubSelectedLevel: number;
         chestUseCooldown: number;
         boardUseCooldown: number;
+        shopUseCooldown: number;
         screenBeforePause: 'playing' | 'hub' | null;
     };
     entities: { get(id: string): { getComponent(c: unknown): unknown } | undefined };
@@ -39,6 +38,7 @@ export interface ScreenControllerContext {
     startGame(): void;
     returnToSanctuaryOnDeath(): void;
     quitToMainMenu(): void;
+    clearPlayerInputsForMenu(): void;
 }
 
 export class ScreenController {
@@ -57,22 +57,6 @@ export class ScreenController {
             if (sm.checkButtonClick(x, y, 'title')) {
                 sm.selectedStartLevel = 0;
                 ctx.startGame();
-            }
-        } else if (sm.isScreen('hub') && ps.chestOpen) {
-            const weaponKey = sm.getWeaponChestWeaponAt(x, y);
-            if (weaponKey !== null) {
-                ps.equippedWeaponKey = weaponKey;
-                const player = ctx.entities.get('player');
-                if (player && Weapons[weaponKey]) {
-                    const combat = player.getComponent(Combat) as Combat | null;
-                    if (combat && combat.isPlayer) {
-                        combat.stopBlocking();
-                        combat.setWeapon(Weapons[weaponKey]);
-                    }
-                }
-            } else if (sm.getWeaponChestBackAt(x, y)) {
-                ps.chestOpen = false;
-                ps.chestUseCooldown = 0;
             }
         } else if (sm.isScreen('hub') && ps.boardOpen) {
             const levelAt = sm.getLevelSelectAt(x, y);
@@ -154,8 +138,8 @@ export class ScreenController {
             if (key === 'tab') {
                 if (sm.isScreen('playing') || sm.isScreen('hub')) {
                     ps.inventoryOpen = !ps.inventoryOpen;
-                    ctx.setInventoryPanelVisible(ps.inventoryOpen);
-                    if (ps.inventoryOpen) ctx.refreshInventoryPanel();
+                    if (ps.inventoryOpen) ctx.clearPlayerInputsForMenu();
+                    ctx.setInventoryPanelVisible(false);
                 }
                 return;
             }
@@ -174,7 +158,6 @@ export class ScreenController {
             } else if (isEscapeKey) {
                 if (ps.inventoryOpen) {
                     ps.inventoryOpen = false;
-                    ctx.setInventoryPanelVisible(false);
                     return;
                 }
                 if (sm.isScreen('playing')) {
@@ -189,7 +172,10 @@ export class ScreenController {
                 } else if (sm.isScreen('help')) {
                     sm.setScreen('pause');
                 } else if (sm.isScreen('hub')) {
-                    if (ps.chestOpen) {
+                    if (ps.shopOpen) {
+                        ps.shopOpen = false;
+                        ps.shopUseCooldown = 0.4;
+                    } else if (ps.chestOpen) {
                         ps.chestOpen = false;
                         ps.chestUseCooldown = 0;
                     } else if (ps.boardOpen) {

@@ -35,6 +35,10 @@ export class WorldLayerRenderer {
             ctx.imageSmoothingEnabled = false;
         }
 
+        const patch = ground.patch != null && typeof ground.patch === 'object' ? ground.patch as { r: number; g: number; b: number; variation?: number; chance: number } : null;
+        const tileHash = (tx: number, ty: number) => ((tx * 73856093) ^ (ty * 19349663)) >>> 0;
+        const isPatchTile = patch && patch.chance > 0 ? (x: number, y: number) => (tileHash(Math.floor(x / tileSize), Math.floor(y / tileSize)) % 1000) / 1000 < patch.chance : () => false;
+
         for (let x = startX; x < endX; x += tileSize) {
             for (let y = startY; y < endY; y += tileSize) {
                 const screenX = camera.toScreenX(x);
@@ -42,10 +46,13 @@ export class WorldLayerRenderer {
                 if (useTexture) {
                     ctx.drawImage(groundImage, 0, 0, groundImage.naturalWidth, groundImage.naturalHeight, screenX, screenY, tileScreenSize, tileScreenSize);
                 } else {
-                    const v = Math.floor((x + y) % 3) * (ground.variation || 15);
-                    const r = Math.max(0, Math.min(255, ground.r + v));
-                    const gVal = Math.max(0, Math.min(255, ground.g + v));
-                    const b = Math.max(0, Math.min(255, ground.b + v));
+                    const usePatch = isPatchTile(x, y);
+                    const base = usePatch && patch ? patch : ground;
+                    const vari = base.variation ?? ground.variation ?? 15;
+                    const v = Math.floor((x + y) % 3) * vari;
+                    const r = Math.max(0, Math.min(255, base.r + v));
+                    const gVal = Math.max(0, Math.min(255, base.g + v));
+                    const b = Math.max(0, Math.min(255, base.b + v));
                     ctx.fillStyle = `rgb(${r}, ${gVal}, ${b})`;
                     ctx.fillRect(screenX, screenY, tileScreenSize, tileScreenSize);
                 }

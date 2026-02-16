@@ -40,6 +40,17 @@ export interface BlockResult {
     };
 }
 
+/** Something that can be used to block (e.g. shield, or any weapon with block config). */
+export interface BlockableLike {
+    getBlockConfig(): BlockResult | { enabled?: boolean } | null;
+}
+
+export function isBlockable(w: unknown): w is BlockableLike {
+    if (w == null || typeof w !== 'object') return false;
+    const cfg = (w as BlockableLike).getBlockConfig?.();
+    return cfg != null && (cfg as { enabled?: boolean }).enabled !== false;
+}
+
 export interface StageConfigInput {
     name?: string;
     animationKey?: string;
@@ -65,7 +76,8 @@ export interface WeaponLike {
     baseRange: number;
     baseDamage: number;
     baseArcDegrees: number;
-    attackSpeed?: number;
+    /** Weapon speed (number); higher = faster attacks and shorter animations. */
+    speed?: number;
     rangeMultiplier?: number;
     knockback?: { force?: number } | null;
     comboConfig?: StageConfigInput[];
@@ -138,14 +150,16 @@ export interface ParseWeaponConfigResult {
     baseRange: number;
     baseDamage: number;
     baseArcDegrees: number;
-    attackSpeed: number;
-    cooldown: number;
+    speed: number;
+    /** Stored so cooldown = baseCooldown/speed (one unit with speed). */
+    baseCooldown: number;
     comboConfig: StageConfigInput[];
     maxComboStage: number | null;
     comboWindow: number;
     knockback: { force?: number } | null;
     block: BlockResult | null;
     twoHanded: boolean;
+    offhandOnly: boolean;
     dashAttack: StageConfigInput | null;
     rangeMultiplier: number;
     weaponLength: number | null;
@@ -154,19 +168,29 @@ export interface ParseWeaponConfigResult {
     chargeRelease: ChargeReleaseResult | null;
 }
 
+/** Default block config for weapons that don't define block (parry with weapon). */
+const DEFAULT_WEAPON_BLOCK: BlockConfigInput = {
+    enabled: true,
+    arcDegrees: 90,
+    damageReduction: 0.4,
+    staminaCost: 20,
+    animationKey: 'block'
+};
+
 export const WeaponBehavior = {
     buildBlockFromConfig(blockConfig: BlockConfigInput | null | undefined): BlockResult | null {
-        if (blockConfig == null || blockConfig.enabled === false) return null;
-        const arcDegrees = blockConfig.arcDegrees ?? 180;
+        if (blockConfig != null && blockConfig.enabled === false) return null;
+        const effective = blockConfig ?? DEFAULT_WEAPON_BLOCK;
+        const arcDegrees = effective.arcDegrees ?? 180;
         const block: BlockResult = {
-            enabled: blockConfig.enabled !== false,
+            enabled: effective.enabled !== false,
             arcRad: degToRad(arcDegrees),
-            damageReduction: blockConfig.damageReduction ?? 1.0,
-            staminaCost: blockConfig.staminaCost ?? 5,
-            animationKey: blockConfig.animationKey ?? 'block'
+            damageReduction: effective.damageReduction ?? 1.0,
+            staminaCost: effective.staminaCost ?? 5,
+            animationKey: effective.animationKey ?? 'block'
         };
-        if (blockConfig.shieldBash) {
-            const sb = blockConfig.shieldBash;
+        if (effective.shieldBash) {
+            const sb = effective.shieldBash;
             block.shieldBash = {
                 knockback: sb.knockback ?? 500,
                 dashSpeed: sb.dashSpeed ?? 380,
@@ -197,9 +221,9 @@ export const WeaponBehavior = {
         const isThrust = stageConfig.thrust === true;
         const thrustWidth = stageConfig.thrustWidth != null ? stageConfig.thrustWidth : 40;
         const reverseSweep = stageConfig.reverseSweep === true;
-        const attackSpeed = weapon.attackSpeed ?? 1;
+        const speed = weapon.speed ?? 1;
         const rawDuration = stageConfig.duration || 100;
-        const duration = Math.round(rawDuration / attackSpeed);
+        const duration = Math.round(rawDuration / speed);
         return {
             range: baseStageRange * (weapon.rangeMultiplier ?? 1),
             damage: weapon.baseDamage * (stageConfig.damageMultiplier || 1.0),
@@ -310,15 +334,16 @@ export const WeaponBehavior = {
         baseRange?: number;
         baseDamage?: number;
         baseArcDegrees?: number;
-        attackSpeed?: number;
+        /** Weapon speed (number); higher = faster. */
+        speed?: number;
         cooldown?: number;
-        cooldownMultiplier?: number;
         maxComboStage?: number | null;
         comboWindow?: number;
         stages?: StageConfigInput[];
         block?: BlockConfigInput | null;
         knockback?: { force?: number } | null;
         twoHanded?: boolean;
+        offhandOnly?: boolean;
         dashAttack?: StageConfigInput | null;
         specialAttack?: StageConfigInput | null;
         rangeMultiplier?: number;
@@ -338,9 +363,10 @@ export const WeaponBehavior = {
     }): ParseWeaponConfigResult {
         const stages = config.stages || [];
         const block = this.buildBlockFromConfig(config.block ?? null);
-        const attackSpeed = config.attackSpeed ?? 1;
-        const baseCooldown = config.cooldown ?? 0.3;
-        const cooldownMultiplier = config.cooldownMultiplier ?? 1;
+        const speed = config.speed ?? 1;
+        const hasAttackModes = stages.length > 0 || !!config.dashAttack || !!config.specialAttack || !!config.chargeAttack || !!config.chargeRelease;
+        const cooldownSec = hasAttackModes ? (config.cooldown ?? 0.3) : 0;
+        const baseCooldown = speed > 0 ? cooldownSec * speed : 0;
         const cr = config.chargeRelease ?? null;
         const chargeRelease: ChargeReleaseResult | null = cr
             ? {
@@ -361,14 +387,15 @@ export const WeaponBehavior = {
             baseRange: config.baseRange ?? 100,
             baseDamage: config.baseDamage ?? 15,
             baseArcDegrees: config.baseArcDegrees ?? 60,
-            attackSpeed,
-            cooldown: baseCooldown * cooldownMultiplier,
+            speed,
+            baseCooldown,
             comboConfig: stages,
             maxComboStage: config.maxComboStage != null ? config.maxComboStage : null,
             comboWindow: config.comboWindow ?? 1.5,
             knockback: config.knockback ?? null,
             block,
             twoHanded: config.twoHanded === true,
+            offhandOnly: config.offhandOnly === true,
             dashAttack: config.dashAttack ?? config.specialAttack ?? null,
             rangeMultiplier: config.rangeMultiplier != null ? config.rangeMultiplier : 1,
             weaponLength: config.weaponLength != null ? config.weaponLength : null,

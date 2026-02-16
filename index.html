@@ -117,28 +117,60 @@
                     </div>
                     <aside class="inventory-equipment">
                         <div class="inventory-equipment-label">Equipment</div>
-                        <div class="equipment-slot" data-slot="weapon">
-                            <span class="equipment-slot-label">Weapon</span>
-                            <span id="inventory-equip-weapon" class="equipment-slot-value">—</span>
+                        <div class="equipment-slot equipment-slot-gold">
+                            <span class="equipment-slot-label">Gold</span>
+                            <span id="inventory-stat-gold" class="equipment-slot-value">0</span>
                         </div>
-                        <div class="equipment-slot" data-slot="head">
+                        <p class="inventory-equipment-subtitle">Weapons</p>
+                        <div class="inventory-equipment-weapons">
+                            <div class="equipment-slot equipment-slot-primary equipment-drop-target" data-equip-slot="mainhand" data-drop-context="inventory">
+                                <span class="equipment-slot-label">Main hand</span>
+                                <span id="inventory-equip-mainhand" class="equipment-slot-value empty">—</span>
+                            </div>
+                            <div class="equipment-slot equipment-slot-primary equipment-drop-target" data-equip-slot="offhand" data-drop-context="inventory">
+                                <span class="equipment-slot-label">Off hand</span>
+                                <span id="inventory-equip-offhand" class="equipment-slot-value empty">—</span>
+                            </div>
+                        </div>
+                        <div class="equipment-slot equipment-slot-locked" data-slot="head" aria-disabled="true">
                             <span class="equipment-slot-label">Head</span>
-                            <span class="equipment-slot-value">—</span>
+                            <span class="equipment-slot-value">Coming soon</span>
                         </div>
-                        <div class="equipment-slot" data-slot="chest">
+                        <div class="equipment-slot equipment-slot-locked" data-slot="chest" aria-disabled="true">
                             <span class="equipment-slot-label">Chest</span>
-                            <span class="equipment-slot-value">—</span>
+                            <span class="equipment-slot-value">Coming soon</span>
                         </div>
-                        <div class="equipment-slot" data-slot="hands">
+                        <div class="equipment-slot equipment-slot-locked" data-slot="hands" aria-disabled="true">
                             <span class="equipment-slot-label">Hands</span>
-                            <span class="equipment-slot-value">—</span>
+                            <span class="equipment-slot-value">Coming soon</span>
                         </div>
-                        <div class="equipment-slot" data-slot="feet">
+                        <div class="equipment-slot equipment-slot-locked" data-slot="feet" aria-disabled="true">
                             <span class="equipment-slot-label">Feet</span>
-                            <span class="equipment-slot-value">—</span>
+                            <span class="equipment-slot-value">Coming soon</span>
                         </div>
                     </aside>
                 </div>
+            </div>
+        </div>
+
+        <!-- Weapon chest (hub: E at chest to open, grid of base weapons) -->
+        <div id="weapon-chest-overlay" class="weapon-chest-overlay hidden" aria-label="Weapon chest">
+            <div class="weapon-chest-panel">
+                <h2 class="weapon-chest-title">Choose weapon</h2>
+                <div id="weapon-chest-grid" class="weapon-chest-grid" role="grid" aria-label="Weapon slots">
+                    <!-- Slots filled by JS from WeaponsRegistry -->
+                </div>
+                <div class="weapon-chest-equipment">
+                    <div class="equipment-slot equipment-slot-primary equipment-drop-target" data-equip-slot="mainhand" data-drop-context="chest">
+                        <span class="equipment-slot-label">Main hand</span>
+                        <span id="chest-equip-mainhand" class="equipment-slot-value empty">—</span>
+                    </div>
+                    <div class="equipment-slot equipment-slot-primary equipment-drop-target" data-equip-slot="offhand" data-drop-context="chest">
+                        <span class="equipment-slot-label">Off hand</span>
+                        <span id="chest-equip-offhand" class="equipment-slot-value empty">—</span>
+                    </div>
+                </div>
+                <button type="button" class="weapon-chest-back" data-action="back">Back</button>
             </div>
         </div>
     </div>

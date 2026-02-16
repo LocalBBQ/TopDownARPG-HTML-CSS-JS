@@ -1,16 +1,41 @@
-// Registry of player weapons (built from weaponConfigs). Dagger is shared with enemies.
-import {
-    SwordAndShieldWeapon,
-    DaggerWeaponInstance,
-    GreatswordWeaponInstance,
-    CrossbowWeaponInstance,
-    MaceWeaponInstance
-} from './weaponConfigs.ts';
+// Registry of player weapons: tiered variants (sword_rusty, sword_bronze, ...) + single shield.
+import { Weapon } from './Weapon.js';
+import { BASE_WEAPON_CONFIGS, shieldConfig } from './weaponConfigs.js';
+import { MATERIALS, TIERED_WEAPON_KEYS, getTierDamage } from './materialTiers.js';
 
-export const Weapons: Record<string, unknown> = {
-    swordAndShield: SwordAndShieldWeapon,
-    dagger: DaggerWeaponInstance,
-    greatsword: GreatswordWeaponInstance,
-    crossbow: CrossbowWeaponInstance,
-    mace: MaceWeaponInstance
+const BASE_DISPLAY_NAMES: Record<string, string> = {
+    sword: 'Sword',
+    greatsword: 'Greatsword',
+    dagger: 'Dagger',
+    mace: 'Mace',
+    crossbow: 'Crossbow'
 };
+
+function buildWeaponsRegistry(): Record<string, Weapon> {
+    const registry: Record<string, Weapon> = {};
+
+    for (const baseKey of TIERED_WEAPON_KEYS) {
+        const baseConfig = BASE_WEAPON_CONFIGS[baseKey];
+        const baseName = BASE_DISPLAY_NAMES[baseKey] ?? baseKey;
+        if (!baseConfig) continue;
+
+        for (const material of MATERIALS) {
+            const damage = getTierDamage(baseKey, material.id);
+            if (damage === undefined) continue;
+
+            const variantConfig = {
+                ...baseConfig,
+                name: `${material.displayName} ${baseName}`,
+                baseDamage: damage,
+                color: material.color,
+                material: material.id
+            };
+            registry[`${baseKey}_${material.id}`] = Weapon.fromConfig(variantConfig);
+        }
+    }
+
+    registry['shield'] = Weapon.fromConfig(shieldConfig);
+    return registry;
+}
+
+export const Weapons: Record<string, unknown> = buildWeaponsRegistry();

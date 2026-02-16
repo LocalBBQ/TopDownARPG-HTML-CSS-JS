@@ -7,6 +7,7 @@ import { Transform } from '../components/Transform.ts';
 import { StatusEffects } from '../components/StatusEffects.ts';
 import { Combat } from '../components/Combat.ts';
 import { Projectile } from '../projectiles/Projectile.ts';
+import { EventTypes } from '../core/EventTypes.ts';
 import type { SystemManager } from '../core/SystemManager.ts';
 import type { CameraShape } from '../types/camera.ts';
 
@@ -71,6 +72,9 @@ export class ProjectileManager {
                                     const dy = (enemyTransform as Transform).y - projectile.y;
                                     (enemyMovement as Movement).applyKnockback(dx, dy, GameConfig.player.knockback.force);
                                 }
+                                if (systems?.eventBus) {
+                                    (systems.eventBus as { emit(name: string, payload?: unknown): void }).emit(EventTypes.PLAYER_HIT_ENEMY, {});
+                                }
                             }
                             projectile.active = false;
                             this.projectiles.splice(i, 1);
@@ -112,7 +116,7 @@ export class ProjectileManager {
                                 (playerStatus as StatusEffects).addStunBuildup(baseStun * mult);
                             }
 
-                            if (playerMovement && playerTransform && !blocked) {
+                            if (playerMovement && playerTransform) {
                                 const dx = (playerTransform as Transform).x - projectile.x;
                                 const dy = (playerTransform as Transform).y - projectile.y;
                                 const enemyConfig = GameConfig.enemy.types.skeleton || GameConfig.enemy.types.goblin;

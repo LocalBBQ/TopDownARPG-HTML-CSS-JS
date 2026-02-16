@@ -120,6 +120,14 @@ export class InputSystem {
     return !!this.keys[key.toLowerCase()];
   }
 
+  /** Clear all key and mouse state so menu open doesn't leave stale input (e.g. W still held). */
+  clearAllKeys(): void {
+    this.keys = {};
+    this.mouseDown = false;
+    this.isCharging = false;
+    this.rightMouseDown = false;
+  }
+
   clearClick(): void {
     this.mouseClicked = false;
   }

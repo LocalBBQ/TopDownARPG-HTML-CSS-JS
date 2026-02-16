@@ -59,12 +59,18 @@ export class MinimapRenderer {
         const levelConfigMinimap = isHub ? GameConfig.hub : (GameConfig.levels && GameConfig.levels[currentLevel]);
         const theme = levelConfigMinimap && levelConfigMinimap.theme ? levelConfigMinimap.theme : null;
         const ground = theme && theme.ground ? theme.ground : { r: 30, g: 50, b: 30, variation: 18 };
+        const patch = ground.patch != null && typeof ground.patch === 'object' ? ground.patch as { r: number; g: number; b: number; variation?: number; chance: number } : null;
+        const tileHash = (tx: number, ty: number) => ((tx * 73856093) ^ (ty * 19349663)) >>> 0;
+        const isPatchTile = patch && patch.chance > 0 ? (x: number, y: number) => (tileHash(Math.floor(x / tileSize), Math.floor(y / tileSize)) % 1000) / 1000 < patch.chance : () => false;
         for (let x = 0; x < worldWidth; x += tileSize) {
             for (let y = 0; y < worldHeight; y += tileSize) {
-                const v = Math.floor((x + y) % 3) * (ground.variation || 15);
-                const r = Math.max(0, Math.min(255, ground.r + v));
-                const gVal = Math.max(0, Math.min(255, ground.g + v));
-                const b = Math.max(0, Math.min(255, ground.b + v));
+                const usePatch = isPatchTile(x, y);
+                const base = usePatch && patch ? patch : ground;
+                const vari = base.variation ?? ground.variation ?? 15;
+                const v = Math.floor((x + y) % 3) * vari;
+                const r = Math.max(0, Math.min(255, base.r + v));
+                const gVal = Math.max(0, Math.min(255, base.g + v));
+                const b = Math.max(0, Math.min(255, base.b + v));
                 ctx.fillStyle = `rgb(${r}, ${gVal}, ${b})`;
                 ctx.fillRect(x, y, tileSize, tileSize);
             }

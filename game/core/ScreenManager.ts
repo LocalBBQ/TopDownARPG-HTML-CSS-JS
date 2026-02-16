@@ -16,21 +16,28 @@ export interface SettingsLike {
   showEnemyHealthBars?: boolean;
 }
 
+const MENU_SCREENS: ScreenName[] = ['title', 'death', 'pause', 'settings', 'settings-controls', 'help'];
+
 export class ScreenManager {
     canvas: HTMLCanvasElement;
     ctx: CanvasRenderingContext2D;
     currentScreen: ScreenName;
     selectedStartLevel: number;
+    onEnterMenuScreen?: () => void;
 
-    constructor(canvas: HTMLCanvasElement, ctx: CanvasRenderingContext2D) {
+    constructor(canvas: HTMLCanvasElement, ctx: CanvasRenderingContext2D, onEnterMenuScreen?: () => void) {
         this.canvas = canvas;
         this.ctx = ctx;
         this.currentScreen = 'title';
         this.selectedStartLevel = 1;
+        this.onEnterMenuScreen = onEnterMenuScreen;
     }
 
     setScreen(screen: ScreenName): void {
         this.currentScreen = screen;
+        if (MENU_SCREENS.includes(screen) && this.onEnterMenuScreen) {
+            this.onEnterMenuScreen();
+        }
     }
 
     isScreen(screen: ScreenName): boolean {
@@ -76,11 +83,11 @@ export class ScreenManager {
         return {
             cx, rowW, rowH, startY,
             rows: [
-                { key: 'swordAndShield', label: 'Sword & Shield', y: startY },
-                { key: 'dagger', label: 'Dagger', y: startY + rowH },
-                { key: 'greatsword', label: 'Greatsword', y: startY + rowH * 2 },
-                { key: 'crossbow', label: 'Crossbow', y: startY + rowH * 3 },
-                { key: 'mace', label: 'Mace', y: startY + rowH * 4 }
+                { key: 'sword_rusty', label: 'Rusty Sword', y: startY },
+                { key: 'dagger_rusty', label: 'Rusty Dagger', y: startY + rowH },
+                { key: 'greatsword_rusty', label: 'Rusty Greatsword', y: startY + rowH * 2 },
+                { key: 'crossbow_rusty', label: 'Rusty Crossbow', y: startY + rowH * 3 },
+                { key: 'mace_rusty', label: 'Rusty Mace', y: startY + rowH * 4 }
             ]
         };
     }
@@ -530,16 +537,20 @@ export class ScreenManager {
         const cx = width / 2;
         const rowH = 28;
         const rowW = 260;
-        const startY = height / 2 - 30;
+        const startY = height / 2 - 140;
         return {
             cx, rowW, rowH, startY,
-            backY: height / 2 + 120,
+            backY: height / 2 + 160,
             rows: [
-                { key: 'swordAndShield', label: 'Sword & Shield', y: startY },
-                { key: 'dagger', label: 'Dagger', y: startY + rowH },
-                { key: 'greatsword', label: 'Greatsword', y: startY + rowH * 2 },
-                { key: 'crossbow', label: 'Crossbow', y: startY + rowH * 3 },
-                { key: 'mace', label: 'Mace', y: startY + rowH * 4 }
+                { key: 'sword_rusty', mainhandKey: 'sword_rusty', offhandKey: 'none', label: 'Rusty Sword', y: startY },
+                { key: 'sword_rusty+shield', mainhandKey: 'sword_rusty', offhandKey: 'shield', label: 'Rusty Sword + Shield', y: startY + rowH },
+                { key: 'dagger_rusty', mainhandKey: 'dagger_rusty', offhandKey: 'none', label: 'Rusty Dagger', y: startY + rowH * 2 },
+                { key: 'dagger_rusty+shield', mainhandKey: 'dagger_rusty', offhandKey: 'shield', label: 'Rusty Dagger + Shield', y: startY + rowH * 3 },
+                { key: 'greatsword_rusty', mainhandKey: 'greatsword_rusty', offhandKey: 'none', label: 'Rusty Greatsword', y: startY + rowH * 4 },
+                { key: 'crossbow_rusty', mainhandKey: 'crossbow_rusty', offhandKey: 'none', label: 'Rusty Crossbow', y: startY + rowH * 5 },
+                { key: 'crossbow_rusty+shield', mainhandKey: 'crossbow_rusty', offhandKey: 'shield', label: 'Rusty Crossbow + Shield', y: startY + rowH * 6 },
+                { key: 'mace_rusty', mainhandKey: 'mace_rusty', offhandKey: 'none', label: 'Rusty Mace', y: startY + rowH * 7 },
+                { key: 'mace_rusty+shield', mainhandKey: 'mace_rusty', offhandKey: 'shield', label: 'Rusty Mace + Shield', y: startY + rowH * 8 }
             ]
         };
     }
@@ -551,7 +562,9 @@ export class ScreenManager {
         for (const row of b.rows) {
             const top = row.y - b.rowH / 2;
             const bottom = row.y + b.rowH / 2;
-            if (x >= left && x <= right && y >= top && y <= bottom) return row.key;
+            if (x >= left && x <= right && y >= top && y <= bottom) {
+                return { mainhandKey: row.mainhandKey, offhandKey: row.offhandKey };
+            }
         }
         return null;
     }
@@ -567,7 +580,7 @@ export class ScreenManager {
         return x >= left && x <= right && y >= top && y <= bottom;
     }
 
-    renderWeaponChestOverlay(equippedWeaponKey) {
+    renderWeaponChestOverlay(equippedMainhandKey, equippedOffhandKey) {
         this.ctx.setTransform(1, 0, 0, 1, 0, 0);
         const width = this.canvas.width;
         const height = this.canvas.height;
@@ -584,7 +597,7 @@ export class ScreenManager {
 
         const b = this.getWeaponChestOverlayBounds();
         for (const row of b.rows) {
-            const isEquipped = equippedWeaponKey === row.key;
+            const isEquipped = equippedMainhandKey === row.mainhandKey && equippedOffhandKey === row.offhandKey;
             this.ctx.fillStyle = isEquipped ? 'rgba(201, 162, 39, 0.25)' : 'rgba(20, 16, 8, 0.6)';
             this.ctx.fillRect(b.cx - b.rowW / 2, row.y - b.rowH / 2, b.rowW, b.rowH);
             this.ctx.strokeStyle = isEquipped ? '#c9a227' : '#4a3020';
@@ -848,7 +861,7 @@ export class ScreenManager {
             'Shift + Left click — Dash attack',
             'E — Portal to next area',
             'B — Return to Sanctuary',
-            'In Sanctuary: E at board — Level select · E at chest — Change weapon'
+            'In Sanctuary: E at board — Level select · E at chest — Change weapon · E at shop — Buy weapons'
         ];
         this.ctx.fillStyle = '#e8dcc8';
         this.ctx.font = '500 15px Cinzel, Georgia, serif';
