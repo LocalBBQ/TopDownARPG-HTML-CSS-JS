@@ -1,5 +1,5 @@
 /**
- * Canvas-based inventory and weapon chest UI: layout, render, and hit-test.
+ * Canvas-based inventory and equipment chest UI: layout, render, and hit-test.
  * Used when inventoryOpen or chestOpen; pointer events handled by Game.
  */
 import type { ArmorSlotId, InventorySlot, PlayingStateShape, WeaponInstance } from '../state/PlayingState.js';
@@ -1283,7 +1283,7 @@ export function renderChest(
     ctx.font = '700 24px Cinzel, Georgia, serif';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.fillText('Choose weapon', cx, layout.weaponSlots[0]?.y ? layout.weaponSlots[0].y - 50 : canvas.height / 2 - 80);
+    ctx.fillText('Equipment', cx, layout.weaponSlots[0]?.y ? layout.weaponSlots[0].y - 50 : canvas.height / 2 - 80);
 
     for (const s of layout.weaponSlots) {
         const instance = s.index < chestSlots.length ? chestSlots[s.index] : undefined;

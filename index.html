@@ -59,14 +59,14 @@
         <!-- Inventory is canvas-only (Tab to open); this div is kept for visibility toggle. -->
         <div id="inventory-screen" class="inventory-screen hidden" aria-label="Inventory overlay"></div>
 
-        <!-- Weapon chest (hub: E at chest to open, grid of base weapons) -->
-        <div id="weapon-chest-overlay" class="weapon-chest-overlay hidden" aria-label="Weapon chest">
-            <div class="weapon-chest-panel">
-                <h2 class="weapon-chest-title">Choose weapon</h2>
-                <div id="weapon-chest-grid" class="weapon-chest-grid" role="grid" aria-label="Weapon slots">
+        <!-- Equipment chest (hub: E at chest to open, grid of weapons/equipment) -->
+        <div id="equipment-chest-overlay" class="equipment-chest-overlay hidden" aria-label="Equipment chest">
+            <div class="equipment-chest-panel">
+                <h2 class="equipment-chest-title">Equipment</h2>
+                <div id="equipment-chest-grid" class="equipment-chest-grid" role="grid" aria-label="Equipment slots">
                     <!-- Slots filled by JS from WeaponsRegistry -->
                 </div>
-                <div class="weapon-chest-equipment">
+                <div class="equipment-chest-equipment">
                     <div class="equipment-slot equipment-slot-primary equipment-drop-target" data-equip-slot="mainhand" data-drop-context="chest">
                         <span class="equipment-slot-label">Main hand</span>
                         <span id="chest-equip-mainhand" class="equipment-slot-value empty">—</span>
@@ -76,7 +76,7 @@
                         <span id="chest-equip-offhand" class="equipment-slot-value empty">—</span>
                     </div>
                 </div>
-                <button type="button" class="weapon-chest-back" data-action="back">Back</button>
+                <button type="button" class="equipment-chest-back" data-action="back">Back</button>
             </div>
         </div>
     </div>

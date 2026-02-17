@@ -1,5 +1,5 @@
 /**
- * HUD and inventory panel updates: health/stamina orbs, inventory screen, player portrait, weapon chest overlay.
+ * HUD and inventory panel updates: health/stamina orbs, inventory screen, player portrait, equipment chest overlay.
  */
 import type { Entity } from '../entities/Entity.js';
 import type { ArmorSlotId, InventorySlot, PlayingStateShape } from '../state/PlayingState.js';
@@ -58,10 +58,10 @@ export class HUDController {
     }
 
     private setupChestOverlay(): void {
-        const overlay = document.getElementById('weapon-chest-overlay');
+        const overlay = document.getElementById('equipment-chest-overlay');
         if (!overlay) return;
         overlay.addEventListener('click', (e) => this.handleChestOverlayClick(e));
-        const chestGrid = document.getElementById('weapon-chest-grid');
+        const chestGrid = document.getElementById('equipment-chest-grid');
         if (chestGrid) {
             chestGrid.addEventListener('dragover', (e) => this.handleChestSlotDragover(e));
             chestGrid.addEventListener('dragleave', (e) => this.handleChestSlotDragleave(e));
@@ -70,7 +70,7 @@ export class HUDController {
     }
 
     private handleChestSlotDragover(e: DragEvent): void {
-        const slot = (e.target as HTMLElement).closest?.('.weapon-chest-slot');
+        const slot = (e.target as HTMLElement).closest?.('.equipment-chest-slot');
         if (!slot || !e.dataTransfer || !this.getWeaponKeyFromDrag(e)) return;
         e.preventDefault();
         e.dataTransfer.dropEffect = 'move';
@@ -78,12 +78,12 @@ export class HUDController {
     }
 
     private handleChestSlotDragleave(e: DragEvent): void {
-        const slot = (e.target as HTMLElement).closest?.('.weapon-chest-slot');
+        const slot = (e.target as HTMLElement).closest?.('.equipment-chest-slot');
         if (slot) (slot as HTMLElement).classList.remove('drag-over');
     }
 
     private handleChestSlotDrop(e: DragEvent): void {
-        const slot = (e.target as HTMLElement).closest?.('.weapon-chest-slot');
+        const slot = (e.target as HTMLElement).closest?.('.equipment-chest-slot');
         if (!slot) return;
         (slot as HTMLElement).classList.remove('drag-over');
         e.preventDefault();
@@ -381,13 +381,13 @@ export class HUDController {
 
     private initChestGrid(): void {
         if (this.chestGridInitialized) return;
-        const grid = document.getElementById('weapon-chest-grid');
+        const grid = document.getElementById('equipment-chest-grid');
         if (!grid) return;
         for (const key of CHEST_WEAPON_ORDER) {
             if (!Weapons[key]) continue;
             const btn = document.createElement('button');
             btn.type = 'button';
-            btn.className = 'weapon-chest-slot';
+            btn.className = 'equipment-chest-slot';
             btn.setAttribute('data-weapon-key', key);
             btn.draggable = true;
             btn.textContent = getWeaponSymbol(key);
@@ -409,11 +409,11 @@ export class HUDController {
     }
 
     private refreshChestGridEquippedState(): void {
-        const grid = document.getElementById('weapon-chest-grid');
+        const grid = document.getElementById('equipment-chest-grid');
         if (!grid) return;
         const mainhand = this.ctx.playingState.equippedMainhandKey;
         const offhand = this.ctx.playingState.equippedOffhandKey;
-        for (const el of grid.querySelectorAll('.weapon-chest-slot')) {
+        for (const el of grid.querySelectorAll('.equipment-chest-slot')) {
             const slot = el as HTMLElement;
             const key = slot.getAttribute('data-weapon-key');
             slot.classList.toggle('equipped', key === mainhand || key === offhand);
@@ -421,7 +421,7 @@ export class HUDController {
     }
 
     setChestOverlayVisible(visible: boolean): void {
-        const el = document.getElementById('weapon-chest-overlay');
+        const el = document.getElementById('equipment-chest-overlay');
         if (el) {
             el.classList.toggle('hidden', !visible);
             if (visible) {

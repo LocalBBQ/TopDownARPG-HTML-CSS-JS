@@ -176,6 +176,10 @@ class Game {
     set shopOpen(v) { this.playingState.shopOpen = v; }
     get boardOpen() { return this.playingState.boardOpen; }
     set boardOpen(v) { this.playingState.boardOpen = v; }
+    /** True when the last mousedown was over inventory/chest/shop UI; attack/block should ignore that click. Cleared on matching mouseup. */
+    private lastPointerDownConsumedByUI = false;
+    get pointerDownConsumedByUI(): boolean { return this.lastPointerDownConsumedByUI; }
+    clearPointerDownConsumedByUI(): void { this.lastPointerDownConsumedByUI = false; }
     get playerInGatherableRange() { return this.playingState.playerInGatherableRange; }
     set playerInGatherableRange(v) { this.playingState.playerInGatherableRange = v; }
     get crossbowReloadProgress() { return this.playingState.crossbowReloadProgress; }
@@ -627,10 +631,12 @@ class Game {
         });
 
         // Pointer events for inventory/chest drag-and-drop (skip drag when Ctrl held so ctrl+click only runs once)
+        // Use capture so we run before InputSystem and can mark clicks on UI (so attack/block are not triggered)
         this.canvas.addEventListener('mousedown', (e) => {
             const { x, y } = this.getCanvasCoords(e);
+            this.lastPointerDownConsumedByUI = this.isPointerOverInventoryOrChestOrShopUI(x, y);
             if (this.handleInventoryChestPointerDown(x, y, e.ctrlKey)) e.preventDefault();
-        });
+        }, true);
         this.canvas.addEventListener('mousemove', (e) => {
             const { x, y } = this.getCanvasCoords(e);
             this.handleInventoryChestPointerMove(x, y);
@@ -1110,6 +1116,27 @@ class Game {
 
     refreshInventoryPanel() {
         this.hudController.refreshInventoryPanel();
+    }
+
+    /** True if (x,y) in canvas coords is over the inventory, chest, or shop UI (so attack/block should not fire). */
+    private isPointerOverInventoryOrChestOrShopUI(x: number, y: number): boolean {
+        if (this.playingState.chestOpen) return true; // chest uses full-screen overlay
+        if (this.playingState.inventoryOpen) {
+            const layout = getInventoryLayout(this.canvas);
+            const p = layout.panel;
+            if (x >= p.x && x <= p.x + p.w && y >= p.y && y <= p.y + p.h) return true;
+        }
+        if (this.playingState.shopOpen) {
+            const layout = getShopLayout(
+                this.canvas,
+                this.playingState.shopScrollOffset ?? 0,
+                this.playingState.shopExpandedWeapons,
+                this.playingState
+            );
+            const p = layout.panel;
+            if (x >= p.x && x <= p.x + p.w && y >= p.y && y <= p.y + p.h) return true;
+        }
+        return false;
     }
 
     /** Handle Back/Close on inventory or chest canvas UI. Returns true if click was consumed. */
