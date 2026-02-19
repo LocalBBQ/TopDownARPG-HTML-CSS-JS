@@ -54,6 +54,13 @@ export class ProjectileManager {
             }
 
             if (projectile.checkObstacleCollision(obstacleManager)) {
+                // If we hit a breakable, damage it (and remove if hp <= 0)
+                if (obstacleManager && typeof obstacleManager.getObstacleAt === 'function') {
+                    const hitObstacle = obstacleManager.getObstacleAt(projectile.x, projectile.y, projectile.width, projectile.height);
+                    if (hitObstacle && hitObstacle.breakable && hitObstacle.hp != null) {
+                        obstacleManager.damageObstacle(hitObstacle, projectile.damage);
+                    }
+                }
                 projectile.active = false;
                 this.projectiles.splice(i, 1);
                 continue;
@@ -158,24 +165,55 @@ export class ProjectileManager {
             ctx.save();
             ctx.translate(screenX, screenY);
             ctx.rotate(projectile.angle);
-            // Arrow shape: shaft + head (drawn along local x-axis, pointing right)
+            // Arrow: diamond tip (front), shaft line, fletching (back). Drawn along +x.
             const len = 14 * z;
-            const halfW = 1.5 * z;
-            const headLen = 5 * z;
-            ctx.fillStyle = projectile.color;
-            ctx.strokeStyle = '#000';
+            const headLen = 4 * z;   // diamond tip depth
+            const headW = 2.5 * z;   // diamond half-width
+            const fletchLen = 3 * z; // fletching length (backward from tail)
+            const fletchW = 2 * z;   // fletching half-width
+            const tipX = len / 2;
+            const tailX = -len / 2;
+
+            ctx.strokeStyle = '#c0c0c0';
             ctx.lineWidth = Math.max(0.5, 1 / z);
+            ctx.lineCap = 'round';
+            ctx.lineJoin = 'round';
+
+            // 1) Diamond tip (front) — white
+            const headBackX = tipX - headLen;
+            const headRearX = headBackX - headLen;
+            ctx.fillStyle = '#ffffff';
             ctx.beginPath();
-            // Shaft (rounded rect from -len/2 to head start)
-            const shaftEnd = len / 2 - headLen;
-            ctx.moveTo(-len / 2, halfW);
-            ctx.lineTo(shaftEnd, halfW);
-            ctx.lineTo(shaftEnd + headLen, 0);
-            ctx.lineTo(shaftEnd, -halfW);
-            ctx.lineTo(-len / 2, -halfW);
+            ctx.moveTo(tipX, 0);           // point
+            ctx.lineTo(headBackX, headW);  // top
+            ctx.lineTo(headRearX, 0);      // back of diamond
+            ctx.lineTo(headBackX, -headW); // bottom
             ctx.closePath();
             ctx.fill();
             ctx.stroke();
+
+            // 2) Shaft (line from back of diamond to fletching) — brown
+            ctx.strokeStyle = '#6b5344';
+            ctx.lineWidth = Math.max(1, 1.5 / z);
+            const shaftLeft = tailX + fletchLen * 0.5;
+            ctx.beginPath();
+            ctx.moveTo(headRearX, 0);
+            ctx.lineTo(shaftLeft, 0);
+            ctx.stroke();
+
+            // 3) Fletching (feathers at tail) — white
+            ctx.strokeStyle = '#d0d0d0';
+            ctx.fillStyle = '#f0f0f0';
+            ctx.lineWidth = Math.max(0.5, 1 / z);
+            ctx.beginPath();
+            ctx.moveTo(tailX, 0);
+            ctx.lineTo(tailX - fletchLen, fletchW);
+            ctx.lineTo(tailX - fletchLen * 0.3, 0);
+            ctx.lineTo(tailX - fletchLen, -fletchW);
+            ctx.closePath();
+            ctx.fill();
+            ctx.stroke();
+
             ctx.restore();
         }
     }

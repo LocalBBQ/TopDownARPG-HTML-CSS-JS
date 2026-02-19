@@ -193,6 +193,26 @@ const crossbowConfig: WeaponConfigInput = {
     }
 };
 
+const bowConfig: WeaponConfigInput = {
+    name: 'bow',
+    twoHanded: true,
+    baseRange: 550,
+    baseDamage: 14,
+    baseArcDegrees: 0,
+    cooldown: 0,
+    comboWindow: 0,
+    stages: [],
+    isRanged: true,
+    isBow: true,
+    block: {
+        enabled: true,
+        arcDegrees: 60,
+        damageReduction: 0.28,
+        staminaCost: 16,
+        animationKey: 'block'
+    }
+};
+
 const maceConfig: WeaponConfigInput = {
     name: 'mace',
     twoHanded: false,
@@ -281,6 +301,7 @@ export const ShieldWeaponInstance = Weapon.fromConfig(shieldConfig);
 export const GreatswordWeaponInstance = Weapon.fromConfig(greatswordConfig);
 export const DaggerWeaponInstance = Weapon.fromConfig(daggerConfig);
 export const CrossbowWeaponInstance = Weapon.fromConfig(crossbowConfig);
+export const BowWeaponInstance = Weapon.fromConfig(bowConfig);
 export const MaceWeaponInstance = Weapon.fromConfig(maceConfig);
 export const ChieftainClubWeaponInstance = Weapon.fromConfig(chieftainClubConfig);
 export const GoblinDaggerWeaponInstance = Weapon.fromConfig(goblinDaggerConfig);
@@ -291,6 +312,7 @@ export const BASE_WEAPON_CONFIGS: Record<string, WeaponConfigInput> = {
     greatsword: greatswordConfig,
     dagger: daggerConfig,
     mace: maceConfig,
-    crossbow: crossbowConfig
+    crossbow: crossbowConfig,
+    bow: bowConfig
 };
 export { shieldConfig, defenderConfig };

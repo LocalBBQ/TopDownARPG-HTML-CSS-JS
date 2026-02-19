@@ -92,6 +92,10 @@ export interface PlayingStateShape {
   shopScrollOffset: number;
   /** Which weapon-type dropdowns are expanded. Key = base weapon key; undefined/true = expanded, false = collapsed. */
   shopExpandedWeapons?: Record<string, boolean>;
+  /** Which armor-slot dropdowns are expanded. Key = slot id; undefined = collapsed (auto-collapsed like weapons). */
+  shopExpandedArmor?: Record<string, boolean>;
+  /** Which parent categories are expanded: 'weapons' | 'armor'. undefined = both collapsed. */
+  shopExpandedCategories?: Record<string, boolean>;
   playerNearShop: boolean;
   crossbowReloadProgress: number;
   crossbowReloadInProgress: boolean;
@@ -156,7 +160,7 @@ export function getInitialChestWeapons(): (WeaponInstance | null)[] {
 }
 
 /** Max durability per weapon. Each confirmed hit costs 1. */
-export const MAX_WEAPON_DURABILITY = 100;
+export const MAX_WEAPON_DURABILITY = 300;
 
 /** Resolves config defaultWeapon (+ optional defaultOffhand) to mainhand and offhand. */
 export function resolveDefaultWeapons(defaultWeapon: string, defaultOffhand?: string): { mainhand: string; offhand: string } {

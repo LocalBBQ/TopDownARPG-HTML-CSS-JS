@@ -77,3 +77,31 @@ export const SHOP_ARMOR_ENTRIES: { key: string; price: number }[] = [
   { key: 'leather_boots', price: 70 },
   { key: 'chain_boots', price: 220 },
 ];
+
+/** Order of armor slot categories in the shop UI. */
+export const SHOP_ARMOR_SLOT_ORDER: ArmorSlotId[] = ['head', 'chest', 'hands', 'feet'];
+
+/** Display labels for armor slot categories in the shop. */
+export const SHOP_ARMOR_SLOT_LABELS: Record<ArmorSlotId, string> = {
+  head: 'Head',
+  chest: 'Chest',
+  hands: 'Hands',
+  feet: 'Feet',
+};
+
+/** Shop armor entries grouped by slot (for collapsible category dropdowns). */
+export function getShopArmorBySlot(): Record<ArmorSlotId, { key: string; price: number }[]> {
+  const bySlot: Record<ArmorSlotId, { key: string; price: number }[]> = {
+    head: [],
+    chest: [],
+    hands: [],
+    feet: [],
+  };
+  for (const entry of SHOP_ARMOR_ENTRIES) {
+    const config = getArmor(entry.key);
+    if (config && bySlot[config.slot]) {
+      bySlot[config.slot].push({ key: entry.key, price: entry.price });
+    }
+  }
+  return bySlot;
+}

@@ -15,6 +15,12 @@ export class Obstacle {
   sprite: unknown;
   spritePath: string | null;
   spriteFrameIndex?: number;
+  /** If true, obstacle can be damaged by attacks and removed when hp reaches 0. */
+  breakable?: boolean;
+  /** Current hit points; when <= 0 the obstacle is removed. Only used when breakable is true. */
+  hp?: number;
+  /** Unique id for this obstacle (set by ObstacleManager). Used to avoid double-hits in one attack. */
+  id?: string;
 
   constructor(x: number, y: number, width: number, height: number, type = 'tree') {
     this.x = x;

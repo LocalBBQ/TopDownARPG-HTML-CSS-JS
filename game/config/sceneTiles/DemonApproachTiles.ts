@@ -6,8 +6,8 @@
 export const SceneTilesDemonApproach: Record<string, { width: number; height: number; obstacles?: unknown[]; gatherables?: unknown[]; [key: string]: unknown }> = {
         /** Clearing: sparse lava rocks, 1–2 braziers, open center, short wall fragment. */
         clearing: {
-            width: 800,
-            height: 800,
+            width: 1200,
+            height: 1200,
             obstacles: [
                 { type: 'lavaRock', x: 120, y: 140, width: 48, height: 48 },
                 { type: 'lavaRock', x: 620, y: 180, width: 52, height: 52 },
@@ -27,8 +27,8 @@ export const SceneTilesDemonApproach: Record<string, { width: number; height: nu
 
         /** Crossroads: one central brazier, a few lava rocks, corner wall stubs. */
         crossroads: {
-            width: 800,
-            height: 800,
+            width: 1200,
+            height: 1200,
             obstacles: [
                 { type: 'brazier', x: 370, y: 365, width: 48, height: 48 },
                 { type: 'lavaRock', x: 80, y: 100, width: 50, height: 50 },
@@ -43,8 +43,8 @@ export const SceneTilesDemonApproach: Record<string, { width: number; height: nu
 
         /** Pillar ring: central demon pillar, ring of lava rocks, rubble, wall fragments. */
         pillarRing: {
-            width: 800,
-            height: 800,
+            width: 1200,
+            height: 1200,
             obstacles: [
                 { type: 'demonPillar', x: 362, y: 342, width: 52, height: 52 },
                 { type: 'lavaRock', x: 280, y: 280, width: 55, height: 55 },
@@ -66,8 +66,8 @@ export const SceneTilesDemonApproach: Record<string, { width: number; height: nu
 
         /** Demon shrine: pillars, statue base, columns, braziers, rubble, ruined walls. */
         demonShrine: {
-            width: 800,
-            height: 800,
+            width: 1200,
+            height: 1200,
             obstacles: [
                 { type: 'demonPillar', x: 350, y: 300, width: 50, height: 50 },
                 { type: 'statueBase', x: 340, y: 380, width: 90, height: 90 },
@@ -97,8 +97,8 @@ export const SceneTilesDemonApproach: Record<string, { width: number; height: nu
 
         /** Brazier court: several braziers in a rough rectangle, lava rocks, rubble, low walls. */
         brazierCourt: {
-            width: 800,
-            height: 800,
+            width: 1200,
+            height: 1200,
             obstacles: [
                 { type: 'brazier', x: 280, y: 280, width: 46, height: 46 },
                 { type: 'brazier', x: 470, y: 275, width: 44, height: 44 },
@@ -121,8 +121,8 @@ export const SceneTilesDemonApproach: Record<string, { width: number; height: nu
 
         /** Ruined gate: arch, broken pillars, rubble, one brazier, flanking walls. */
         ruinedGate: {
-            width: 800,
-            height: 800,
+            width: 1200,
+            height: 1200,
             obstacles: [
                 { type: 'arch', x: 350, y: 320, width: 80, height: 80 },
                 { type: 'brokenPillar', x: 260, y: 380, width: 58, height: 72 },
@@ -142,8 +142,8 @@ export const SceneTilesDemonApproach: Record<string, { width: number; height: nu
 
         /** Lava rock field: dense lava rocks, 1–2 braziers, rubble, wall runs. */
         lavaRockField: {
-            width: 800,
-            height: 800,
+            width: 1200,
+            height: 1200,
             obstacles: [
                 { type: 'lavaRock', x: 60, y: 80, width: 52, height: 52 },
                 { type: 'lavaRock', x: 200, y: 60, width: 48, height: 48 },
@@ -175,8 +175,8 @@ export const SceneTilesDemonApproach: Record<string, { width: number; height: nu
         /** Demon camp: 2–3 demon pillars, braziers, lava rocks, wall segments. Pack spawn. */
         demonCamp: {
             spawn: { type: 'pack', count: 1 },
-            width: 800,
-            height: 800,
+            width: 1200,
+            height: 1200,
             obstacles: [
                 { type: 'demonPillar', x: 320, y: 320, width: 52, height: 52 },
                 { type: 'demonPillar', x: 428, y: 328, width: 48, height: 48 },
@@ -200,8 +200,8 @@ export const SceneTilesDemonApproach: Record<string, { width: number; height: nu
         /** Skeleton camp: firepit, rubble, broken pillar, lava rocks, ruined walls. Pack spawn. */
         skeletonCamp: {
             spawn: { type: 'pack', count: 1 },
-            width: 800,
-            height: 800,
+            width: 1200,
+            height: 1200,
             obstacles: [
                 { type: 'firepit', x: 355, y: 345, width: 68, height: 68 },
                 { type: 'brokenPillar', x: 280, y: 320, width: 56, height: 70 },
@@ -224,8 +224,8 @@ export const SceneTilesDemonApproach: Record<string, { width: number; height: nu
         /** Ashen plaza: statue base, pillars, braziers at corners, rubble, interior walls. Fenced perimeter. */
         ashenPlaza: {
             perimeterFence: { spacing: 36, size: 28 },
-            width: 800,
-            height: 800,
+            width: 1200,
+            height: 1200,
             obstacles: [
                 { type: 'statueBase', x: 350, y: 350, width: 95, height: 95 },
                 { type: 'pillar', x: 280, y: 300, width: 52, height: 52 },
@@ -259,8 +259,8 @@ export const SceneTilesDemonApproach: Record<string, { width: number; height: nu
 
         /** Ruin fragment: rubble, broken pillar, lava rocks, stone debris, ruined walls. */
         ruinFragment: {
-            width: 800,
-            height: 800,
+            width: 1200,
+            height: 1200,
             obstacles: [
                 { type: 'rubble', x: 280, y: 300, width: 115, height: 75 },
                 { type: 'rubble', x: 420, y: 420, width: 95, height: 70 },

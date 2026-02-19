@@ -80,6 +80,7 @@ import {
     getRerollOverlayLayout,
     hitTestRerollOverlay
 } from '../ui/RerollOverlay.js';
+import { hitTestMinimapZoomButtons, MINIMAP_ZOOM_MIN, MINIMAP_ZOOM_MAX, MINIMAP_ZOOM_STEP } from '../systems/renderers/MinimapRenderer.ts';
 import { rerollEnchantSlot, moveToRerollSlot, moveFromRerollSlotTo, addWeaponToInventory } from '../state/InventoryActions.js';
 
 /** When the pointer hovers a weapon slot in chest or inventory (canvas UI), used to draw tooltip. */
@@ -123,6 +124,7 @@ class Game {
                 musicEnabled: true,
                 sfxEnabled: true,
                 showMinimap: true,
+                minimapZoom: 1,
                 useCharacterSprites: false,  // Player + enemies use sprite sheets vs procedural canvas knight
                 useEnvironmentSprites: false, // Trees/rocks/houses etc use sprite images vs procedural shapes
                 showPlayerHitboxIndicators: true,  // Player attack arc, thrust rect
@@ -255,10 +257,9 @@ class Game {
 
         // Generate world before pathfinding (use level 1 config and dimensions)
         const level1Obstacles = level1Config && level1Config.obstacles ? level1Config.obstacles : this.config.obstacles;
-        const portalConfig = this.config.portal || { x: 2400, y: 1400, width: 80, height: 80 };
         obstacleManager.generateWorld(initialWorldWidth, initialWorldHeight, level1Obstacles, {
-            x: portalConfig.x + portalConfig.width / 2,
-            y: portalConfig.y + portalConfig.height / 2,
+            x: initialWorldWidth / 2,
+            y: initialWorldHeight / 2,
             radius: 120
         });
 
@@ -589,13 +590,16 @@ class Game {
         }
 
         if (!isHub) {
-            const portalConfig = this.config.portal || { x: 2400, y: 1400, width: 80, height: 80 };
+            const portalConfig = this.config.portal || { x: 2360, y: 2360, width: 80, height: 80 };
             const currentLevel = enemyManager ? enemyManager.getCurrentLevel() : 1;
             const levelKeys = this.config.levels ? Object.keys(this.config.levels).map(Number).filter(n => n > 0) : [1, 2, 3];
             const maxLevel = levelKeys.length ? Math.max(...levelKeys) : 3;
+            const level1Config = this.config.levels && this.config.levels[1];
+            const w = (level1Config && level1Config.worldWidth != null) ? level1Config.worldWidth : this.config.world.width;
+            const h = (level1Config && level1Config.worldHeight != null) ? level1Config.worldHeight : this.config.world.height;
             this.playingState.portal = {
-                x: portalConfig.x,
-                y: portalConfig.y,
+                x: w / 2 - portalConfig.width / 2,
+                y: h / 2 - portalConfig.height / 2,
                 width: portalConfig.width,
                 height: portalConfig.height,
                 spawned: false,
@@ -635,6 +639,10 @@ class Game {
                 e.preventDefault();
                 return;
             }
+            if (this.handleMinimapZoomClick(x, y)) {
+                e.preventDefault();
+                return;
+            }
             this.screenController.handleCanvasClick(x, y);
         });
         this.canvas.addEventListener('dblclick', (e) => {
@@ -646,7 +654,8 @@ class Game {
         // Use capture so we run before InputSystem and can mark clicks on UI (so attack/block are not triggered)
         this.canvas.addEventListener('mousedown', (e) => {
             const { x, y } = this.getCanvasCoords(e);
-            this.lastPointerDownConsumedByUI = this.isPointerOverInventoryOrChestOrShopUI(x, y);
+            this.lastPointerDownConsumedByUI = this.isPointerOverInventoryOrChestOrShopUI(x, y) ||
+                (this.settings.showMinimap && hitTestMinimapZoomButtons(this.canvas.width, this.canvas.height, x, y) !== null);
             if (this.handleInventoryChestPointerDown(x, y, e.ctrlKey)) e.preventDefault();
         }, true);
         this.canvas.addEventListener('mousemove', (e) => {
@@ -865,12 +874,16 @@ class Game {
         const worldWidth = (levelConfig && levelConfig.worldWidth != null) ? levelConfig.worldWidth : worldConfig.width;
         const worldHeight = (levelConfig && levelConfig.worldHeight != null) ? levelConfig.worldHeight : worldConfig.height;
 
-        const portalConfig = this.config.portal || { x: 2400, y: 1400, width: 80, height: 80 };
         obstacleManager.generateWorld(worldWidth, worldHeight, levelObstacles, {
-            x: portalConfig.x + portalConfig.width / 2,
-            y: portalConfig.y + portalConfig.height / 2,
+            x: worldWidth / 2,
+            y: worldHeight / 2,
             radius: 120
         });
+        const portalConfig = this.config.portal || { width: 80, height: 80 };
+        if (this.playingState.portal) {
+            this.playingState.portal.x = worldWidth / 2 - portalConfig.width / 2;
+            this.playingState.portal.y = worldHeight / 2 - portalConfig.height / 2;
+        }
         this._currentWorldWidth = worldWidth;
         this._currentWorldHeight = worldHeight;
         const cameraSystem = this.systems.get('camera');
@@ -1025,6 +1038,8 @@ class Game {
                         this.canvas,
                         this.playingState.shopScrollOffset,
                         this.playingState.shopExpandedWeapons,
+                        this.playingState.shopExpandedArmor,
+                        this.playingState.shopExpandedCategories,
                         this.playingState
                     );
                     const newOffset = this.playingState.shopScrollOffset + wheelDelta * 0.4;
@@ -1075,7 +1090,7 @@ class Game {
         const player = this.entities.get('player');
         const combat = player ? player.getComponent(Combat) : null;
         const weapon = combat && combat.playerAttack ? combat.playerAttack.weapon : null;
-        const isCrossbow = weapon && weapon.isRanged === true;
+        const isCrossbow = weapon && weapon.isRanged === true && !(weapon as { isBow?: boolean }).isBow;
         const crossbowConfig = this.config.player.crossbow;
         if (isCrossbow && crossbowConfig && this.playingState.crossbowReloadInProgress && this.playingState.crossbowReloadProgress < 1) {
             this.playingState.crossbowReloadProgress = Math.min(1, this.playingState.crossbowReloadProgress + deltaTime / crossbowConfig.reloadTime);
@@ -1159,6 +1174,8 @@ class Game {
                 this.canvas,
                 this.playingState.shopScrollOffset ?? 0,
                 this.playingState.shopExpandedWeapons,
+                this.playingState.shopExpandedArmor,
+                this.playingState.shopExpandedCategories,
                 this.playingState
             );
             const p = layout.panel;
@@ -1275,6 +1292,8 @@ class Game {
                 this.canvas,
                 this.playingState.shopScrollOffset,
                 this.playingState.shopExpandedWeapons,
+                this.playingState.shopExpandedArmor,
+                this.playingState.shopExpandedCategories,
                 this.playingState
             );
             const hit = hitTestShop(x, y, layout);
@@ -1329,6 +1348,18 @@ class Game {
                 const exp = this.playingState.shopExpandedWeapons ?? {};
                 const wasExpanded = exp[hit.weaponKey] === true;
                 this.playingState.shopExpandedWeapons = { ...exp, [hit.weaponKey]: !wasExpanded };
+                return true;
+            }
+            if (hit?.type === 'armor-dropdown') {
+                const exp = this.playingState.shopExpandedArmor ?? {};
+                const wasExpanded = exp[hit.slot] === true;
+                this.playingState.shopExpandedArmor = { ...exp, [hit.slot]: !wasExpanded };
+                return true;
+            }
+            if (hit?.type === 'parent-category') {
+                const exp = this.playingState.shopExpandedCategories ?? {};
+                const wasExpanded = exp[hit.category] === true;
+                this.playingState.shopExpandedCategories = { ...exp, [hit.category]: !wasExpanded };
                 return true;
             }
             if (hit?.type === 'item') {
@@ -1431,6 +1462,24 @@ class Game {
             x: (e.clientX - rect.left) * scaleX,
             y: (e.clientY - rect.top) * scaleY
         };
+    }
+
+    /** Returns true if click was on minimap zoom +/- and was handled. */
+    private handleMinimapZoomClick(x: number, y: number): boolean {
+        if (!this.settings.showMinimap || !this.screenManager) return false;
+        if (!this.screenManager.isScreen('playing') && !this.screenManager.isScreen('hub')) return false;
+        const hit = hitTestMinimapZoomButtons(this.canvas.width, this.canvas.height, x, y);
+        if (hit === 'minus') {
+            const current = (this.settings.minimapZoom as number) ?? 1;
+            this.settings.minimapZoom = Math.max(MINIMAP_ZOOM_MIN, current - MINIMAP_ZOOM_STEP);
+            return true;
+        }
+        if (hit === 'plus') {
+            const current = (this.settings.minimapZoom as number) ?? 1;
+            this.settings.minimapZoom = Math.min(MINIMAP_ZOOM_MAX, current + MINIMAP_ZOOM_STEP);
+            return true;
+        }
+        return false;
     }
 
     handleInventoryChestPointerDown(x: number, y: number, ctrlKey = false): boolean {
@@ -1889,6 +1938,10 @@ class Game {
                     }
                     const hubEntities = this.entities.getAll();
                     renderSystem.renderEntities(hubEntities, cameraSystem);
+                    const hubProjectileManager = this.systems.get('projectiles');
+                    if (hubProjectileManager) {
+                        hubProjectileManager.render(this.ctx, cameraSystem);
+                    }
                     const damageNumberManager = this.systems.get('damageNumbers');
                     if (damageNumberManager) {
                         damageNumberManager.render(this.ctx, cameraSystem);

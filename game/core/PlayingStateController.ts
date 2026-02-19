@@ -121,10 +121,14 @@ export class PlayingStateController {
             const nextObstacles = nextLevelConfig && nextLevelConfig.obstacles;
             obstacleManager.clearWorld();
             obstacleManager.generateWorld(nextWorldWidth, nextWorldHeight, nextObstacles, {
-                x: g.playingState.portal.x + g.playingState.portal.width / 2,
-                y: g.playingState.portal.y + g.playingState.portal.height / 2,
+                x: nextWorldWidth / 2,
+                y: nextWorldHeight / 2,
                 radius: 120
             });
+            if (g.playingState.portal) {
+                g.playingState.portal.x = nextWorldWidth / 2 - g.playingState.portal.width / 2;
+                g.playingState.portal.y = nextWorldHeight / 2 - g.playingState.portal.height / 2;
+            }
             g.setCurrentWorldSize(nextWorldWidth, nextWorldHeight);
             const cameraSystem = g.systems.get('camera') as { setWorldBounds?(w: number, h: number): void } | undefined;
             const pathfindingSystem = g.systems.get('pathfinding') as { setWorldBounds?(w: number, h: number): void } | undefined;
@@ -160,8 +164,8 @@ export class PlayingStateController {
         const player = g.entities.get('player');
         if (player) {
             const combat = player.getComponent(Combat);
-            const weapon = combat && (combat as Combat & { playerAttack?: { weapon?: { isRanged?: boolean } } }).playerAttack ? (combat as Combat & { playerAttack: { weapon: { isRanged?: boolean } } }).playerAttack.weapon : null;
-            const isCrossbow = weapon && weapon.isRanged === true;
+            const weapon = combat && (combat as Combat & { playerAttack?: { weapon?: { isRanged?: boolean; isBow?: boolean } } }).playerAttack ? (combat as Combat & { playerAttack: { weapon: { isRanged?: boolean; isBow?: boolean } } }).playerAttack.weapon : null;
+            const isCrossbow = weapon && weapon.isRanged === true && !weapon.isBow;
             const crossbowConfig = GameConfig.player && (GameConfig.player as { crossbow?: { reloadTime: number } }).crossbow;
             if (isCrossbow && crossbowConfig && g.playingState.crossbowReloadInProgress && g.playingState.crossbowReloadProgress < 1) {
                 g.playingState.crossbowReloadProgress = Math.min(1, g.playingState.crossbowReloadProgress + deltaTime / crossbowConfig.reloadTime);
@@ -245,6 +249,8 @@ export class PlayingStateController {
                     g.playingState.shopUseCooldown = 0.4;
                     g.playingState.shopScrollOffset = 0;
                     g.playingState.shopExpandedWeapons = undefined;
+                    g.playingState.shopExpandedArmor = undefined;
+                    g.playingState.shopExpandedCategories = undefined;
                     g.clearPlayerInputsForMenu();
                 }
             } else {

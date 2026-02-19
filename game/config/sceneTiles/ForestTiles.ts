@@ -6,8 +6,8 @@
 export const SceneTilesForest: Record<string, { width: number; height: number; obstacles?: unknown[]; gatherables?: unknown[]; [key: string]: unknown }> = {
         /** Clearing: open center with a loose tree ring, undergrowth, and a few rocks. */
         clearing: {
-            width: 800,
-            height: 800,
+            width: 1200,
+            height: 1200,
             obstacles: [
                 { type: 'tree', x: 52, y: 92, width: 110, height: 110 },
                 { type: 'tree', x: 628, y: 58, width: 130, height: 130 },
@@ -35,8 +35,8 @@ export const SceneTilesForest: Record<string, { width: number; height: number; o
         /** Lumber mill: shed, wood cluster, log pile (barrels), fence, well, rubble. */
         lumberMill: {
             perimeterFence: { spacing: 36, size: 28 },
-            width: 800,
-            height: 800,
+            width: 1200,
+            height: 1200,
             obstacles: [
                 { type: 'shed', x: 60, y: 260, width: 240, height: 240 },
                 { type: 'tree', x: 325, y: 105, width: 140, height: 140 },
@@ -77,8 +77,8 @@ export const SceneTilesForest: Record<string, { width: number; height: number; o
         goblinCamp: {
             spawn: { type: 'pack', count: 1 },
             perimeterFence: { spacing: 40, size: 26 },
-            width: 800,
-            height: 800,
+            width: 1200,
+            height: 1200,
             obstacles: [
                 { type: 'firepit', x: 321, y: 321, width: 76, height: 76 },
                 { type: 'rock', x: 282, y: 282, width: 70, height: 70 },
@@ -114,8 +114,8 @@ export const SceneTilesForest: Record<string, { width: number; height: number; o
         /** Thick grove: dense trees and bushes, few open paths. Bandits with daggers only (no goblins). */
         thickGrove: {
             spawn: { type: 'pack', count: 1, enemyTypes: ['banditDagger'] },
-            width: 800,
-            height: 800,
+            width: 1200,
+            height: 1200,
             obstacles: [
                 { type: 'tree', x: 40, y: 60, width: 120, height: 120 },
                 { type: 'tree', x: 180, y: 40, width: 110, height: 110 },
@@ -143,8 +143,8 @@ export const SceneTilesForest: Record<string, { width: number; height: number; o
 
         /** Orchard edge: sparse trees in rows, bushes, well. */
         orchardEdge: {
-            width: 800,
-            height: 800,
+            width: 1200,
+            height: 1200,
             obstacles: [
                 { type: 'tree', x: 120, y: 100, width: 100, height: 100 },
                 { type: 'tree', x: 340, y: 120, width: 95, height: 95 },
@@ -163,8 +163,8 @@ export const SceneTilesForest: Record<string, { width: number; height: number; o
 
         /** Crossroads: minimal obstacles, well or rock as landmark. */
         crossroads: {
-            width: 800,
-            height: 800,
+            width: 1200,
+            height: 1200,
             obstacles: [
                 { type: 'tree', x: 60, y: 80, width: 90, height: 90 },
                 { type: 'tree', x: 660, y: 660, width: 85, height: 85 },
@@ -177,8 +177,8 @@ export const SceneTilesForest: Record<string, { width: number; height: number; o
         smallFarm: {
             spawn: { type: 'pack', count: 1, enemyTypes: ['banditDagger'] },
             perimeterFence: { spacing: 36, size: 28 },
-            width: 800,
-            height: 800,
+            width: 1200,
+            height: 1200,
             obstacles: [
                 { type: 'shed', x: 80, y: 280, width: 180, height: 180 },
                 { type: 'well', x: 520, y: 320, width: 88, height: 88 },
@@ -207,8 +207,8 @@ export const SceneTilesForest: Record<string, { width: number; height: number; o
         banditAmbush: {
             spawn: { type: 'pack', count: 1, enemyTypes: ['banditDagger'] },
             perimeterFence: { spacing: 38, size: 26 },
-            width: 800,
-            height: 800,
+            width: 1200,
+            height: 1200,
             obstacles: [
                 { type: 'firepit', x: 340, y: 320, width: 70, height: 70 },
                 { type: 'rock', x: 260, y: 260, width: 75, height: 75 },
@@ -230,8 +230,8 @@ export const SceneTilesForest: Record<string, { width: number; height: number; o
         goblinCampB: {
             spawn: { type: 'pack', count: 1 },
             perimeterFence: { spacing: 40, size: 26 },
-            width: 800,
-            height: 800,
+            width: 1200,
+            height: 1200,
             obstacles: [
                 { type: 'firepit', x: 300, y: 350, width: 76, height: 76 },
                 { type: 'rock', x: 240, y: 290, width: 65, height: 65 },
@@ -253,8 +253,8 @@ export const SceneTilesForest: Record<string, { width: number; height: number; o
         /** Lumber mill variant B: second shed position, more barrels. */
         lumberMillB: {
             perimeterFence: { spacing: 36, size: 28 },
-            width: 800,
-            height: 800,
+            width: 1200,
+            height: 1200,
             obstacles: [
                 { type: 'shed', x: 480, y: 240, width: 220, height: 220 },
                 { type: 'tree', x: 120, y: 100, width: 130, height: 130 },
@@ -276,8 +276,8 @@ export const SceneTilesForest: Record<string, { width: number; height: number; o
         /** Woodcutter's clearing: shed, stump cluster (rocks + rubble), tool barrels, tree perimeter. */
         woodcutterClearing: {
             perimeterFence: true,
-            width: 800,
-            height: 800,
+            width: 1200,
+            height: 1200,
             obstacles: [
                 { type: 'shed', x: 290, y: 270, width: 200, height: 200 },
                 { type: 'rock', x: 262, y: 422, width: 70, height: 70 },
@@ -307,8 +307,8 @@ export const SceneTilesForest: Record<string, { width: number; height: number; o
 
         /** Wayside shrine: pillar, statue, offering rocks, rubble, columns, tree canopy. */
         waysideShrine: {
-            width: 800,
-            height: 800,
+            width: 1200,
+            height: 1200,
             obstacles: [
                 { type: 'pillar', x: 337, y: 317, width: 90, height: 90 },
                 { type: 'statueBase', x: 347, y: 375, width: 100, height: 100 },

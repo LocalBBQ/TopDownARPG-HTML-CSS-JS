@@ -8,7 +8,8 @@ const BASE_DISPLAY_NAMES: Record<string, string> = {
     greatsword: 'Greatsword',
     dagger: 'Dagger',
     mace: 'Mace',
-    crossbow: 'Crossbow'
+    crossbow: 'Crossbow',
+    bow: 'Bow'
 };
 
 function buildWeaponsRegistry(): Record<string, Weapon> {

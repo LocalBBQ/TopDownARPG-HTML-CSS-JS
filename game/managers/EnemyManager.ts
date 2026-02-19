@@ -56,6 +56,16 @@ interface PendingTileSpawn {
     tilePackOptions: Record<string, unknown>;
 }
 
+/** One deferred random pack: spawn when player is within proximity radius. Enables high total cap with performant pacing. */
+interface PendingPackSpawn {
+    centerX: number;
+    centerY: number;
+    radius: number;
+    effectivePackSize: { min: number; max: number };
+    enemyTypes: string[] | null;
+    packOptions: Record<string, unknown>;
+}
+
 export class EnemyManager {
     enemies: Entity[] = [];
     spawnTimer = 0;
@@ -67,6 +77,10 @@ export class EnemyManager {
     _packUpdateTick = 0;
     /** Scene-tile packs deferred until player is within 2 tiles; cleared on changeLevel, filled in spawnLevelEnemies. */
     pendingSceneTileSpawns: PendingTileSpawn[] = [];
+    /** Random packs deferred until player is within proximity radius; cleared on changeLevel, filled in generateEnemyPacks when deferToProximity. */
+    pendingPackSpawns: PendingPackSpawn[] = [];
+    /** When an enemy is beyond cull distance, we store first time seen far (ms). Used to cull after delay. */
+    private enemyFarSince: Map<string, number> = new Map();
     private config: GameConfigShape = GameConfig;
     private activeQuest: Quest | null = null;
 
@@ -92,7 +106,8 @@ export class EnemyManager {
         roamConfig: { centerX: number; centerY: number; radius: number } | null = null,
         idleBehavior: string | null = null,
         idleBehaviorConfig: unknown = null
-    ): Entity {
+    ): Entity | null {
+        if (type !== 'trainingDummy' && this.enemies.length >= this.maxEnemies) return null;
         const config = this.config.enemy.types[type] || this.config.enemy.types.goblin;
         
         const enemy = new Entity(x, y, `enemy_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`);
@@ -223,6 +238,7 @@ export class EnemyManager {
         const packSpread = options && options.packSpread && typeof options.packSpread.min === 'number' && typeof options.packSpread.max === 'number' ? options.packSpread : null;
         const packCountVariance = typeof (options && options.packCountVariance) === 'number' ? Math.max(0, Math.min(1, options.packCountVariance)) : 0;
         const minPackDistance = typeof (options && options.minPackDistance) === 'number' && options.minPackDistance > 0 ? options.minPackDistance : 0;
+        const deferToProximity = !!(options && options.deferToProximity);
 
         if (packCountVariance > 0) {
             const factor = 1 - packCountVariance + Math.random() * 2 * packCountVariance;
@@ -238,6 +254,16 @@ export class EnemyManager {
         let packsPlaced = 0;
         let attempts = 0;
         const maxAttempts = numPacks * 4;
+
+        // Options to store for deferred spawn (exclude deferToProximity so spawnPackAt gets clean options)
+        const packOptionsForDefer = options ? {
+            patrol: options.patrol,
+            packSpread: options.packSpread,
+            packCountVariance: options.packCountVariance,
+            minPackDistance: options.minPackDistance,
+            idleBehavior: options.idleBehavior,
+            idleBehaviorConfig: options.idleBehaviorConfig,
+        } : {};
 
         while (packsPlaced < numPacks && attempts < maxAttempts) {
             attempts++;
@@ -264,6 +290,20 @@ export class EnemyManager {
             const packRadius = packSpread
                 ? packSpread.min + Math.random() * (packSpread.max - packSpread.min)
                 : 35;
+
+            if (deferToProximity) {
+                this.pendingPackSpawns.push({
+                    centerX: packCenterX,
+                    centerY: packCenterY,
+                    radius: packRadius,
+                    effectivePackSize: packSize,
+                    enemyTypes,
+                    packOptions: packOptionsForDefer,
+                });
+                packsPlaced++;
+                placedPackCenters.push({ x: packCenterX, y: packCenterY });
+                continue;
+            }
 
             const patrolConfig = usePatrol
                 ? PatrolBehavior.createPatrolConfigForPack(packCenterX, packCenterY, packRadius)
@@ -312,6 +352,7 @@ export class EnemyManager {
             let packAttempts = 0;
 
             while (enemiesSpawnedInPack < enemiesInPack && packAttempts < packMaxAttempts) {
+                if (this.enemies.length >= this.maxEnemies) break;
                 packAttempts++;
 
                 const angle = Math.random() * Math.PI * 2;
@@ -336,6 +377,7 @@ export class EnemyManager {
                 packsPlaced++;
                 placedPackCenters.push({ x: packCenterX, y: packCenterY });
             }
+            if (this.enemies.length >= this.maxEnemies) break;
         }
     }
 
@@ -376,6 +418,7 @@ export class EnemyManager {
         const idleBehavior = (options && options.idleBehavior != null) ? options.idleBehavior : null;
         const idleBehaviorConfig = (options && options.idleBehaviorConfig != null) ? options.idleBehaviorConfig : null;
         for (let a = 0; a < maxAttempts && spawned < size; a++) {
+            if (this.enemies.length >= this.maxEnemies) break;
             const angle = Math.random() * Math.PI * 2;
             const dist = Math.random() * packRadius;
             const x = centerX + Math.cos(angle) * dist;
@@ -384,6 +427,35 @@ export class EnemyManager {
                 this.spawnEnemy(x, y, resolvedType, entityManager, patrolConfig, packModifier, packHasNoModifier, roamConfig, idleBehavior, idleBehaviorConfig);
                 spawned++;
             }
+        }
+    }
+
+    /**
+     * Remove up to `count` enemies that are farthest from the player (to make room for new spawns when at cap).
+     * Skips training dummy. Call when at maxEnemies before spawning a new pack.
+     */
+    private removeFarthestEnemies(
+        entityManager: EntityManagerLike | null,
+        playerX: number,
+        playerY: number,
+        count: number
+    ): void {
+        if (!entityManager || this.enemies.length === 0) return;
+        const withDist = this.enemies.map((e) => {
+            const t = e.getComponent(Transform);
+            const ai = e.getComponent(AI);
+            const x = t ? t.x + t.width / 2 : 0;
+            const y = t ? t.y + t.height / 2 : 0;
+            return { enemy: e, dist: Utils.distance(playerX, playerY, x, y), isDummy: ai?.enemyType === 'trainingDummy' };
+        });
+        const toRemove = withDist
+            .filter((w) => !w.isDummy)
+            .sort((a, b) => b.dist - a.dist)
+            .slice(0, count);
+        for (const w of toRemove) {
+            entityManager.remove(w.enemy.id);
+            this.enemies.splice(this.enemies.indexOf(w.enemy), 1);
+            this.enemyFarSince.delete(w.enemy.id);
         }
     }
 
@@ -422,7 +494,8 @@ export class EnemyManager {
             packCountVariance: packConfig.packCountVariance,
             minPackDistance: packConfig.minPackDistance,
             idleBehavior: packConfig.idleBehavior || null,
-            idleBehaviorConfig: packConfig.idleBehaviorConfig || null
+            idleBehaviorConfig: packConfig.idleBehaviorConfig || null,
+            deferToProximity: true,
         };
         this.generateEnemyPacks(
             worldWidth,
@@ -507,7 +580,13 @@ export class EnemyManager {
                 return da - db;
             });
             const toSpawn = inRange.slice(0, MAX_TILE_SPAWNS_PER_FRAME);
+            const pxTile = playerTransform.x + playerTransform.width / 2;
+            const pyTile = playerTransform.y + playerTransform.height / 2;
             for (const p of toSpawn) {
+                if (this.enemies.length >= this.maxEnemies) {
+                    this.removeFarthestEnemies(entityManager, pxTile, pyTile, 2);
+                }
+                if (this.enemies.length >= this.maxEnemies) break;
                 for (let i = 0; i < p.count; i++) {
                     this.spawnPackAt(
                         p.centerX, p.centerY,
@@ -520,6 +599,79 @@ export class EnemyManager {
                     );
                 }
                 this.pendingSceneTileSpawns = this.pendingSceneTileSpawns.filter((x) => x !== p);
+            }
+        }
+
+        // Spawn deferred random packs when player is within proximity radius (fast pacing, high total cap)
+        const PROXIMITY_SPAWN_RADIUS_TILES = 1.5;
+        const MAX_PACK_SPAWNS_PER_FRAME = 2;
+        if (playerTransform && entityManager && obstacleManager && this.pendingPackSpawns.length > 0) {
+            const px = playerTransform.x + playerTransform.width / 2;
+            const py = playerTransform.y + playerTransform.height / 2;
+            const proximityRadius = sceneTileSize * PROXIMITY_SPAWN_RADIUS_TILES;
+            const inRange: PendingPackSpawn[] = [];
+            for (const p of this.pendingPackSpawns) {
+                if (Utils.distance(px, py, p.centerX, p.centerY) <= proximityRadius) inRange.push(p);
+            }
+            inRange.sort((a, b) => {
+                const da = Utils.distance(px, py, a.centerX, a.centerY);
+                const db = Utils.distance(px, py, b.centerX, b.centerY);
+                return da - db;
+            });
+            const toSpawnPacks = inRange.slice(0, MAX_PACK_SPAWNS_PER_FRAME);
+            for (const p of toSpawnPacks) {
+                if (this.enemies.length >= this.maxEnemies) {
+                    this.removeFarthestEnemies(entityManager, px, py, 2);
+                }
+                if (this.enemies.length >= this.maxEnemies) break;
+                const packOptionsWithWander = {
+                    ...p.packOptions,
+                    wanderRadius: p.radius * 1.2,
+                    idleBehavior: 'wander' as const,
+                    idleBehaviorConfig: WanderBehavior.createWanderConfig(p.centerX, p.centerY, p.radius * 1.2),
+                };
+                this.spawnPackAt(
+                    p.centerX, p.centerY,
+                    p.radius,
+                    p.effectivePackSize,
+                    entityManager,
+                    obstacleManager,
+                    p.enemyTypes,
+                    packOptionsWithWander
+                );
+                this.pendingPackSpawns = this.pendingPackSpawns.filter((x) => x !== p);
+            }
+        }
+
+        // Cull enemies that have been far from the player for too long (reduces tail, keeps pacing)
+        const CULL_DISTANCE_TILES = 2.5;
+        const CULL_DELAY_MS = 1500;
+        if (playerTransform && entityManager) {
+            const px = playerTransform.x + playerTransform.width / 2;
+            const py = playerTransform.y + playerTransform.height / 2;
+            const cullDist = sceneTileSize * CULL_DISTANCE_TILES;
+            const now = typeof performance !== 'undefined' ? performance.now() : Date.now();
+            for (let i = this.enemies.length - 1; i >= 0; i--) {
+                const enemy = this.enemies[i];
+                const ai = enemy.getComponent(AI);
+                if (ai?.enemyType === 'trainingDummy') continue;
+                const t = enemy.getComponent(Transform);
+                if (!t) continue;
+                const ex = t.x + t.width / 2;
+                const ey = t.y + t.height / 2;
+                const dist = Utils.distance(px, py, ex, ey);
+                if (dist > cullDist) {
+                    const firstFar = this.enemyFarSince.get(enemy.id);
+                    const start = firstFar ?? now;
+                    if (firstFar === undefined) this.enemyFarSince.set(enemy.id, now);
+                    if (now - start >= CULL_DELAY_MS) {
+                        entityManager.remove(enemy.id);
+                        this.enemies.splice(i, 1);
+                        this.enemyFarSince.delete(enemy.id);
+                    }
+                } else {
+                    this.enemyFarSince.delete(enemy.id);
+                }
             }
         }
 
@@ -723,6 +875,14 @@ export class EnemyManager {
                         enemyMovement.applyKnockback(dx, dy, knockbackForce);
                     }
                 }
+            }
+        }
+
+        // Breakables: damage obstacles in attack arc (barrels, rubble, etc.)
+        if (combat.isPlayer && combat.playerAttack && this.systems) {
+            const obstacleManager = this.systems.get('obstacles');
+            if (obstacleManager && typeof obstacleManager.damageBreakablesInArc === 'function') {
+                obstacleManager.damageBreakablesInArc(player, rangeSensitivity, arcSensitivity, combat.playerAttack.hitBreakables);
             }
         }
         
@@ -964,6 +1124,8 @@ export class EnemyManager {
         playerSpawn: { x: number; y: number } | null = null
     ): void {
         this.pendingSceneTileSpawns = [];
+        this.pendingPackSpawns = [];
+        this.enemyFarSince.clear();
         this.enemiesKilledThisLevel = 0;
         const hazardManager = this.systems ? this.systems.get('hazards') : null;
         if (hazardManager && hazardManager.clearFlamePillars) {

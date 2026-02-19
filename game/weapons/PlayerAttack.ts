@@ -39,6 +39,8 @@ export class PlayerAttack {
     comboTimer = 0;
     comboWindow: number;
     hitEnemies = new Set<string>();
+    /** Obstacle ids hit this attack (breakables) — avoid double-hit. */
+    hitBreakables = new Set<string>();
     attackTimer = 0;
     attackDuration = 0;
     attackBuffer = 0;
@@ -86,6 +88,7 @@ export class PlayerAttack {
         this.comboStage = nextComboStage;
         this.comboTimer = this.comboWindow;
         this.hitEnemies.clear();
+        this.hitBreakables.clear();
 
         let durationMs = stageProps.duration;
         if (durationMs < 50) durationMs = Math.round(durationMs * 1000);
@@ -135,12 +138,14 @@ export class PlayerAttack {
         this.attackTimer = 0;
         this.attackBuffer = 0;
         this.hitEnemies.clear();
+        this.hitBreakables.clear();
     }
 
     resetCombo(): void {
         this.comboStage = 0;
         this.comboTimer = 0;
         this.hitEnemies.clear();
+        this.hitBreakables.clear();
     }
 
     hasHitEnemy(enemyId: string): boolean {

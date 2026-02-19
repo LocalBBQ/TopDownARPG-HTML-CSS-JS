@@ -9,8 +9,22 @@ import { Renderable } from '../../components/Renderable.ts';
 import { PlayerHealing } from '../../components/PlayerHealing.ts';
 import { Stamina } from '../../components/Stamina.ts';
 import { PlayerCombatRenderer } from '../../renderers/PlayerCombatRenderer.ts';
+import { getBowChargeLevel } from '../../weapons/bowShotEffects.ts';
 import type { RenderContext } from './RenderContext.ts';
 import type { EntityShape } from '../../types/entity.ts';
+
+function getBowChargeLevelForRender(
+    inputSystem: { isCharging?: boolean; getChargeDuration?: () => number } | null,
+    bowConfig: { chargeLevel1: number; chargeLevel2: number; chargeLevel3: number } | undefined
+): number {
+    if (!inputSystem?.isCharging || !inputSystem.getChargeDuration || !bowConfig) return 0;
+    const duration = inputSystem.getChargeDuration();
+    return getBowChargeLevel(duration, {
+        level1: bowConfig.chargeLevel1,
+        level2: bowConfig.chargeLevel2,
+        level3: bowConfig.chargeLevel3
+    });
+}
 
 export const PlayerEntityRenderer = {
     render(context: RenderContext, entity: EntityShape, screenX: number, screenY: number): void {
@@ -26,7 +40,9 @@ export const PlayerEntityRenderer = {
         const showWeapon = !healing || !healing.isHealing;
         const inputSystem = systems ? systems.get('input') : null;
         const weapon = combat && combat.attackHandler ? combat.attackHandler.weapon : (combat && combat.playerAttack ? combat.playerAttack.weapon : null);
-        const isCrossbow = weapon && weapon.isRanged === true;
+        const isRanged = weapon && (weapon as { isRanged?: boolean }).isRanged === true;
+        const isBow = isRanged && (weapon as { isBow?: boolean }).isBow === true;
+        const isCrossbow = isRanged && !isBow;
         const isMace = weapon && weapon.name && String(weapon.name).toLowerCase().includes('mace');
 
         if (movement && movement.path.length > 0) {
@@ -63,7 +79,7 @@ export const PlayerEntityRenderer = {
             ctx.beginPath();
             ctx.ellipse(screenX, screenY + (transform.height / 2 + 6) * camera.zoom, (transform.width * 0.65) * camera.zoom, (transform.height / 3.5) * camera.zoom, 0, 0, Math.PI * 2);
             ctx.fill();
-            if (weapon && showWeapon && !isCrossbow && !isMace) {
+            if (weapon && showWeapon && !isRanged && !isMace) {
                 PlayerCombatRenderer.drawSword(ctx, screenX, screenY, transform, movement, combat, camera, { part: 'handle' });
             }
             const isDodging = movement && movement.isDodging;
@@ -112,7 +128,10 @@ export const PlayerEntityRenderer = {
             ctx.restore();
             ctx.globalAlpha = 1.0;
             if (weapon && showWeapon) {
-                if (isCrossbow) {
+                if (isBow) {
+                    const bowChargeLevel = getBowChargeLevelForRender(inputSystem, GameConfig.player?.bow);
+                    PlayerCombatRenderer.drawBow(ctx, screenX, screenY, transform, movement, combat, camera, bowChargeLevel);
+                } else if (isRanged) {
                     PlayerCombatRenderer.drawCrossbow(ctx, screenX, screenY, transform, movement, combat, camera);
                 } else if (isMace) {
                     PlayerCombatRenderer.drawMace(ctx, screenX, screenY, transform, movement, combat, camera);
@@ -194,6 +213,34 @@ export const PlayerEntityRenderer = {
                 ctx.fillRect(barX, barsBottomY, barWidth * progress, reloadBarHeight);
             }
         }
+        const bowConfig = (GameConfig.player as { bow?: { chargeLevel1: number; chargeLevel2: number; chargeLevel3: number } })?.bow;
+        if (isBow && inputSystem?.isCharging && bowConfig && transform) {
+            const chargeDuration = inputSystem.getChargeDuration();
+            const barWidth = 40 * camera.zoom;
+            const barHeight = 4 * camera.zoom;
+            const barX = screenX - barWidth / 2;
+            let barY = screenY - (transform.height + 10) * camera.zoom + 5 * camera.zoom + 3 * camera.zoom;
+            const stamina = entity.getComponent(Stamina);
+            if (stamina) barY += (4 * camera.zoom) + 3 * camera.zoom;
+            const maxT = bowConfig.chargeLevel3;
+            const fillRatio = Math.min(1, chargeDuration / maxT);
+            ctx.fillStyle = 'rgba(20, 25, 15, 0.9)';
+            ctx.fillRect(barX, barY, barWidth, barHeight);
+            ctx.strokeStyle = '#3d4a35';
+            ctx.lineWidth = 1 / camera.zoom;
+            ctx.strokeRect(barX, barY, barWidth, barHeight);
+            const w1 = (bowConfig.chargeLevel1 / maxT) * barWidth;
+            const w2 = (bowConfig.chargeLevel2 / maxT) * barWidth;
+            ctx.strokeStyle = 'rgba(80, 100, 60, 0.8)';
+            ctx.beginPath();
+            ctx.moveTo(barX + w1, barY);
+            ctx.lineTo(barX + w1, barY + barHeight);
+            ctx.moveTo(barX + w2, barY);
+            ctx.lineTo(barX + w2, barY + barHeight);
+            ctx.stroke();
+            ctx.fillStyle = '#5a7a40';
+            ctx.fillRect(barX, barY, barWidth * fillRatio, barHeight);
+        }
         const chargeAttackConfig = combat && weapon && weapon.chargeAttack ? weapon.chargeAttack : null;
         if (inputSystem && inputSystem.isCharging && chargeAttackConfig && transform) {
             const chargeDuration = inputSystem.getChargeDuration();
@@ -225,6 +272,7 @@ export const PlayerEntityRenderer = {
     /** Called from EntitySpriteRenderer when player uses sprite path: draw weapon, attack arc, reload bar, charge meter. */
     drawWeaponAndMetersForSpritePath(context, entity, screenX, screenY) {
         const { ctx, camera, systems, settings } = context;
+        const inputSystem = systems ? systems.get('input') : null;
         const showPlayerHitboxIndicators = settings && settings.showPlayerHitboxIndicators !== false;
         const transform = entity.getComponent(Transform);
         const combat = entity.getComponent(Combat);
@@ -232,7 +280,9 @@ export const PlayerEntityRenderer = {
         const healing = entity.getComponent(PlayerHealing);
         const stamina = entity.getComponent(Stamina);
         const weapon = combat && combat.attackHandler ? combat.attackHandler.weapon : (combat && combat.playerAttack ? combat.playerAttack.weapon : null);
-        const isCrossbow = weapon && weapon.isRanged === true;
+        const isRanged = weapon && (weapon as { isRanged?: boolean }).isRanged === true;
+        const isBow = isRanged && (weapon as { isBow?: boolean }).isBow === true;
+        const isCrossbow = isRanged && !isBow;
         const isMace = weapon && weapon.name && String(weapon.name).toLowerCase().includes('mace');
         const showWeapon = !healing || !healing.isHealing;
         const useCharacterSprites = !settings || settings.useCharacterSprites !== false;
@@ -249,7 +299,10 @@ export const PlayerEntityRenderer = {
                     if (showPlayerHitboxIndicators && combat && combat.isAttacking && movement) {
                         PlayerCombatRenderer.drawAttackArc(ctx, screenX, screenY, combat, movement, camera, { comboColors: false });
                     }
-                    if (isCrossbow && combat && movement && transform) {
+                    if (isBow && combat && movement && transform) {
+                        const bowChargeLevel = getBowChargeLevelForRender(inputSystem, GameConfig.player?.bow);
+                        PlayerCombatRenderer.drawBow(ctx, screenX, screenY, transform, movement, combat, camera, bowChargeLevel);
+                    } else if (isRanged && combat && movement && transform) {
                         PlayerCombatRenderer.drawCrossbow(ctx, screenX, screenY, transform, movement, combat, camera);
                     } else if (isMace && combat && movement && transform) {
                         PlayerCombatRenderer.drawMace(ctx, screenX, screenY, transform, movement, combat, camera);
@@ -266,7 +319,10 @@ export const PlayerEntityRenderer = {
                 if (showPlayerHitboxIndicators && combat && combat.isAttacking && movement) {
                     PlayerCombatRenderer.drawAttackArc(ctx, screenX, screenY, combat, movement, camera, { comboColors: false });
                 }
-                if (isCrossbow && combat && movement && transform) {
+                if (isBow && combat && movement && transform) {
+                    const bowChargeLevel = getBowChargeLevelForRender(inputSystem, GameConfig.player?.bow);
+                    PlayerCombatRenderer.drawBow(ctx, screenX, screenY, transform, movement, combat, camera, bowChargeLevel);
+                } else if (isRanged && combat && movement && transform) {
                     PlayerCombatRenderer.drawCrossbow(ctx, screenX, screenY, transform, movement, combat, camera);
                 } else if (isMace && combat && movement && transform) {
                     PlayerCombatRenderer.drawMace(ctx, screenX, screenY, transform, movement, combat, camera);
@@ -301,7 +357,33 @@ export const PlayerEntityRenderer = {
             ctx.fillStyle = '#4a6040';
             ctx.fillRect(pBarX, reloadBarY, pBarWidth * progress, reloadBarHeight);
         }
-        const inputSystem = systems ? systems.get('input') : null;
+        const bowConfig = (GameConfig.player as { bow?: { chargeLevel1: number; chargeLevel2: number; chargeLevel3: number } })?.bow;
+        if (isBow && inputSystem?.isCharging && bowConfig && transform) {
+            const chargeDuration = inputSystem.getChargeDuration();
+            const barWidth = 40 * camera.zoom;
+            const barHeight = 4 * camera.zoom;
+            const barX = screenX - barWidth / 2;
+            let barY = screenY - (transform.height + 10) * camera.zoom + 5 * camera.zoom + 3 * camera.zoom;
+            if (stamina) barY += (4 * camera.zoom) + 3 * camera.zoom;
+            const maxT = bowConfig.chargeLevel3;
+            const fillRatio = Math.min(1, chargeDuration / maxT);
+            ctx.fillStyle = 'rgba(20, 25, 15, 0.9)';
+            ctx.fillRect(barX, barY, barWidth, barHeight);
+            ctx.strokeStyle = '#3d4a35';
+            ctx.lineWidth = 1 / camera.zoom;
+            ctx.strokeRect(barX, barY, barWidth, barHeight);
+            const w1 = (bowConfig.chargeLevel1 / maxT) * barWidth;
+            const w2 = (bowConfig.chargeLevel2 / maxT) * barWidth;
+            ctx.strokeStyle = 'rgba(80, 100, 60, 0.8)';
+            ctx.beginPath();
+            ctx.moveTo(barX + w1, barY);
+            ctx.lineTo(barX + w1, barY + barHeight);
+            ctx.moveTo(barX + w2, barY);
+            ctx.lineTo(barX + w2, barY + barHeight);
+            ctx.stroke();
+            ctx.fillStyle = '#5a7a40';
+            ctx.fillRect(barX, barY, barWidth * fillRatio, barHeight);
+        }
         const chargeAttackConfig = combat && weapon && weapon.chargeAttack ? weapon.chargeAttack : null;
         if (inputSystem && inputSystem.isCharging && transform && chargeAttackConfig) {
             const chargeDuration = inputSystem.getChargeDuration();

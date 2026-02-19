@@ -4,7 +4,7 @@
  */
 import type { ArmorSlotId, InventorySlot, PlayingStateShape, WeaponInstance } from '../state/PlayingState.js';
 import { getSlotKey, INVENTORY_SLOT_COUNT, MAX_WEAPON_DURABILITY, MAX_ARMOR_DURABILITY, CHEST_SLOT_COUNT } from '../state/PlayingState.js';
-import { getArmor, getPlayerArmorReduction, SHOP_ARMOR_ENTRIES } from '../armor/armorConfigs.js';
+import { getArmor, getPlayerArmorReduction, getShopArmorBySlot, SHOP_ARMOR_SLOT_ORDER, SHOP_ARMOR_SLOT_LABELS } from '../armor/armorConfigs.js';
 import { canEquipArmorInSlot } from '../state/ArmorActions.js';
 import { Weapons } from '../weapons/WeaponsRegistry.js';
 import { canEquipWeaponInSlot } from '../weapons/weaponSlot.js';
@@ -597,17 +597,49 @@ export interface ShopArmorRow {
     price: number;
 }
 
+export interface ShopArmorDropdownHeader {
+    x: number;
+    y: number;
+    w: number;
+    h: number;
+    slot: ArmorSlotId;
+    title: string;
+    expanded: boolean;
+}
+
+export interface ShopArmorDropdownSection {
+    header: ShopArmorDropdownHeader;
+    itemRows: ShopArmorRow[];
+}
+
+/** Parent category id for the shop (Weapons vs Armor). */
+export type ShopParentCategoryId = 'weapons' | 'armor';
+
+export interface ShopParentHeader {
+    x: number;
+    y: number;
+    w: number;
+    h: number;
+    id: ShopParentCategoryId;
+    title: string;
+    expanded: boolean;
+}
+
 export interface ShopLayout {
     overlay: { x: number; y: number; w: number; h: number };
     panel: { x: number; y: number; w: number; h: number };
+    /** Parent category headers (Weapons, Armor) - collapsible, auto-collapsed. */
+    parentHeaders: ShopParentHeader[];
     dropdowns: ShopDropdownSection[];
+    /** Armor categories (collapsible like weapon dropdowns). */
+    armorDropdowns: ShopArmorDropdownSection[];
     /** Flat list of all item rows for hit-testing. */
     allItemRows: ShopItemRow[];
     /** Dropdown header rects for hit-testing. */
     dropdownHeaders: ShopDropdownHeader[];
     /** Repair section rows (when playingState provided). */
     repairRows: ShopRepairRow[];
-    /** Armor for sale rows. */
+    /** Armor for sale rows (from expanded armor dropdowns only, for hit-testing). */
     armorRows: ShopArmorRow[];
     back: { x: number; y: number; w: number; h: number };
     contentHeight: number;
@@ -620,11 +652,14 @@ export const REPAIR_GOLD_PER_DURABILITY = 1;
 const SHOP_VISIBLE_PANEL_HEIGHT = 540;
 
 const SHOP_REPAIR_HEADER_HEIGHT = 36;
+const SHOP_PARENT_HEADER_HEIGHT = 40;
 
 export function getShopLayout(
     canvas: HTMLCanvasElement,
     scrollOffset = 0,
     expandedWeapons?: Record<string, boolean>,
+    expandedArmor?: Record<string, boolean>,
+    expandedCategories?: Record<string, boolean>,
     playingState?: PlayingStateShape
 ): ShopLayout {
     const W = canvas.width;
@@ -687,63 +722,116 @@ export function getShopLayout(
         }
     }
 
+    const parentHeadersContent: ShopParentHeader[] = [];
     const dropdowns: ShopDropdownSection[] = [];
     const allItemRows: ShopItemRow[] = [];
     const dropdownHeaders: ShopDropdownHeader[] = [];
     let globalIndex = 0;
 
-    for (const weaponKey of SHOP_WEAPON_TYPE_ORDER) {
-        const items = byType[weaponKey] ?? [];
-        const expanded = expandedWeapons?.[weaponKey] === true;
-        const title = SHOP_WEAPON_TYPE_LABELS[weaponKey] ?? weaponKey;
+    // Parent: Weapons
+    const weaponsExpanded = expandedCategories?.['weapons'] === true;
+    parentHeadersContent.push({
+        x: 16,
+        y: contentY,
+        w: panelW - 32,
+        h: SHOP_PARENT_HEADER_HEIGHT - 2,
+        id: 'weapons',
+        title: 'Weapons',
+        expanded: weaponsExpanded
+    });
+    contentY += SHOP_PARENT_HEADER_HEIGHT;
 
-        const headerRect = {
-            x: 16,
-            y: contentY,
-            w: panelW - 32,
-            h: SHOP_DROPDOWN_HEADER_HEIGHT - 2,
-            weaponKey,
-            title,
-            expanded
-        };
-        contentY += SHOP_DROPDOWN_HEADER_HEIGHT;
+    if (weaponsExpanded) {
+        for (const weaponKey of SHOP_WEAPON_TYPE_ORDER) {
+            const items = byType[weaponKey] ?? [];
+            const expanded = expandedWeapons?.[weaponKey] === true;
+            const title = SHOP_WEAPON_TYPE_LABELS[weaponKey] ?? weaponKey;
 
-        const itemRows: ShopItemRow[] = [];
-        if (expanded) {
-            for (const item of items) {
-                itemRows.push({
-                    x: 16,
-                    y: contentY,
-                    w: panelW - 32,
-                    h: SHOP_ROW_HEIGHT - 2,
-                    index: globalIndex,
-                    weaponKey: item.weaponKey,
-                    price: item.price
-                });
-                allItemRows.push(itemRows[itemRows.length - 1]);
-                contentY += SHOP_ROW_HEIGHT;
-                globalIndex++;
+            const headerRect = {
+                x: 16,
+                y: contentY,
+                w: panelW - 32,
+                h: SHOP_DROPDOWN_HEADER_HEIGHT - 2,
+                weaponKey,
+                title,
+                expanded
+            };
+            contentY += SHOP_DROPDOWN_HEADER_HEIGHT;
+
+            const itemRows: ShopItemRow[] = [];
+            if (expanded) {
+                for (const item of items) {
+                    itemRows.push({
+                        x: 16,
+                        y: contentY,
+                        w: panelW - 32,
+                        h: SHOP_ROW_HEIGHT - 2,
+                        index: globalIndex,
+                        weaponKey: item.weaponKey,
+                        price: item.price
+                    });
+                    allItemRows.push(itemRows[itemRows.length - 1]);
+                    contentY += SHOP_ROW_HEIGHT;
+                    globalIndex++;
+                }
             }
-        }
 
-        dropdownHeaders.push(headerRect);
-        dropdowns.push({ header: headerRect, itemRows });
+            dropdownHeaders.push(headerRect);
+            dropdowns.push({ header: headerRect, itemRows });
+        }
     }
 
-    // Armor section
-    const armorHeaderY = contentY;
-    contentY += SHOP_DROPDOWN_HEADER_HEIGHT;
+    // Parent: Armor
+    const armorExpanded = expandedCategories?.['armor'] === true;
+    parentHeadersContent.push({
+        x: 16,
+        y: contentY,
+        w: panelW - 32,
+        h: SHOP_PARENT_HEADER_HEIGHT - 2,
+        id: 'armor',
+        title: 'Armor',
+        expanded: armorExpanded
+    });
+    contentY += SHOP_PARENT_HEADER_HEIGHT;
+
+    const armorBySlot = getShopArmorBySlot();
+    const armorDropdownsContent: ShopArmorDropdownSection[] = [];
     const armorRowsContent: ShopArmorRow[] = [];
-    for (const entry of SHOP_ARMOR_ENTRIES) {
-        armorRowsContent.push({
-            x: 16,
-            y: contentY,
-            w: panelW - 32,
-            h: SHOP_ROW_HEIGHT - 2,
-            armorKey: entry.key,
-            price: entry.price
-        });
-        contentY += SHOP_ROW_HEIGHT;
+    if (armorExpanded) {
+        for (const slot of SHOP_ARMOR_SLOT_ORDER) {
+            const items = armorBySlot[slot] ?? [];
+            const expanded = expandedArmor?.[slot] === true;
+            const title = SHOP_ARMOR_SLOT_LABELS[slot] ?? slot;
+
+            const headerRect: ShopArmorDropdownHeader = {
+                x: 16,
+                y: contentY,
+                w: panelW - 32,
+                h: SHOP_DROPDOWN_HEADER_HEIGHT - 2,
+                slot,
+                title,
+                expanded
+            };
+            contentY += SHOP_DROPDOWN_HEADER_HEIGHT;
+
+            const itemRows: ShopArmorRow[] = [];
+            if (expanded) {
+                for (const entry of items) {
+                    const row: ShopArmorRow = {
+                        x: 16,
+                        y: contentY,
+                        w: panelW - 32,
+                        h: SHOP_ROW_HEIGHT - 2,
+                        armorKey: entry.key,
+                        price: entry.price
+                    };
+                    itemRows.push(row);
+                    armorRowsContent.push(row);
+                    contentY += SHOP_ROW_HEIGHT;
+                }
+            }
+            armorDropdownsContent.push({ header: headerRect, itemRows });
+        }
     }
 
     const contentHeight = contentY - SHOP_HEADER_HEIGHT;
@@ -761,6 +849,11 @@ export function getShopLayout(
     };
 
     const headerOffset = panelY - clampedScroll;
+    const parentHeadersAdjusted: ShopParentHeader[] = parentHeadersContent.map((ph) => ({
+        ...ph,
+        x: panelX + ph.x,
+        y: headerOffset + ph.y
+    }));
     const dropdownsAdjusted: ShopDropdownSection[] = dropdowns.map((dd) => ({
         header: {
             ...dd.header,
@@ -780,6 +873,18 @@ export function getShopLayout(
         x: panelX + r.x,
         y: headerOffset + r.y
     }));
+    const armorDropdownsAdjusted: ShopArmorDropdownSection[] = armorDropdownsContent.map((ad) => ({
+        header: {
+            ...ad.header,
+            x: panelX + ad.header.x,
+            y: headerOffset + ad.header.y
+        },
+        itemRows: ad.itemRows.map((r) => ({
+            ...r,
+            x: panelX + r.x,
+            y: headerOffset + r.y
+        }))
+    }));
     const armorRowsAdjusted: ShopArmorRow[] = armorRowsContent.map((r) => ({
         ...r,
         x: panelX + r.x,
@@ -789,7 +894,9 @@ export function getShopLayout(
     return {
         overlay,
         panel: { ...panel, x: panelX, y: panelY },
+        parentHeaders: parentHeadersAdjusted,
         dropdowns: dropdownsAdjusted,
+        armorDropdowns: armorDropdownsAdjusted,
         allItemRows: allItemRowsAdjusted,
         dropdownHeaders: dropdownHeadersAdjusted,
         repairRows: repairRowsAdjusted,
@@ -803,6 +910,8 @@ export function getShopLayout(
 export type ShopHit =
     | { type: 'item'; index: number; weaponKey: string; price: number }
     | { type: 'dropdown'; weaponKey: string }
+    | { type: 'armor-dropdown'; slot: ArmorSlotId }
+    | { type: 'parent-category'; category: ShopParentCategoryId }
     | { type: 'repair'; source: 'mainhand' | 'offhand'; weaponKey: string; cost: number }
     | { type: 'repair'; source: 'inventory'; bagIndex: number; weaponKey: string; cost: number }
     | { type: 'repair'; source: 'armor'; armorSlot: ArmorSlotId; armorKey: string; cost: number }
@@ -826,6 +935,12 @@ export function hitTestShop(x: number, y: number, layout: ShopLayout): ShopHit {
             }
             return { type: 'repair', source: 'armor-bag', armorBagIndex: row.source.armorBagIndex, armorKey: row.armorKey!, cost: row.cost };
         }
+    }
+    for (const ph of layout.parentHeaders) {
+        if (inRect(x, y, ph)) return { type: 'parent-category', category: ph.id };
+    }
+    for (const ad of layout.armorDropdowns) {
+        if (inRect(x, y, ad.header)) return { type: 'armor-dropdown', slot: ad.header.slot };
     }
     for (const row of layout.armorRows) {
         if (inRect(x, y, row)) return { type: 'armor-item', armorKey: row.armorKey, price: row.price };
@@ -1107,6 +1222,24 @@ const SLOT_RADIUS = 6;
 function roundRect(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number): void {
     ctx.beginPath();
     ctx.roundRect(x, y, w, h, r);
+}
+
+function drawShopParentHeader(ctx: CanvasRenderingContext2D, header: ShopParentHeader): void {
+    ctx.fillStyle = 'rgba(45, 35, 22, 0.9)';
+    roundRect(ctx, header.x, header.y, header.w, header.h, 6);
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(120, 90, 55, 0.85)';
+    ctx.lineWidth = 2;
+    roundRect(ctx, header.x, header.y, header.w, header.h, 6);
+    ctx.stroke();
+    const arrow = header.expanded ? '▼' : '▶';
+    ctx.fillStyle = '#c9a227';
+    ctx.font = '700 15px Cinzel, Georgia, serif';
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(arrow, header.x + 12, header.y + header.h / 2);
+    ctx.fillStyle = '#e8d4b0';
+    ctx.fillText(header.title, header.x + 32, header.y + header.h / 2);
 }
 
 function drawSlot(ctx: CanvasRenderingContext2D, r: { x: number; y: number; w: number; h: number }, options: { filled?: boolean; symbol?: string; weaponKey?: string; label?: string; highlight?: boolean; emptyLabel?: string; broken?: boolean }) {
@@ -1437,7 +1570,9 @@ export function renderShop(
 ): void {
     const scrollOffset = ps.shopScrollOffset ?? 0;
     const expandedWeapons = ps.shopExpandedWeapons;
-    const layout = getShopLayout(canvas, scrollOffset, expandedWeapons, ps);
+    const expandedArmor = ps.shopExpandedArmor;
+    const expandedCategories = ps.shopExpandedCategories;
+    const layout = getShopLayout(canvas, scrollOffset, expandedWeapons, expandedArmor, expandedCategories, ps);
     const { panel, dropdowns, back } = layout;
     const gold = ps.gold ?? 0;
 
@@ -1522,41 +1657,11 @@ export function renderShop(
         }
     }
 
-    if (layout.armorRows.length > 0) {
-        const firstArmorY = layout.armorRows[0].y;
-        ctx.fillStyle = '#a08050';
-        ctx.font = '600 11px Cinzel, Georgia, serif';
-        ctx.textAlign = 'left';
-        ctx.textBaseline = 'middle';
-        ctx.fillText('ARMOR', panel.x + 20, firstArmorY - SHOP_ROW_HEIGHT / 2);
-        for (const row of layout.armorRows) {
-            const canAfford = gold >= row.price;
-            ctx.fillStyle = canAfford ? 'rgba(40, 32, 24, 0.7)' : 'rgba(30, 22, 16, 0.85)';
-            roundRect(ctx, row.x, row.y, row.w, row.h, 4);
-            ctx.fill();
-            ctx.strokeStyle = canAfford ? 'rgba(100, 80, 50, 0.6)' : 'rgba(50, 40, 30, 0.6)';
-            ctx.lineWidth = 1;
-            roundRect(ctx, row.x, row.y, row.w, row.h, 4);
-            ctx.stroke();
-            const iconCx = row.x + 20;
-            const iconCy = row.y + row.h / 2;
-            ctx.fillStyle = '#e0c8a0';
-            ctx.font = '600 16px Cinzel, Georgia, serif';
-            ctx.textAlign = 'center';
-            ctx.fillText('◆', iconCx, iconCy);
-            const config = getArmor(row.armorKey);
-            const name = config?.name ?? row.armorKey;
-            ctx.fillStyle = canAfford ? '#e0c8a0' : '#6a5a4a';
-            ctx.font = '500 13px Cinzel, Georgia, serif';
-            ctx.textAlign = 'left';
-            ctx.fillText(name, row.x + 44, row.y + row.h / 2);
-            ctx.textAlign = 'right';
-            ctx.fillStyle = canAfford ? '#c9a227' : '#5a4a38';
-            ctx.fillText(row.price + ' g', row.x + row.w - 10, row.y + row.h / 2);
-            ctx.textAlign = 'left';
-        }
+    // Parent: Weapons header then weapon dropdowns
+    const weaponsParent = layout.parentHeaders.find((ph) => ph.id === 'weapons');
+    if (weaponsParent) {
+        drawShopParentHeader(ctx, weaponsParent);
     }
-
     for (const dd of dropdowns) {
         const header = dd.header;
         ctx.fillStyle = 'rgba(50, 40, 28, 0.85)';
@@ -1594,6 +1699,58 @@ export function renderShop(
             ctx.font = '500 13px Cinzel, Georgia, serif';
             ctx.textAlign = 'left';
             ctx.textBaseline = 'middle';
+            ctx.fillText(name, row.x + 44, row.y + row.h / 2);
+            ctx.textAlign = 'right';
+            ctx.fillStyle = canAfford ? '#c9a227' : '#5a4a38';
+            ctx.fillText(row.price + ' g', row.x + row.w - 10, row.y + row.h / 2);
+            ctx.textAlign = 'left';
+        }
+    }
+
+    // Parent: Armor header then armor dropdowns
+    const armorParent = layout.parentHeaders.find((ph) => ph.id === 'armor');
+    if (armorParent) {
+        drawShopParentHeader(ctx, armorParent);
+    }
+    for (const ad of layout.armorDropdowns) {
+        const header = ad.header;
+        ctx.fillStyle = 'rgba(50, 40, 28, 0.85)';
+        roundRect(ctx, header.x, header.y, header.w, header.h, 6);
+        ctx.fill();
+        ctx.strokeStyle = 'rgba(100, 80, 50, 0.7)';
+        ctx.lineWidth = 1.5;
+        roundRect(ctx, header.x, header.y, header.w, header.h, 6);
+        ctx.stroke();
+
+        const arrow = header.expanded ? '▼' : '▶';
+        ctx.fillStyle = '#c9a227';
+        ctx.font = '600 14px Cinzel, Georgia, serif';
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(arrow, header.x + 12, header.y + header.h / 2);
+        ctx.fillStyle = '#e0c8a0';
+        ctx.fillText(header.title, header.x + 32, header.y + header.h / 2);
+
+        for (const row of ad.itemRows) {
+            const canAfford = gold >= row.price;
+            ctx.fillStyle = canAfford ? 'rgba(40, 32, 24, 0.7)' : 'rgba(30, 22, 16, 0.85)';
+            roundRect(ctx, row.x, row.y, row.w, row.h, 4);
+            ctx.fill();
+            ctx.strokeStyle = canAfford ? 'rgba(100, 80, 50, 0.6)' : 'rgba(50, 40, 30, 0.6)';
+            ctx.lineWidth = 1;
+            roundRect(ctx, row.x, row.y, row.w, row.h, 4);
+            ctx.stroke();
+            const iconCx = row.x + 20;
+            const iconCy = row.y + row.h / 2;
+            ctx.fillStyle = '#e0c8a0';
+            ctx.font = '600 16px Cinzel, Georgia, serif';
+            ctx.textAlign = 'center';
+            ctx.fillText('◆', iconCx, iconCy);
+            const config = getArmor(row.armorKey);
+            const name = config?.name ?? row.armorKey;
+            ctx.fillStyle = canAfford ? '#e0c8a0' : '#6a5a4a';
+            ctx.font = '500 13px Cinzel, Georgia, serif';
+            ctx.textAlign = 'left';
             ctx.fillText(name, row.x + 44, row.y + row.h / 2);
             ctx.textAlign = 'right';
             ctx.fillStyle = canAfford ? '#c9a227' : '#5a4a38';

@@ -12,6 +12,8 @@ export interface SceneTileDef {
   width?: number;
   height?: number;
   obstacles?: unknown[];
+  perimeterFence?: boolean | { type?: string; spacing?: number; size?: number; gapSegments?: number };
+  perimeterWall?: boolean | { type?: string; spacing?: number; size?: number; gapSegments?: number };
   [key: string]: unknown;
 }
 
@@ -24,7 +26,7 @@ export interface SceneTilesRegistry {
   getTile(tileId: string): SceneTileDef | null;
 }
 
-const defaultTileSize = 800;
+const defaultTileSize = 1200;
 
 const forest = SceneTilesForest as Record<string, SceneTileDef>;
 const cursedWilds = SceneTilesCursedWilds as Record<string, SceneTileDef>;

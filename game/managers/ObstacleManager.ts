@@ -8,6 +8,9 @@ import { SceneTiles } from '../config/SceneTiles.ts';
 import { GameConfig } from '../config/GameConfig.ts';
 import type { GameConfigShape } from '../types/config.js';
 import { WorldGenerator } from '../world/WorldGenerator.ts';
+import { Combat } from '../components/Combat.ts';
+import { Transform } from '../components/Transform.ts';
+import { Movement } from '../components/Movement.ts';
 
 export class ObstacleManager {
     obstacles: Obstacle[];
@@ -19,6 +22,7 @@ export class ObstacleManager {
     systems: SystemManager | null;
     private config: GameConfigShape = GameConfig;
     private worldGenerator: WorldGenerator;
+    private _nextObstacleId = 0;
 
     constructor() {
         this.obstacles = [];
@@ -43,6 +47,7 @@ export class ObstacleManager {
 
     addObstacle(x: number, y: number, width: number, height: number, type: string, spritePath: string | null = null, customProps: Record<string, unknown> | null = null): Obstacle {
         const obstacle = new Obstacle(x, y, width, height, type);
+        obstacle.id = `obs_${++this._nextObstacleId}`;
         if (spritePath) {
             obstacle.spritePath = spritePath;
             this.loadSprite(spritePath);
@@ -50,6 +55,13 @@ export class ObstacleManager {
         // Copy custom properties if provided
         if (customProps) {
             Object.assign(obstacle, customProps);
+        }
+        // Set breakable/hp from factory config if not already set
+        if (obstacle.breakable == null || obstacle.hp == null) {
+            const config = this.factory.getConfig(type);
+            if (config.breakable != null) obstacle.breakable = config.breakable;
+            if (config.hp != null) obstacle.hp = config.hp;
+            else if (obstacle.breakable) obstacle.hp = 1;
         }
         // Trees.png is a 3-frame strip: assign random variant when not set so each tree gets a random sprite
         if (type === 'tree' && (obstacle.spritePath || '').includes('Trees.png') && obstacle.spriteFrameIndex == null) {
@@ -108,6 +120,7 @@ export class ObstacleManager {
         const allowSwampPools = options && options.allowSwampPools;
         for (const obstacle of this.obstacles) {
             if (allowSwampPools && obstacle.type === 'swampPool') continue;
+            if (obstacle.breakable && (obstacle.hp == null || obstacle.hp <= 0)) continue;
             const rect = this._getObstacleCollisionRect(obstacle);
             if (Utils.rectCollision(
                 entityLeft, entityTop, entityWidth, entityHeight,
@@ -117,6 +130,89 @@ export class ObstacleManager {
             }
         }
         return true;
+    }
+
+    /** Returns the first obstacle whose collision rect overlaps the given center + size (e.g. projectile hitbox). */
+    getObstacleAt(centerX: number, centerY: number, width: number, height: number): Obstacle | null {
+        const left = centerX - width / 2;
+        const top = centerY - height / 2;
+        for (const obstacle of this.obstacles) {
+            if (obstacle.breakable && (obstacle.hp == null || obstacle.hp <= 0)) continue;
+            const rect = this._getObstacleCollisionRect(obstacle);
+            if (Utils.rectCollision(left, top, width, height, rect.x, rect.y, rect.width, rect.height)) {
+                return obstacle;
+            }
+        }
+        return null;
+    }
+
+    /** Apply damage to a breakable obstacle; removes it when hp <= 0. */
+    damageObstacle(obstacle: Obstacle, damage: number): void {
+        if (!obstacle.breakable || obstacle.hp == null) return;
+        obstacle.hp = Math.max(0, obstacle.hp - damage);
+        if (obstacle.hp <= 0) {
+            const i = this.obstacles.indexOf(obstacle);
+            if (i >= 0) this.obstacles.splice(i, 1);
+        }
+    }
+
+    /**
+     * Check breakables in the player's current attack arc/thrust/360 and apply damage.
+     * Uses the same hit window and geometry as EnemyManager.checkPlayerAttack.
+     * hitBreakables: Set of obstacle ids already hit this attack (on playerAttack).
+     */
+    damageBreakablesInArc(
+        player: { getComponent: (c: unknown) => unknown },
+        rangeSensitivity: number,
+        arcSensitivity: number,
+        hitBreakables: Set<string>
+    ): void {
+        const combat = player.getComponent(Combat);
+        const transform = player.getComponent(Transform);
+        const movement = player.getComponent(Movement);
+        if (!combat || !transform || !combat.isAttacking) return;
+
+        const is360Attack = combat.currentAttackIsCircular;
+        if (!is360Attack) {
+            const duration = combat.attackDuration > 0 ? combat.attackDuration : 0.001;
+            const timer = combat.attackTimer != null ? combat.attackTimer : 0;
+            const progress = timer / duration;
+            if (progress < 0.25 || progress > 0.75) return;
+        }
+
+        const px = transform.x;
+        const py = transform.y;
+        const range = combat.attackRange + rangeSensitivity;
+        const arc = (combat.attackArc ?? 0) + arcSensitivity;
+        const facingAngle = movement ? movement.facingAngle : 0;
+        const arcCenter = facingAngle + (combat.attackArcOffset ?? 0);
+        const thrustWidth = (combat.currentAttackThrustWidth ?? 40) / 2 + rangeSensitivity * 0.5;
+
+        const toDamage: Obstacle[] = [];
+        for (const obstacle of this.obstacles) {
+            if (!obstacle.breakable || obstacle.hp == null || obstacle.hp <= 0) continue;
+            if (obstacle.id && hitBreakables.has(obstacle.id)) continue;
+            const cx = obstacle.x + obstacle.width / 2;
+            const cy = obstacle.y + obstacle.height / 2;
+            const distToEdge = Math.max(0, Utils.distance(px, py, cx, cy) - Math.max(obstacle.width, obstacle.height) / 2);
+            if (distToEdge >= range) continue;
+
+            let hit = false;
+            if (is360Attack) {
+                hit = true;
+            } else if (combat.currentAttackIsThrust) {
+                hit = Utils.pointInThrustRect(cx, cy, px, py, facingAngle, range, thrustWidth);
+            } else {
+                hit = Utils.pointInArc(cx, cy, px, py, arcCenter, arc, range);
+            }
+            if (hit) {
+                toDamage.push(obstacle);
+                if (obstacle.id) hitBreakables.add(obstacle.id);
+            }
+        }
+        for (const obstacle of toDamage) {
+            this.damageObstacle(obstacle, combat.attackDamage);
+        }
     }
 
     /** Returns 0.5 if the given entity rect overlaps a swamp pool, else 1. Used for player swamp slow. */
@@ -209,8 +305,12 @@ export class ObstacleManager {
         return segments;
     }
 
+    /** Design-space size for scene tile defs (obstacle coords are in 0..DESIGN_TILE_SIZE). */
+    static readonly DESIGN_TILE_SIZE = 800;
+
     /**
      * Place a single scene tile at the given world origin. Obstacle positions in the tile are relative to (originX, originY).
+     * Tile defs use design space (800); positions/sizes are scaled to tileSize at placement.
      * If tile.perimeterFence is set, adds fence segments around the tile edge (same rotation as tile).
      * @param {number} originX - World X of tile top-left
      * @param {number} originY - World Y of tile top-left
@@ -221,9 +321,14 @@ export class ObstacleManager {
         const tile = SceneTiles.getTile(tileId);
         if (!tile) return;
         const tileSize = tile.width != null ? tile.width : SceneTiles.defaultTileSize;
+        const scale = tileSize / ObstacleManager.DESIGN_TILE_SIZE;
         if (tile.obstacles && tile.obstacles.length) {
             for (const obs of tile.obstacles) {
-                const r = this.rotateObstacleInTile(obs.x, obs.y, obs.width, obs.height, tileSize, rotation);
+                const sx = obs.x * scale;
+                const sy = obs.y * scale;
+                const sw = obs.width * scale;
+                const sh = obs.height * scale;
+                const r = this.rotateObstacleInTile(sx, sy, sw, sh, tileSize, rotation);
                 const config = this.factory.getConfig(obs.type);
                 const spritePath = obs.spritePath != null ? obs.spritePath : (config && config.defaultSpritePath) || null;
                 const customProps = (config && config.color) ? { color: config.color } : null;
@@ -240,17 +345,43 @@ export class ObstacleManager {
             const fenceConfig = this.factory.getConfig(fenceType);
             const spritePath = fenceConfig && fenceConfig.defaultSpritePath || null;
             const customProps = (fenceConfig && fenceConfig.color) ? { color: fenceConfig.color } : null;
-            const segments = this.getPerimeterFenceSegments(tileSize, opts);
+            const scaledOpts = {
+                spacing: (opts.spacing != null ? opts.spacing : 32) * scale,
+                size: (opts.size != null ? opts.size : 28) * scale,
+                gapSegments: opts.gapSegments != null ? opts.gapSegments : 2,
+            };
+            const segments = this.getPerimeterFenceSegments(tileSize, scaledOpts);
             for (const seg of segments) {
                 const r = this.rotateObstacleInTile(seg.x, seg.y, seg.width, seg.height, tileSize, rotation);
                 this.addObstacle(originX + r.x, originY + r.y, r.width, r.height, fenceType, spritePath, customProps);
+            }
+        }
+        if (tile.perimeterWall) {
+            const opts = typeof tile.perimeterWall === 'object' ? tile.perimeterWall : {};
+            const wallType = opts.type || 'wall';
+            const wallConfig = this.factory.getConfig(wallType);
+            const spritePath = wallConfig && wallConfig.defaultSpritePath || null;
+            const customProps = (wallConfig && wallConfig.color) ? { color: wallConfig.color } : null;
+            const segmentOpts = {
+                spacing: opts.spacing != null ? opts.spacing : 20,
+                size: opts.size != null ? opts.size : 20,
+                gapSegments: opts.gapSegments != null ? opts.gapSegments : 4,
+            };
+            const segments = this.getPerimeterFenceSegments(tileSize, segmentOpts);
+            for (const seg of segments) {
+                const r = this.rotateObstacleInTile(seg.x, seg.y, seg.width, seg.height, tileSize, rotation);
+                this.addObstacle(originX + r.x, originY + r.y, r.width, r.height, wallType, spritePath, customProps);
             }
         }
         if (tile.gatherables && tile.gatherables.length) {
             const gm = this.getGatherableManager();
             if (gm) {
                 for (const g of tile.gatherables) {
-                    const r = this.rotateObstacleInTile(g.x, g.y, g.width || 32, g.height || 32, tileSize, rotation);
+                    const gx = g.x * scale;
+                    const gy = g.y * scale;
+                    const gw = (g.width || 32) * scale;
+                    const gh = (g.height || 32) * scale;
+                    const r = this.rotateObstacleInTile(gx, gy, gw, gh, tileSize, rotation);
                     gm.add(originX + r.x, originY + r.y, r.width, r.height, g.type || 'herb');
                 }
             }

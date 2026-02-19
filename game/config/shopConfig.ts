@@ -80,6 +80,7 @@ export const SHOP_WEAPON_TYPE_LABELS: Record<string, string> = {
   greatsword: 'Greatsword',
   mace: 'Mace',
   crossbow: 'Crossbow',
+  bow: 'Bow',
   defender: 'Defender',
 };
 

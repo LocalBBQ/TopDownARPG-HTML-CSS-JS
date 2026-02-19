@@ -6,8 +6,8 @@
 export const SceneTilesCursedWilds: Record<string, { width: number; height: number; obstacles?: unknown[]; gatherables?: unknown[]; [key: string]: unknown }> = {
         /** Clearing: sparse mushrooms, a few dark rocks, one swamp pool at edge. */
         clearing: {
-            width: 800,
-            height: 800,
+            width: 1200,
+            height: 1200,
             obstacles: [
                 { type: 'mushroom', x: 120, y: 140, width: 50, height: 50 },
                 { type: 'mushroom', x: 620, y: 180, width: 55, height: 55 },
@@ -27,8 +27,8 @@ export const SceneTilesCursedWilds: Record<string, { width: number; height: numb
 
         /** Crossroads: minimal obstacles, one central grave or dark rock as landmark. */
         crossroads: {
-            width: 800,
-            height: 800,
+            width: 1200,
+            height: 1200,
             obstacles: [
                 { type: 'grave', x: 355, y: 355, width: 50, height: 60 },
                 { type: 'mushroom', x: 80, y: 100, width: 45, height: 45 },
@@ -41,8 +41,8 @@ export const SceneTilesCursedWilds: Record<string, { width: number; height: numb
         graveyard: {
             spawn: { type: 'pack', count: 1 },
             perimeterFence: { type: 'ironFence', spacing: 38, size: 22 },
-            width: 800,
-            height: 800,
+            width: 1200,
+            height: 1200,
             obstacles: [
                 { type: 'grave', x: 280, y: 300, width: 48, height: 58 },
                 { type: 'grave', x: 340, y: 310, width: 52, height: 56 },
@@ -66,8 +66,8 @@ export const SceneTilesCursedWilds: Record<string, { width: number; height: numb
         graveyardB: {
             spawn: { type: 'pack', count: 1 },
             perimeterFence: { type: 'ironFence', spacing: 38, size: 22 },
-            width: 800,
-            height: 800,
+            width: 1200,
+            height: 1200,
             obstacles: [
                 { type: 'grave', x: 300, y: 340, width: 50, height: 58 },
                 { type: 'grave', x: 360, y: 350, width: 46, height: 56 },
@@ -89,8 +89,8 @@ export const SceneTilesCursedWilds: Record<string, { width: number; height: numb
         /** Skeleton camp: firepit, graves, rubble, mushrooms. Pack spawn. */
         skeletonCamp: {
             spawn: { type: 'pack', count: 1 },
-            width: 800,
-            height: 800,
+            width: 1200,
+            height: 1200,
             obstacles: [
                 { type: 'firepit', x: 335, y: 325, width: 70, height: 70 },
                 { type: 'grave', x: 260, y: 350, width: 48, height: 56 },
@@ -108,8 +108,8 @@ export const SceneTilesCursedWilds: Record<string, { width: number; height: numb
 
         /** Swamp edge: 2–3 swamp pools, mushrooms, dark rocks. */
         swampEdge: {
-            width: 800,
-            height: 800,
+            width: 1200,
+            height: 1200,
             obstacles: [
                 { type: 'swampPool', x: 100, y: 320, width: 100, height: 75 },
                 { type: 'swampPool', x: 580, y: 480, width: 90, height: 70 },
@@ -125,8 +125,8 @@ export const SceneTilesCursedWilds: Record<string, { width: number; height: numb
 
         /** Ruined shrine: pillar, columns, statue base, rubble, mushrooms. */
         ruinedShrine: {
-            width: 800,
-            height: 800,
+            width: 1200,
+            height: 1200,
             obstacles: [
                 { type: 'pillar', x: 350, y: 320, width: 85, height: 85 },
                 { type: 'statueBase', x: 340, y: 400, width: 95, height: 95 },
@@ -146,8 +146,8 @@ export const SceneTilesCursedWilds: Record<string, { width: number; height: numb
         /** Thick mushroom grove: dense mushrooms and rocks, few open paths. Pack spawn. */
         thickMushroomGrove: {
             spawn: { type: 'pack', count: 1 },
-            width: 800,
-            height: 800,
+            width: 1200,
+            height: 1200,
             obstacles: [
                 { type: 'mushroom', x: 50, y: 60, width: 55, height: 55 },
                 { type: 'mushroom', x: 180, y: 50, width: 52, height: 52 },
@@ -177,8 +177,8 @@ export const SceneTilesCursedWilds: Record<string, { width: number; height: numb
 
         /** Bog clearing: one central swamp pool, ring of mushrooms and rocks, firepit. */
         bogClearing: {
-            width: 800,
-            height: 800,
+            width: 1200,
+            height: 1200,
             obstacles: [
                 { type: 'swampPool', x: 340, y: 330, width: 95, height: 72 },
                 { type: 'firepit', x: 360, y: 260, width: 65, height: 65 },
@@ -195,8 +195,8 @@ export const SceneTilesCursedWilds: Record<string, { width: number; height: numb
 
         /** Ruin fragment: crumbling wall, rubble, broken pillar, mushrooms. */
         ruinFragment: {
-            width: 800,
-            height: 800,
+            width: 1200,
+            height: 1200,
             obstacles: [
                 { type: 'rubble', x: 280, y: 300, width: 120, height: 80 },
                 { type: 'brokenPillar', x: 320, y: 400, width: 60, height: 75 },

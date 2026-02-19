@@ -8,6 +8,7 @@ import { PlayerHealing } from '../components/PlayerHealing.ts';
 import { Combat } from '../components/Combat.ts';
 import { Stamina } from '../components/Stamina.ts';
 import { EventTypes } from '../core/EventTypes.ts';
+import { getBowChargeLevel, getBowShotLevelEffect } from '../weapons/bowShotEffects.ts';
 import type { EntityShape } from '../types/entity.ts';
 import type { SystemManager } from '../core/SystemManager.ts';
 
@@ -220,11 +221,15 @@ export class PlayerInputController {
                 );
             }
             
-            // Perform attack: crossbow = left-click to shoot when loaded; else shift+left = dash attack, else combo
+            // Perform attack: crossbow = left-click when loaded; bow = charge release (hold to charge, release to shoot); else melee
             if (combat && stamina && combat.isPlayer && combat.playerAttack) {
-                const weapon = combat.playerAttack.weapon;
-                const isCrossbow = weapon && weapon.isRanged === true;
+                const weapon = combat.playerAttack.weapon as { isRanged?: boolean; isBow?: boolean; dashAttack?: unknown; chargeAttack?: { minChargeTime?: number }; getDashAttackProperties?: () => unknown } | null;
+                const isRanged = weapon && weapon.isRanged === true;
+                const isBow = isRanged && weapon!.isBow === true;
+                const isCrossbow = isRanged && !isBow;
                 const crossbowConfig = GameConfig.player.crossbow;
+                const bowConfig = (GameConfig.player as { bow?: { damage: number; speed: number; range: number; staminaCost: number; stunBuildup?: number; chargeLevel1: number; chargeLevel2: number; chargeLevel3: number } }).bow;
+
                 if (isCrossbow && crossbowConfig) {
                     // Crossbow: left-click fires when loaded
                     const projectileManager = this.systems.get('projectiles');
@@ -244,6 +249,36 @@ export class PlayerInputController {
                         stamina.currentStamina -= crossbowConfig.staminaCost;
                         this.game.crossbowReloadProgress = 0;
                         this.game.crossbowReloadInProgress = false;
+                    }
+                    return;
+                }
+
+                if (isBow && bowConfig) {
+                    const bowProjectileManager = this.systems.get('projectiles');
+                    if (bowProjectileManager && transform && movement) {
+                        // Bow: charge release — level 1/2/3 by hold time; modular shot effect (default: N arrows for level N)
+                        const chargeLevel = getBowChargeLevel(chargeDuration, {
+                        level1: bowConfig.chargeLevel1,
+                        level2: bowConfig.chargeLevel2,
+                        level3: bowConfig.chargeLevel3
+                    });
+                    if (chargeLevel >= 1 && stamina.currentStamina >= bowConfig.staminaCost) {
+                        const angle = Utils.angleTo(transform.x, transform.y, worldPos.x, worldPos.y);
+                        const effect = getBowShotLevelEffect();
+                        effect(chargeLevel, {
+                            owner: player,
+                            x: transform.x,
+                            y: transform.y,
+                            aimAngle: angle,
+                            damage: bowConfig.damage,
+                            speed: bowConfig.speed,
+                            range: bowConfig.range,
+                            stunBuildup: bowConfig.stunBuildup ?? 0,
+                            projectileManager: bowProjectileManager,
+                            ownerType: 'player'
+                        });
+                        stamina.currentStamina -= bowConfig.staminaCost;
+                    }
                     }
                     return;
                 }
@@ -369,8 +404,8 @@ export class PlayerInputController {
             const stamina = player.getComponent(Stamina);
             const projectileManager = this.systems.get('projectiles');
             const combat = player.getComponent(Combat);
-            const weapon = combat && combat.playerAttack ? combat.playerAttack.weapon : null;
-            const isCrossbow = weapon && weapon.isRanged === true;
+            const weapon = combat && combat.playerAttack ? (combat.playerAttack.weapon as { isRanged?: boolean; isBow?: boolean } | null) : null;
+            const isCrossbow = weapon && weapon.isRanged === true && !weapon.isBow;
             const crossbowConfig = GameConfig.player.crossbow;
 
             // Crossbow: R = begin reload (when empty) or trigger perfect reload when in window

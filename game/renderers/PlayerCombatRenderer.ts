@@ -699,16 +699,16 @@ export const PlayerCombatRenderer = {
         ctx.fillRect(-stockLen * 0.5, -stockW / 2, stockLen, stockW);
         ctx.strokeRect(-stockLen * 0.5, -stockW / 2, stockLen, stockW);
 
-        // Limbs (curved arms at front)
+        // Limbs (curved arms at front) — flipped: top limb curves down, bottom curves up
         ctx.strokeStyle = '#4a3520';
         ctx.lineWidth = limbW;
         ctx.beginPath();
         ctx.moveTo(stockLen * 0.35, 0);
-        ctx.quadraticCurveTo(stockLen * 0.55, -limbHalf, stockLen * 0.5, -limbHalf * 0.6);
+        ctx.quadraticCurveTo(stockLen * 0.55, limbHalf, stockLen * 0.5, limbHalf * 0.6);
         ctx.stroke();
         ctx.beginPath();
         ctx.moveTo(stockLen * 0.35, 0);
-        ctx.quadraticCurveTo(stockLen * 0.55, limbHalf, stockLen * 0.5, limbHalf * 0.6);
+        ctx.quadraticCurveTo(stockLen * 0.55, -limbHalf, stockLen * 0.5, -limbHalf * 0.6);
         ctx.stroke();
 
         // Stirrup and trigger (metal) — use weapon tier color when present
@@ -733,6 +733,86 @@ export const PlayerCombatRenderer = {
         ctx.fillRect(-8 * zoom, -stockW / 2 - 2, 6, stockW + 4);
         ctx.strokeStyle = metal.stroke;
         ctx.strokeRect(-8 * zoom, -stockW / 2 - 2, 6, stockW + 4);
+
+        ctx.restore();
+    },
+
+    /** Draw traditional longbow. bowChargeLevel 0 = relaxed; 1–3 = more pulled back and tighter limbs. */
+    drawBow(ctx, screenX, screenY, transform, movement, combat, camera, bowChargeLevel = 0) {
+        if (!movement || !combat || !transform) return;
+        const zoom = camera.zoom;
+        const dist = (transform.width / 2 + 12) * zoom;
+        let cx = screenX + Math.cos(movement.facingAngle) * dist;
+        let cy = screenY + Math.sin(movement.facingAngle) * dist;
+        let drawAngle = movement.facingAngle;
+        if (combat.isBlocking && !isBlockable(combat.offhandWeapon)) {
+            const blockDist = (transform.width / 2 + 16) * zoom;
+            cx = screenX + Math.cos(movement.facingAngle) * blockDist;
+            cy = screenY + Math.sin(movement.facingAngle) * blockDist;
+            drawAngle = movement.facingAngle + Math.PI / 4;
+        }
+        ctx.save();
+        ctx.translate(cx, cy);
+        ctx.rotate(drawAngle);
+        ctx.scale(-1, 1);
+
+        const halfLen = 28 * zoom;
+        const gripLen = 5 * zoom;
+        const staveW = Math.max(2.5, 3.5 * zoom);
+        const t = Math.min(3, Math.max(0, bowChargeLevel)) / 3;
+        const nockY = (45 * (1 - t * 0.32)) * zoom;
+        const limbCurve = 0.52 - t * 0.07;
+
+        // Stave (back of bow): control at ~midpoint so limbs are almost straight
+        ctx.strokeStyle = '#3d2817';
+        ctx.fillStyle = '#4a3520';
+        ctx.lineWidth = staveW;
+        ctx.lineCap = 'round';
+        ctx.lineJoin = 'round';
+        ctx.beginPath();
+        ctx.moveTo(halfLen, nockY);
+        ctx.quadraticCurveTo(halfLen * 0.5, nockY * limbCurve, 0, 0);
+        ctx.quadraticCurveTo(halfLen * 0.5, -nockY * limbCurve, halfLen, -nockY);
+        ctx.stroke();
+
+        // Belly: follows same charge state (tighter when drawn)
+        ctx.strokeStyle = '#5a4030';
+        ctx.lineWidth = Math.max(1, staveW * 0.4);
+        const bellyCurve = limbCurve + 0.02;
+        ctx.beginPath();
+        ctx.moveTo(halfLen, nockY * 0.98);
+        ctx.quadraticCurveTo(halfLen * 0.5, nockY * bellyCurve, 0, 0);
+        ctx.quadraticCurveTo(halfLen * 0.5, -nockY * bellyCurve, halfLen, -nockY * 0.98);
+        ctx.stroke();
+
+        // Leather grip wrap (center)
+        ctx.fillStyle = '#2a1a0c';
+        ctx.strokeStyle = '#1a1008';
+        ctx.lineWidth = .8;
+        const gw = gripLen / 1.25;
+        const gh = staveW + 5 ;
+        ctx.fillRect(-gw, -gh / 2, gripLen, gh);
+        ctx.strokeRect(-gw, -gh / 2, gripLen, gh);
+
+        // Nocks (small notches at tips)
+        ctx.fillStyle = '#3d2817';
+        ctx.strokeStyle = '#2a1a0c';
+        ctx.beginPath();
+        ctx.ellipse(halfLen, -nockY, 2, 2.5, 0, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.ellipse(halfLen, nockY, 2, 2.5, 0, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+
+        // String (taut between nocks)
+        ctx.strokeStyle = '#b8a888';
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.moveTo(halfLen, -nockY);
+        ctx.lineTo(halfLen, nockY);
+        ctx.stroke();
 
         ctx.restore();
     },

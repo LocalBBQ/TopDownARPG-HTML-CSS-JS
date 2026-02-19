@@ -4,7 +4,7 @@ import type { GameConfigShape } from '../types/config.js';
 const GameConfig: GameConfigShape = {
   world: {
     width: 4800,
-    height: 2800,
+    height: 4800,
     tileSize: 50,
   },
 
@@ -56,6 +56,19 @@ const GameConfig: GameConfigShape = {
       perfectWindowEnd: 0.78,
       perfectReloadDamageMultiplier: 1.5,
     },
+    bow: {
+      damage: 14,
+      speed: 950,
+      range: 550,
+      staminaCost: 8,
+      stunBuildup: 20,
+      /** Seconds to reach charge level 1 (min hold to fire one arrow). */
+      chargeLevel1: 0.2,
+      /** Seconds to reach charge level 2 (two arrows). */
+      chargeLevel2: 0.5,
+      /** Seconds to reach charge level 3 (three arrows). */
+      chargeLevel3: 0.9,
+    },
     heal: {
       maxCharges: 3,
       drinkTime: 1,
@@ -82,7 +95,8 @@ const GameConfig: GameConfigShape = {
   enemy: {
     types: {} as Record<string, unknown>,
     pack: { radius: 180, minAllies: 2, modifierChance: 0.5 },
-    spawn: { maxEnemies: 20 },
+    /** Max enemies alive at once. Packs spawn when player is close (proximity), so high cap stays performant. */
+    spawn: { maxEnemies: 80 },
   },
 
   packModifiers: {
@@ -94,7 +108,7 @@ const GameConfig: GameConfigShape = {
     inspiring: { speedMultiplier: 1.15, damageMultiplier: 1.2, healthMultiplier: 1.3, color: '#00aacc' },
   },
 
-  portal: { x: 2400, y: 1400, width: 80, height: 80 },
+  portal: { x: 2360, y: 2360, width: 80, height: 80 },
 
   hub: {
     name: 'Sanctuary',
@@ -160,14 +174,14 @@ const GameConfig: GameConfigShape = {
         sky: 'rgba(135, 206, 235, 0.05)',
       },
       worldWidth: 4800,
-      worldHeight: 2400,
+      worldHeight: 4800,
       obstacles: {
         border: { spacing: 50 },
         useSceneTiles: true,
         sceneTileLayout: {
-          tileSize: 800,
-          cols: 6,
-          rows: 3,
+          tileSize: 1200,
+          cols: 4,
+          rows: 4,
           pool: [
             { id: 'clearing', weight: 5 },
             { id: 'crossroads', weight: 4 },
@@ -202,14 +216,14 @@ const GameConfig: GameConfigShape = {
         sky: 'rgba(60, 55, 70, 0.08)',
       },
       worldWidth: 4800,
-      worldHeight: 2400,
+      worldHeight: 4800,
       obstacles: {
         border: { spacing: 50, type: 'deadTree' },
         useSceneTiles: true,
         sceneTileLayout: {
-          tileSize: 800,
-          cols: 6,
-          rows: 3,
+          tileSize: 1200,
+          cols: 4,
+          rows: 4,
           pool: [
             { id: 'cursedWilds.clearing', weight: 5 },
             { id: 'cursedWilds.crossroads', weight: 4 },
@@ -245,14 +259,14 @@ const GameConfig: GameConfigShape = {
         sky: 'rgba(80, 20, 30, 0.12)',
       },
       worldWidth: 4800,
-      worldHeight: 2400,
+      worldHeight: 4800,
       obstacles: {
         border: { spacing: 50, type: 'lavaRock' },
         useSceneTiles: true,
         sceneTileLayout: {
-          tileSize: 800,
-          cols: 6,
-          rows: 3,
+          tileSize: 1200,
+          cols: 4,
+          rows: 4,
           pool: [
             { id: 'demonApproach.clearing', weight: 5 },
             { id: 'demonApproach.crossroads', weight: 4 },
@@ -289,24 +303,21 @@ const GameConfig: GameConfigShape = {
         sky: 'rgba(70, 68, 75, 0.1)',
       },
       worldWidth: 4800,
-      worldHeight: 2400,
+      worldHeight: 4800,
       obstacles: {
         border: { spacing: 50, type: 'rock' },
         useSceneTiles: true,
         sceneTileLayout: {
-          tileSize: 800,
-          cols: 6,
-          rows: 3,
+          tileSize: 1200,
+          cols: 4,
+          rows: 4,
           pool: [
             { id: 'fort.clearing', weight: 5 },
             { id: 'fort.crossroads', weight: 4 },
-            { id: 'fort.barracks', weight: 3 },
-            { id: 'fort.gatehouse', weight: 3 },
-            { id: 'fort.tower', weight: 2 },
-            { id: 'fort.armory', weight: 2 },
-            { id: 'fort.ruinFragment', weight: 2 },
-            { id: 'fort.trainingYard', weight: 2 },
-            { id: 'fort.siegeCamp', weight: 1 },
+            { id: 'fort.barracks', weight: 5 },
+            { id: 'fort.armory', weight: 4 },
+            { id: 'fort.gatehouse', weight: 1 },
+            { id: 'fort.tower', weight: 1 },
           ],
         },
       },
