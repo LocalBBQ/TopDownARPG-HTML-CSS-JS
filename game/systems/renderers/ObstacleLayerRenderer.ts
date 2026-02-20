@@ -274,6 +274,55 @@ export class ObstacleLayerRenderer {
             return;
         }
 
+        // Elder trunk: massive ancient tree trunk (top-down) – bark ring, growth rings, heartwood
+        if (obstacle.type === 'elderTrunk') {
+            const trunkCx = screenX + w / 2;
+            const trunkCy = screenY + h / 2;
+            const rx = w * 0.48;
+            const ry = h * 0.46;
+            const bark = '#2a2518';
+            const barkMid = '#3d3528';
+            const heartwood = '#4a4035';
+            const ring = '#352d22';
+            const lw = Math.max(1, 3 / zoom);
+            ctx.fillStyle = bark;
+            ctx.strokeStyle = '#1e1a14';
+            ctx.lineWidth = lw;
+            ctx.beginPath();
+            ctx.ellipse(trunkCx, trunkCy, rx, ry, 0, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.stroke();
+            ctx.fillStyle = barkMid;
+            ctx.beginPath();
+            ctx.ellipse(trunkCx, trunkCy, rx * 0.92, ry * 0.92, 0, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.fillStyle = ring;
+            ctx.beginPath();
+            ctx.ellipse(trunkCx, trunkCy, rx * 0.78, ry * 0.76, 0, 0, Math.PI * 2);
+            ctx.stroke();
+            ctx.fillStyle = heartwood;
+            ctx.beginPath();
+            ctx.ellipse(trunkCx, trunkCy, rx * 0.75, ry * 0.73, 0, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.strokeStyle = '#2a2520';
+            ctx.lineWidth = Math.max(1, 1.5 / zoom);
+            ctx.stroke();
+            ctx.fillStyle = '#3a3228';
+            ctx.beginPath();
+            ctx.ellipse(trunkCx, trunkCy, rx * 0.35, ry * 0.34, 0, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.stroke();
+            const nRings = 4;
+            for (let i = 1; i <= nRings; i++) {
+                const r = 1 - (i / (nRings + 1)) * 0.65;
+                ctx.strokeStyle = i % 2 ? '#302a20' : '#252018';
+                ctx.beginPath();
+                ctx.ellipse(trunkCx, trunkCy, rx * r, ry * r, 0, 0, Math.PI * 2);
+                ctx.stroke();
+            }
+            return;
+        }
+
         if (useEnvironmentSprites && obstacle.spritePath && obstacleManager.loadedSprites.has(obstacle.spritePath)) {
             const sprite = obstacleManager.loadedSprites.get(obstacle.spritePath);
             if (sprite.complete && sprite.naturalWidth > 0) {
@@ -446,7 +495,7 @@ export class ObstacleLayerRenderer {
         if (!obstacleManager) return;
         const zoom = camera.zoom;
         const useEnvironmentSprites = !settings || settings.useEnvironmentSprites !== false;
-        const depthSortTypes = ['tree', 'deadTree', 'bush', 'rock', 'pillar', 'brokenPillar', 'column', 'statueBase', 'arch'];
+        const depthSortTypes = ['tree', 'deadTree', 'bush', 'rock', 'elderTrunk', 'pillar', 'brokenPillar', 'column', 'statueBase', 'arch'];
 
         // View bounds in world space (with margin so we don't clip at edges)
         const margin = 80;

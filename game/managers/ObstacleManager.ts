@@ -103,6 +103,16 @@ export class ObstacleManager {
             const top = obstacle.y + obstacle.height - ch;
             return { x: left, y: top, width: cw, height: ch };
         }
+        // Elder trunk: tight rect around the drawn ellipse (slightly smaller than full obstacle)
+        if (obstacle.type === 'elderTrunk') {
+            const fracW = 0.92;
+            const fracH = 0.88;
+            const cw = obstacle.width * fracW;
+            const ch = obstacle.height * fracH;
+            const left = obstacle.x + (obstacle.width - cw) / 2;
+            const top = obstacle.y + (obstacle.height - ch) / 2;
+            return { x: left, y: top, width: cw, height: ch };
+        }
         // Rock and shrine-like props: collision smaller than sprite so player can walk behind the edges
         const smallCollisionTypes = ['rock', 'pillar', 'brokenPillar', 'column', 'statueBase', 'arch'];
         if (smallCollisionTypes.includes(obstacle.type)) {

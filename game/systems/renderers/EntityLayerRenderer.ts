@@ -107,7 +107,7 @@ export class EntityLayerRenderer {
         const { entities, obstacleManager, obstacleLayerRenderer } = data;
         const { canvas, camera } = context;
         const zoom = camera.zoom;
-        const depthSortTypes = ['tree', 'rock', 'pillar', 'brokenPillar', 'column', 'statueBase', 'arch'];
+        const depthSortTypes = ['tree', 'deadTree', 'bush', 'rock', 'elderTrunk', 'pillar', 'brokenPillar', 'column', 'statueBase', 'arch'];
 
         const margin = 80;
         const viewLeft = camera.x - margin;

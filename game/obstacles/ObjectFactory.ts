@@ -17,11 +17,12 @@
 //   fence    - wooden post + horizontal rails
 //   pillar   - rounded column with base and cap
 //   bush     - leafy blob (overlapping ellipses)
-//   rubble   - irregular pile of small stones
+//   rubble     - irregular pile of small stones
+//   elderTrunk - massive ancient tree trunk (bark, growth rings, heartwood)
 //
 // Sprite-first (fallback to procedural or solid rect when sprite missing):
 //   house, wall, door, shed, brokenPillar, crumblingWall, arch, statueBase,
-//   column, stoneDebris, elderTrunk
+//   column, stoneDebris
 //
 import { Utils } from '../utils/Utils.ts';
 
