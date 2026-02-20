@@ -38,13 +38,32 @@ body {
     align-items: center;
 }
 
-/* Bottom orb row - Diablo / Path of Exile style */
+#game-hud {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    align-self: stretch;
+}
+
+#game-hud.hidden {
+    display: none;
+}
+
+/* Bottom orb row - health left, stamina right (bottom corners) */
 #orb-row {
     display: flex;
     align-items: flex-end;
-    justify-content: center;
-    gap: clamp(80px, 28vw, 600px);
-    padding-bottom: 12px;
+    justify-content: space-between;
+    align-self: stretch;
+    padding: 0 100px 12px;
+}
+
+#orb-row .orb-wrapper:first-child {
+    align-items: flex-start, 20px 0 0 0;
+}
+
+#orb-row .orb-wrapper:last-child {
+    align-items: flex-end, 0 20px 0 0;
 }
 
 .orb-wrapper {

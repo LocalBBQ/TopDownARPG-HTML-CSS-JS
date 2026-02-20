@@ -461,6 +461,18 @@ export class HUDController {
                 this.refreshChestEquipmentLabels();
             }
         }
+        this.updateGameHUDVisibility();
+    }
+
+    /** Hide health/stamina orbs and stun/heal UI when any screen (inventory, chest, etc.) is open. */
+    private updateGameHUDVisibility(): void {
+        const inventoryEl = document.getElementById('inventory-screen');
+        const chestEl = this.getChestOverlay();
+        const inventoryOpen = inventoryEl ? !inventoryEl.classList.contains('hidden') : false;
+        const chestOpen = chestEl ? !chestEl.classList.contains('hidden') : false;
+        const anyScreenOpen = inventoryOpen || chestOpen;
+        const gameHudEl = document.getElementById('game-hud');
+        if (gameHudEl) gameHudEl.classList.toggle('hidden', anyScreenOpen);
     }
 
     update(player: Entity | undefined) {
@@ -543,6 +555,7 @@ export class HUDController {
     setInventoryPanelVisible(visible: boolean) {
         const el = document.getElementById('inventory-screen');
         if (el) el.classList.toggle('hidden', !visible);
+        this.updateGameHUDVisibility();
     }
 
     refreshInventoryPanel() {
