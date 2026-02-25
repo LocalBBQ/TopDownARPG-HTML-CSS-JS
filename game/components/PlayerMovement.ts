@@ -1,15 +1,15 @@
 // Player-specific movement component
 import type { SystemsMap } from '../types/systems.js';
-import { Movement } from './Movement.ts';
-import { GameConfig } from '../config/GameConfig.ts';
-import { Utils } from '../utils/Utils.ts';
-import { Transform } from './Transform.ts';
-import { StatusEffects } from './StatusEffects.ts';
-import { Combat } from './Combat.ts';
-import { Health } from './Health.ts';
-import { Combat } from './Combat.ts';
-import { PlayerHealing } from './PlayerHealing.ts';
-import { Stamina } from './Stamina.ts';
+import { Movement } from './Movement.js';
+import { GameConfig } from '../config/GameConfig.js';
+import type { PlayerConfig } from '../types/config.js';
+import { Utils } from '../utils/Utils.js';
+import { Transform } from './Transform.js';
+import { StatusEffects } from './StatusEffects.js';
+import { Combat } from './Combat.js';
+import { Health } from './Health.js';
+import { PlayerHealing } from './PlayerHealing.js';
+import { Stamina } from './Stamina.js';
 
 interface InputSystemLike {
   isKeyPressed(key: string): boolean;
@@ -44,17 +44,18 @@ export class PlayerMovement extends Movement {
 
   constructor(speed: number) {
     super(speed);
+    const playerConfig = GameConfig.player as PlayerConfig;
     this.isSprinting = false;
-    this.sprintMultiplier = GameConfig.player.sprint.multiplier;
-    this.sprintStaminaCost = GameConfig.player.sprint.staminaCost;
+    this.sprintMultiplier = playerConfig.sprint?.multiplier ?? 1.35;
+    this.sprintStaminaCost = playerConfig.sprint?.staminaCost ?? 12;
     this.isDodging = false;
     this.dodgeTimer = 0;
-    this.dodgeDuration = GameConfig.player.dodge.duration;
-    this.dodgeSpeed = GameConfig.player.dodge.speed;
+    this.dodgeDuration = playerConfig.dodge?.duration ?? 0.15;
+    this.dodgeSpeed = playerConfig.dodge?.speed ?? 800;
     this.dodgeDirectionX = 0;
     this.dodgeDirectionY = 0;
     this.dodgeCooldown = 0;
-    this.maxDodgeCooldown = GameConfig.player.dodge.cooldown;
+    this.maxDodgeCooldown = playerConfig.dodge?.cooldown ?? 0.5;
     this.isAttackDashing = false;
     this.attackDashTimer = 0;
     this.attackDashDuration = 0;
@@ -207,6 +208,8 @@ export class PlayerMovement extends Movement {
         } else {
           const combat = this.entity!.getComponent(Combat);
           if (combat?.isBlocking) {
+            this.speed = this.baseSpeed * 0.5;
+          } else if (combat?.isAttacking) {
             this.speed = this.baseSpeed * 0.5;
           } else {
             const stamina = this.entity!.getComponent(Stamina);

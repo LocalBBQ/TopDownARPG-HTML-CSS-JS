@@ -118,6 +118,7 @@ export const EnemyWeapons: Record<string, EnemyWeaponLike> & {
         // Player registry uses tiered keys (e.g. mace_rusty); enemies use base id and get rusty tier
         if (weaponId === 'mace') return weapons['mace_rusty'] ?? null;
         if (weaponId === 'dagger') return weapons['dagger_rusty'] ?? null;
+        if (weaponId === 'sword') return weapons['sword_rusty'] ?? null;
         const e = EnemyWeapons[weaponId];
         if (e && typeof e === 'object') return e;
         return null;

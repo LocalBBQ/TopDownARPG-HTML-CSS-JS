@@ -109,7 +109,9 @@ export class Combat implements Component {
     windUpTime = 0.5,
     isPlayer = false,
     weapon: unknown = null,
-    enemyType: string | null = null
+    enemyType: string | null = null,
+    weaponIdOverride?: string,
+    behaviorIdOverride?: string
   ) {
     this.entity = null;
     this.isPlayer = isPlayer;
@@ -134,8 +136,11 @@ export class Combat implements Component {
       this.attackHandler = new WeaponAttackHandler(weapon, { isPlayer: true });
       this.playerAttack = this.attackHandler;
     } else {
+      const overrides = (weaponIdOverride != null || behaviorIdOverride != null)
+        ? { weaponId: weaponIdOverride, behaviorId: behaviorIdOverride }
+        : undefined;
       this.attackHandler =
-        (Enemies.createAttackHandler && Enemies.createAttackHandler(enemyType)) ||
+        (Enemies.createAttackHandler && Enemies.createAttackHandler(enemyType ?? '', overrides)) ||
         Combat._noOpAttackHandler(attackRange, attackDamage, attackArc);
       this.enemyAttackHandler = this.attackHandler;
     }

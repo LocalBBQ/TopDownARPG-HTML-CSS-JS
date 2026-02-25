@@ -311,6 +311,91 @@ const skeletonVeteranConfig = {
   goldDrop: 6
 };
 
+// Tier-2: Bandit Veteran
+const banditVeteranConfig = {
+  ...banditConfig,
+  maxHealth: 78,
+  attackDamage: Math.ceil(banditAttackDamage * 1.2),
+  moveSpeed: 86,
+  color: '#4a3a2d',
+  stunThreshold: 105,
+  stunBuildupPerHit: 40,
+  knockbackResist: 0.12,
+  goldDrop: 8,
+  weaponDropChance: 0.08,
+  whetstoneDropChance: 0.09
+};
+
+// Tier-2: Bandit Dagger Veteran
+const banditDaggerVeteranConfig = {
+  ...banditDaggerConfig,
+  maxHealth: 58,
+  attackDamage: Math.ceil(banditDaggerAttackDamage * 1.25),
+  moveSpeed: 92,
+  stunThreshold: 88,
+  stunBuildupPerHit: 24,
+  goldDrop: 5,
+  weaponDropChance: 0.07,
+  whetstoneDropChance: 0.08
+};
+
+// Tier-2: Lesser Demon Veteran
+const lesserDemonVeteranConfig = {
+  ...lesserDemonConfig,
+  maxHealth: 62,
+  attackDamage: 9,
+  moveSpeed: 35,
+  color: '#994444',
+  stunBuildupPerHit: 22,
+  knockbackResist: 0.22,
+  lunge: {
+    ...lesserDemonConfig.lunge,
+    lungeDamage: 13,
+    knockback: { force: 300 }
+  },
+  goldDrop: 6,
+  weaponDropChance: 0.08,
+  whetstoneDropChance: 0.10
+};
+
+// Tier-2: Greater Demon Veteran
+const greaterDemonVeteranConfig = {
+  ...greaterDemonConfig,
+  maxHealth: 105,
+  attackDamage: 15,
+  moveSpeed: 33,
+  color: '#bb5555',
+  stunBuildupPerHit: 26,
+  knockbackResist: 0.32,
+  pillarFlame: {
+    ...greaterDemonConfig.pillarFlame,
+    damage: 10,
+    cooldown: 16.0
+  },
+  goldDrop: 12,
+  weaponDropChance: 0.14,
+  whetstoneDropChance: 0.12
+};
+
+// Tier-2: Goblin Chieftain Veteran
+const goblinChieftainVeteranConfig = {
+  ...goblinChieftainConfig,
+  maxHealth: 85,
+  moveSpeed: 54,
+  attackDamage: Math.ceil((heavySmash.damage ?? 16) * 1.2),
+  stunThreshold: 85,
+  stunBuildupPerHit: 28,
+  knockbackResist: 0.6,
+  heavySmash: {
+    ...heavySmash,
+    damage: Math.ceil((heavySmash.damage ?? 16) * 1.2),
+    knockbackForce: 320
+  },
+  goldDrop: 8,
+  weaponDropChance: 0.12,
+  whetstoneDropChance: 0.10
+};
+
 // Zombie: slow melee, no lunge — spawns in Cursed Wilds and Demon Approach
 const zombieWeapon = EnemyWeapons.resolveWeapon?.('zombieClaw') ?? null;
 let zombieAttackRange = 58, zombieAttackDamage = 6, zombieAttackCooldown = 1.0;
@@ -343,6 +428,21 @@ const zombieConfig = {
   weaponDropChance: 0.04,
   weaponDropPoolId: 'zombie',
   whetstoneDropChance: 0.06
+};
+
+// Tier-2: Zombie Veteran
+const zombieVeteranConfig = {
+  ...zombieConfig,
+  maxHealth: 82,
+  attackDamage: Math.ceil(zombieAttackDamage * 1.35),
+  moveSpeed: 78,
+  color: '#2d4a2d',
+  stunThreshold: 85,
+  stunBuildupPerHit: 20,
+  knockbackResist: 0.35,
+  goldDrop: 6,
+  weaponDropChance: 0.06,
+  whetstoneDropChance: 0.08
 };
 
 // Training dummy: immobile, never attacks, high health, no gold, resets health on "death" (handled in EnemyManager)
@@ -413,15 +513,209 @@ const fireDragonConfig = {
   whetstoneDropChance: 0.12
 };
 
+// Tier-2: Fire Dragon Alpha (2★ boss)
+const fireDragonAlphaConfig = {
+  ...fireDragonConfig,
+  maxHealth: 550,
+  moveSpeed: 36,
+  attackDamage: Math.ceil(fireDragonAttackDamage * 1.2),
+  stunThreshold: 185,
+  stunBuildupPerHit: 18,
+  knockbackResist: 0.58,
+  lunge: {
+    ...fireDragonConfig.lunge,
+    lungeDamage: 32,
+    knockback: { force: 420 }
+  },
+  projectile: {
+    ...fireDragonConfig.projectile,
+    damage: 36,
+    cooldown: 3.2
+  },
+  goldDrop: 42,
+  weaponDropChance: 0.22,
+  whetstoneDropChance: 0.14
+};
+
+// Tier-3 (★★★) Elite variants — Very Hard only
+const goblinEliteConfig = {
+  ...goblinBruteConfig,
+  maxHealth: 58,
+  attackDamage: Math.ceil(goblinAttackDamage * 1.6),
+  moveSpeed: 28,
+  color: '#1d4a1d',
+  stunThreshold: 90,
+  stunBuildupPerHit: 26,
+  knockbackResist: 0.28,
+  goldDrop: 8
+};
+
+const skeletonEliteConfig = {
+  ...skeletonVeteranConfig,
+  maxHealth: 95,
+  attackDamage: 12,
+  moveSpeed: 24,
+  color: '#808080',
+  attackCooldown: 1.2,
+  projectile: {
+    enabled: true,
+    speed: 220,
+    damage: 10,
+    range: 280,
+    cooldown: 2.9,
+    stunBuildup: 22
+  },
+  stunBuildupPerHit: 22,
+  knockbackResist: 0.2,
+  goldDrop: 10
+};
+
+const zombieEliteConfig = {
+  ...zombieVeteranConfig,
+  maxHealth: 105,
+  attackDamage: Math.ceil(zombieAttackDamage * 1.6),
+  moveSpeed: 84,
+  color: '#1d3a1d',
+  stunThreshold: 100,
+  stunBuildupPerHit: 24,
+  knockbackResist: 0.5,
+  goldDrop: 9,
+  weaponDropChance: 0.08,
+  whetstoneDropChance: 0.10
+};
+
+const banditEliteConfig = {
+  ...banditVeteranConfig,
+  maxHealth: 98,
+  attackDamage: Math.ceil(banditAttackDamage * 1.35),
+  moveSpeed: 90,
+  stunThreshold: 120,
+  stunBuildupPerHit: 45,
+  knockbackResist: 0.22,
+  goldDrop: 12,
+  weaponDropChance: 0.10,
+  whetstoneDropChance: 0.11
+};
+
+const banditDaggerEliteConfig = {
+  ...banditDaggerVeteranConfig,
+  maxHealth: 72,
+  attackDamage: Math.ceil(banditDaggerAttackDamage * 1.5),
+  moveSpeed: 96,
+  stunThreshold: 100,
+  stunBuildupPerHit: 28,
+  goldDrop: 7,
+  weaponDropChance: 0.09,
+  whetstoneDropChance: 0.10
+};
+
+const lesserDemonEliteConfig = {
+  ...lesserDemonVeteranConfig,
+  maxHealth: 78,
+  attackDamage: 11,
+  moveSpeed: 38,
+  color: '#aa3333',
+  stunBuildupPerHit: 26,
+  knockbackResist: 0.35,
+  lunge: {
+    ...lesserDemonVeteranConfig.lunge,
+    lungeDamage: 16,
+    knockback: { force: 340 }
+  },
+  goldDrop: 9,
+  weaponDropChance: 0.10,
+  whetstoneDropChance: 0.12
+};
+
+const greaterDemonEliteConfig = {
+  ...greaterDemonVeteranConfig,
+  maxHealth: 130,
+  attackDamage: 18,
+  moveSpeed: 36,
+  color: '#cc6666',
+  stunBuildupPerHit: 32,
+  knockbackResist: 0.45,
+  pillarFlame: {
+    ...greaterDemonVeteranConfig.pillarFlame,
+    damage: 12,
+    cooldown: 14.0
+  },
+  goldDrop: 16,
+  weaponDropChance: 0.18,
+  whetstoneDropChance: 0.14
+};
+
+const goblinChieftainEliteConfig = {
+  ...goblinChieftainVeteranConfig,
+  maxHealth: 110,
+  moveSpeed: 58,
+  attackDamage: Math.ceil((heavySmash.damage ?? 16) * 1.45),
+  stunThreshold: 100,
+  stunBuildupPerHit: 32,
+  knockbackResist: 0.7,
+  heavySmash: {
+    ...goblinChieftainVeteranConfig.heavySmash,
+    damage: Math.ceil((heavySmash.damage ?? 16) * 1.45),
+    knockbackForce: 360
+  },
+  goldDrop: 12,
+  weaponDropChance: 0.14,
+  whetstoneDropChance: 0.12
+};
+
+const fireDragonEliteConfig = {
+  ...fireDragonAlphaConfig,
+  maxHealth: 680,
+  moveSpeed: 40,
+  attackDamage: Math.ceil(fireDragonAttackDamage * 1.45),
+  stunThreshold: 210,
+  stunBuildupPerHit: 22,
+  knockbackResist: 0.64,
+  lunge: {
+    ...fireDragonAlphaConfig.lunge,
+    lungeDamage: 38,
+    knockback: { force: 460 }
+  },
+  projectile: {
+    ...fireDragonAlphaConfig.projectile,
+    damage: 42,
+    cooldown: 2.8
+  },
+  goldDrop: 52,
+  weaponDropChance: 0.26,
+  whetstoneDropChance: 0.16
+};
+
+/** Bandit dagger stats (used when a bandit randomly rolls dagger). Not a separate enemy type. */
+export function getBanditDaggerConfigForType(type: string): Record<string, unknown> | null {
+  if (type === 'bandit') return banditDaggerConfig as unknown as Record<string, unknown>;
+  if (type === 'banditVeteran') return banditDaggerVeteranConfig as unknown as Record<string, unknown>;
+  if (type === 'banditElite') return banditDaggerEliteConfig as unknown as Record<string, unknown>;
+  return null;
+}
+
 export const EnemyGoblin = EnemyType.fromConfig(goblinConfig);
 export const EnemySkeleton = EnemyType.fromConfig(skeletonConfig);
 export const EnemyLesserDemon = EnemyType.fromConfig(lesserDemonConfig);
 export const EnemyGreaterDemon = EnemyType.fromConfig(greaterDemonConfig);
 export const EnemyGoblinChieftain = EnemyType.fromConfig(goblinChieftainConfig);
 export const EnemyBandit = EnemyType.fromConfig(banditConfig);
-export const EnemyBanditDagger = EnemyType.fromConfig(banditDaggerConfig);
 export const EnemyGoblinBrute = EnemyType.fromConfig(goblinBruteConfig);
 export const EnemySkeletonVeteran = EnemyType.fromConfig(skeletonVeteranConfig);
 export const EnemyZombie = EnemyType.fromConfig(zombieConfig);
+export const EnemyZombieVeteran = EnemyType.fromConfig(zombieVeteranConfig);
+export const EnemyBanditVeteran = EnemyType.fromConfig(banditVeteranConfig);
+export const EnemyLesserDemonVeteran = EnemyType.fromConfig(lesserDemonVeteranConfig);
+export const EnemyGreaterDemonVeteran = EnemyType.fromConfig(greaterDemonVeteranConfig);
+export const EnemyGoblinChieftainVeteran = EnemyType.fromConfig(goblinChieftainVeteranConfig);
+export const EnemyFireDragonAlpha = EnemyType.fromConfig(fireDragonAlphaConfig);
+export const EnemyGoblinElite = EnemyType.fromConfig(goblinEliteConfig);
+export const EnemySkeletonElite = EnemyType.fromConfig(skeletonEliteConfig);
+export const EnemyZombieElite = EnemyType.fromConfig(zombieEliteConfig);
+export const EnemyBanditElite = EnemyType.fromConfig(banditEliteConfig);
+export const EnemyLesserDemonElite = EnemyType.fromConfig(lesserDemonEliteConfig);
+export const EnemyGreaterDemonElite = EnemyType.fromConfig(greaterDemonEliteConfig);
+export const EnemyGoblinChieftainElite = EnemyType.fromConfig(goblinChieftainEliteConfig);
+export const EnemyFireDragonElite = EnemyType.fromConfig(fireDragonEliteConfig);
 export const EnemyTrainingDummy = EnemyType.fromConfig(trainingDummyConfig);
 export const EnemyFireDragon = EnemyType.fromConfig(fireDragonConfig);

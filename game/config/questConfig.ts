@@ -27,13 +27,14 @@ export const difficulties: Record<string, DifficultyDef> = {
     packSizeBonus: 2,
     enemyTier2Chance: 1,
   },
-  nightmare: {
-    id: 'nightmare',
-    label: 'Nightmare ★★★',
+  veryHard: {
+    id: 'veryHard',
+    label: 'Very Hard ★★★',
     goldMultiplier: 4,
     packDensityMultiplier: 2.2,
     packSizeBonus: 3,
-    enemyTier2Chance: 1,
+    enemyTier2Chance: 0,
+    enemyTier3Chance: 1,
   },
 };
 
@@ -112,7 +113,9 @@ export function getQuestDescription(quest: Quest): string[] {
     const label = unique.length <= 3 ? unique.join(', ') : `${unique.slice(0, 2).join(', ')} and more`;
     lines.push('Foes: ' + label);
   }
-  if (quest.difficulty?.enemyTier2Chance === 1) {
+  if (quest.difficulty?.enemyTier3Chance === 1) {
+    lines.push('All enemies 3★');
+  } else if (quest.difficulty?.enemyTier2Chance === 1) {
     lines.push('All enemies 2★');
   }
   if (quest.difficulty?.goldMultiplier != null && quest.difficulty.goldMultiplier > 1) {

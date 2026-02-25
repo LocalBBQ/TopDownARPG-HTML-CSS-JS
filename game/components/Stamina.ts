@@ -7,6 +7,8 @@ export class Stamina implements Component {
   currentStamina: number;
   regenRate: number;
   entity?: unknown;
+  /** Set by PlayerMovement when sprinting; prevents regen for this frame. */
+  regenBlocked = false;
 
   constructor(maxStamina: number, regenRate = 0.1) {
     this.maxStamina = maxStamina;
@@ -15,6 +17,10 @@ export class Stamina implements Component {
   }
 
   update(deltaTime: number, _systems?: SystemsMap): void {
+    if (this.regenBlocked) {
+      this.regenBlocked = false;
+      return;
+    }
     if (this.currentStamina < this.maxStamina) {
       this.currentStamina = Math.min(
         this.maxStamina,

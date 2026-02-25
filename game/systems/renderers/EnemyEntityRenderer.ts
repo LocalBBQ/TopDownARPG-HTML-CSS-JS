@@ -1,28 +1,61 @@
 // Enemy procedural rendering: telegraphs, indicators, body shapes (goblin, chieftain, demon, skeleton), weapon, bars.
 // Used by EntityLayerRenderer when useCharacterSprites is false or entity has no sprite.
-import { Movement } from '../../components/Movement.ts';
-import { GameConfig } from '../../config/GameConfig.ts';
-import { Utils } from '../../utils/Utils.ts';
-import { Transform } from '../../components/Transform.ts';
-import { Combat } from '../../components/Combat.ts';
-import { Health } from '../../components/Health.ts';
-import { Renderable } from '../../components/Renderable.ts';
-import { AI } from '../../components/AI.ts';
-import { PlayerCombatRenderer } from '../../renderers/PlayerCombatRenderer.ts';
-import { EnemyCombatRenderer } from '../../renderers/EnemyCombatRenderer.ts';
-import type { RenderContext } from './RenderContext.ts';
-import type { EntityShape } from '../../types/entity.ts';
+import { Movement } from '../../components/Movement.js';
+import { GameConfig } from '../../config/GameConfig.js';
+import { Utils } from '../../utils/Utils.js';
+import { Transform } from '../../components/Transform.js';
+import { Combat } from '../../components/Combat.js';
+import { Health } from '../../components/Health.js';
+import { Renderable } from '../../components/Renderable.js';
+import { AI } from '../../components/AI.js';
+import { PlayerCombatRenderer } from '../../renderers/PlayerCombatRenderer.js';
+import { EnemyCombatRenderer } from '../../renderers/EnemyCombatRenderer.js';
+import { EntityEffectsRenderer } from './EntityEffectsRenderer.js';
+import type { RenderContext } from './RenderContext.js';
+import type { EntityShape } from '../../types/entity.js';
+import type { SystemManager } from '../../core/SystemManager.js';
+import type { EntityManager } from '../../managers/EntityManager.js';
+
+/** Map tier-2/3 variant types to base shape for body rendering. */
+const BASE_SHAPE_BY_ENEMY_TYPE: Record<string, string> = {
+  goblinBrute: 'goblin', goblinElite: 'goblin',
+  skeletonVeteran: 'skeleton', skeletonElite: 'skeleton',
+  zombieVeteran: 'zombie', zombieElite: 'zombie',
+  banditVeteran: 'bandit', banditElite: 'bandit',
+  lesserDemonVeteran: 'lesserDemon', lesserDemonElite: 'lesserDemon',
+  greaterDemonVeteran: 'greaterDemon', greaterDemonElite: 'greaterDemon',
+  goblinChieftainVeteran: 'goblinChieftain', goblinChieftainElite: 'goblinChieftain',
+  fireDragonAlpha: 'fireDragon', fireDragonElite: 'fireDragon',
+};
+
+/** Combat-like shape for drawWeapon (enemy handler + optional weapon/sweep). */
+interface EnemyDrawWeaponCombat {
+    isWindingUp?: boolean;
+    isAttacking?: boolean;
+    chargeProgress?: number;
+    enemyAttackHandler?: {
+        attackArc?: number;
+        attackArcOffset?: number;
+        getSlashSweepProgress?(): number;
+    } | null;
+    attackArc?: number;
+    attackArcOffset?: number;
+    enemySlashSweepProgress?: number;
+    currentAttackReverseSweep?: boolean;
+    weapon?: { weaponLength?: number; visual?: string; name?: string } | null;
+}
 
 export const EnemyEntityRenderer = {
-    drawWeapon(context: RenderContext, enemyType: string, screenX: number, screenY: number, facingAngle: number, r: number, h: number, combat: unknown): void {
+    drawWeapon(context: RenderContext, enemyType: string, screenX: number, screenY: number, facingAngle: number, r: number, h: number, combat: EnemyDrawWeaponCombat | null | undefined): void {
         const { ctx, camera } = context;
         const scale = camera.zoom;
         const handOffset = 0.55;
 
-        if (enemyType === 'fireDragon') {
+        const baseShape = BASE_SHAPE_BY_ENEMY_TYPE[enemyType] ?? enemyType;
+        if (baseShape === 'fireDragon') {
             return;
         }
-        if (enemyType === 'goblinChieftain') {
+        if (baseShape === 'goblinChieftain') {
             const headRad = 11 * scale;
             const handleLen = 14 * scale;
             const handleW = 6 * scale;
@@ -71,8 +104,8 @@ export const EnemyEntityRenderer = {
             return;
         }
 
-        const isGoblin = enemyType === 'goblin';
-        const isBanditDagger = enemyType === 'banditDagger';
+        const isGoblin = baseShape === 'goblin';
+        const isBanditDagger = baseShape === 'banditDagger';
         let baseX, baseY;
         if (isGoblin) {
             const sideAngle = facingAngle + Math.PI / 2;
@@ -134,10 +167,12 @@ export const EnemyEntityRenderer = {
         const ai = entity.getComponent(AI);
 
         if (ai && ai.isCastingPillar) {
-            const player = systems && systems.get('entities') ? systems.get('entities').get('player') : null;
+            const entities = systems ? (systems as SystemManager).get<EntityManager>('entities') : undefined;
+            const player = entities ? entities.get('player') : null;
             const playerTransform = player ? player.getComponent(Transform) : null;
             if (playerTransform) {
-                const pillarConfig = GameConfig.enemy.types.greaterDemon && GameConfig.enemy.types.greaterDemon.pillarFlame;
+                const greaterDemon = GameConfig.enemy?.types?.greaterDemon as { pillarFlame?: { radius?: number; castDelay?: number } } | undefined;
+                const pillarConfig = greaterDemon?.pillarFlame;
                 const radius = (pillarConfig && pillarConfig.radius ? pillarConfig.radius : 45) * camera.zoom;
                 const telegraphX = camera.toScreenX(playerTransform.x);
                 const telegraphY = camera.toScreenY(playerTransform.y);
@@ -160,9 +195,9 @@ export const EnemyEntityRenderer = {
             }
         }
 
-        const hasChargeRelease = combat && combat.enemyAttackHandler && combat.enemyAttackHandler.hasChargeRelease && combat.enemyAttackHandler.hasChargeRelease();
+        const hasChargeRelease = combat && combat.enemyAttackHandler && (combat.enemyAttackHandler as { hasChargeRelease?(): boolean }).hasChargeRelease && (combat.enemyAttackHandler as { hasChargeRelease?(): boolean }).hasChargeRelease();
         if (showEnemyHitboxIndicators && combat && hasChargeRelease && combat.isAttacking) {
-            const chargeProgress = combat.chargeProgress || 0;
+            const chargeProgress = combat.windUpProgress ?? 0;
             const aoeInFront = combat.currentAttackAoeInFront && transform && movement;
             const facingAngle = movement ? movement.facingAngle : 0;
             let drawX = screenX;
@@ -207,8 +242,8 @@ export const EnemyEntityRenderer = {
         }
 
         if (showEnemyHitboxIndicators && ai && ai.isChargingLunge) {
-            const enemyConfig = ai.enemyType ? GameConfig.enemy.types[ai.enemyType] : null;
-            const lungeConfig = enemyConfig && enemyConfig.lunge ? enemyConfig.lunge : null;
+            const enemyConfig = (ai.enemyType ? GameConfig.enemy?.types?.[ai.enemyType] : null) as { lunge?: { chargeTime: number } } | undefined;
+            const lungeConfig = enemyConfig?.lunge ?? null;
             if (lungeConfig) {
                 const maxChargeTime = lungeConfig.chargeTime;
                 const remainingTime = Math.max(0, ai.lungeChargeTimer);
@@ -283,8 +318,9 @@ export const EnemyEntityRenderer = {
             }
         }
 
-        // Generic slash hitbox (skip bandit — they use same path as player mace in the bandit block below)
-        if (showEnemyHitboxIndicators && combat && combat.isAttacking && !combat.isWindingUp && !hasChargeRelease && !(ai && ai.enemyType === 'bandit')) {
+        // Generic slash hitbox (skip bandits — they use same path as player mace/sword/dagger in the bandit block below)
+        const isBanditAnyWeapon = ai && (ai.enemyType === 'bandit' || ai.enemyType === 'banditVeteran' || ai.enemyType === 'banditElite');
+        if (showEnemyHitboxIndicators && combat && combat.isAttacking && !combat.isWindingUp && !hasChargeRelease && !isBanditAnyWeapon) {
             const facingAngle = movement ? movement.facingAngle : 0;
             const arcOffset = combat.attackArcOffset ?? 0;
             const arcCenter = facingAngle + arcOffset;
@@ -339,11 +375,10 @@ export const EnemyEntityRenderer = {
             ctx.stroke();
         }
 
-        if (typeof EntityEffectsRenderer !== 'undefined') {
+        if (EntityEffectsRenderer) {
             EntityEffectsRenderer.drawShadow(ctx, screenX, screenY, transform, camera, { fillStyle: 'rgba(0, 0, 0, 0.3)' });
             EntityEffectsRenderer.drawPackModifierGlow(context, entity, screenX, screenY);
-        }
-        if (typeof EntityEffectsRenderer === 'undefined') {
+        } else {
             ctx.fillStyle = 'rgba(0, 0, 0, 0.3)';
             ctx.beginPath();
             ctx.ellipse(screenX, screenY + (transform.height / 2 + 5) * camera.zoom, (transform.width / 2) * camera.zoom, (transform.height / 4) * camera.zoom, 0, 0, Math.PI * 2);
@@ -352,26 +387,28 @@ export const EnemyEntityRenderer = {
 
         let bodyColor = renderable.color;
         if (ai && ai.isChargingLunge) {
-            const enemyConfig = ai.enemyType ? GameConfig.enemy.types[ai.enemyType] : null;
-            const lungeConfig = enemyConfig && enemyConfig.lunge ? enemyConfig.lunge : null;
+            const enemyConfigLunge = (ai.enemyType ? GameConfig.enemy?.types?.[ai.enemyType] : null) as { lunge?: { chargeTime: number } } | undefined;
+            const lungeConfig = enemyConfigLunge?.lunge;
             if (lungeConfig) {
                 const remainingTime = Math.max(0, ai.lungeChargeTimer);
                 const chargeProgress = 1 - (remainingTime / lungeConfig.chargeTime);
                 bodyColor = `rgba(255, ${Math.floor(100 + (1 - chargeProgress) * 100)}, ${Math.floor(50 + (1 - chargeProgress) * 50)}, 1)`;
             }
         } else if (combat && combat.isWindingUp) {
-            const intensity = EnemyCombatRenderer.getWindUpVisualProgress(combat);
+            const intensity = EnemyCombatRenderer.getWindUpVisualProgress(combat as Parameters<typeof EnemyCombatRenderer.getWindUpVisualProgress>[0]);
             bodyColor = `rgba(255, ${Math.floor(100 + (1 - intensity) * 100)}, ${Math.floor(50 + (1 - intensity) * 50)}, 1)`;
         } else if (combat && combat.isLunging) {
             bodyColor = '#ff0000';
         }
 
-        const sizeMultiplier = combat && combat.isWindingUp ? (1 + EnemyCombatRenderer.getWindUpVisualProgress(combat) * 0.12) : 1;
+        const sizeMultiplier = combat && combat.isWindingUp ? (1 + EnemyCombatRenderer.getWindUpVisualProgress(combat as Parameters<typeof EnemyCombatRenderer.getWindUpVisualProgress>[0]) * 0.12) : 1;
         const r = (transform.width / 2) * camera.zoom * sizeMultiplier;
         const h = (transform.height / 2) * camera.zoom * sizeMultiplier;
-        // Use base shape for tier-2 variants (goblinBrute → goblin, skeletonVeteran → skeleton); symbol is drawn by EntityEffectsRenderer
+        // Use base shape for tier-2/3 variants; star symbol is drawn by EntityEffectsRenderer
         const rawType = ai && ai.enemyType ? ai.enemyType : 'goblin';
-        const enemyType = rawType === 'goblinBrute' ? 'goblin' : rawType === 'skeletonVeteran' ? 'skeleton' : rawType;
+        const enemyType = BASE_SHAPE_BY_ENEMY_TYPE[rawType] ?? rawType;
+        const isBanditWithDagger = enemyType === 'bandit' && ai.weaponIdOverride === 'dagger';
+        const effectiveShape = isBanditWithDagger ? 'banditDagger' : enemyType;
         const strokeColor = (combat && (combat.isWindingUp || combat.isAttacking)) ? '#ff0000' : (ai && ai.state === 'attack') ? '#ff0000' : '#000000';
         ctx.strokeStyle = strokeColor;
         ctx.lineWidth = 2 / camera.zoom;
@@ -413,7 +450,7 @@ export const EnemyEntityRenderer = {
                 });
             }
             this.drawWeapon(context, 'goblin', screenX, screenY, movement ? movement.facingAngle : 0, r, h, combat);
-        } else if (enemyType === 'bandit') {
+        } else if (effectiveShape === 'bandit') {
             // Knight-like: same silhouette as player (torso, steel pauldrons, helmet with visor), tarnished steel to read as enemy
             const lw = Math.max(1, 2 / camera.zoom);
             ctx.fillStyle = bodyColor;
@@ -461,14 +498,23 @@ export const EnemyEntityRenderer = {
             ctx.lineTo(helmetRx * 0.5, 0);
             ctx.stroke();
             ctx.restore();
-            // Bandit mace: same path as player (arc and mace from PlayerCombatRenderer)
-            if (typeof PlayerCombatRenderer !== 'undefined' && combat && combat.weapon && combat.weapon.name && String(combat.weapon.name).toLowerCase().includes('mace')) {
-                if (showEnemyHitboxIndicators && combat.isAttacking && movement) {
-                    PlayerCombatRenderer.drawAttackArc(ctx, screenX, screenY, combat, movement, camera, { comboColors: false });
+            // Bandit mace / sword: same path as player (arc and weapon from PlayerCombatRenderer)
+            const weapon = combat?.weapon as { name?: string } | undefined;
+            const weaponNameLower = weapon?.name ? String(weapon.name).toLowerCase() : '';
+            if (typeof PlayerCombatRenderer !== 'undefined' && combat && weapon && weapon.name) {
+                if (weaponNameLower.includes('mace')) {
+                    if (showEnemyHitboxIndicators && combat.isAttacking && movement) {
+                        PlayerCombatRenderer.drawAttackArc(ctx, screenX, screenY, combat, movement, camera, { comboColors: false });
+                    }
+                    PlayerCombatRenderer.drawMace(ctx, screenX, screenY, transform, movement, combat, camera);
+                } else if (weaponNameLower.includes('sword')) {
+                    if (showEnemyHitboxIndicators && combat.isAttacking && movement) {
+                        PlayerCombatRenderer.drawAttackArc(ctx, screenX, screenY, combat, movement, camera, { comboColors: false });
+                    }
+                    PlayerCombatRenderer.drawSword(ctx, screenX, screenY, transform, movement, combat, camera);
                 }
-                PlayerCombatRenderer.drawMace(ctx, screenX, screenY, transform, movement, combat, camera);
             }
-        } else if (enemyType === 'banditDagger') {
+        } else if (effectiveShape === 'banditDagger') {
             // Knight-like: same silhouette as player (torso, steel pauldrons, helmet with visor), tarnished steel to read as enemy
             const lw = Math.max(1, 2 / camera.zoom);
             ctx.fillStyle = bodyColor;
@@ -808,8 +854,8 @@ export const EnemyEntityRenderer = {
             ctx.fill();
         }
 
-        if (typeof EntityEffectsRenderer !== 'undefined') {
-            EntityEffectsRenderer.renderBarsAndEffects(context, entity, screenX, screenY, { isPlayer: false });
+        if (EntityEffectsRenderer) {
+            EntityEffectsRenderer.renderBarsAndEffects(context, entity, screenX, screenY, {});
         }
     }
 };

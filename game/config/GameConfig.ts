@@ -21,14 +21,14 @@ const GameConfig: GameConfigShape = {
     startY: 1400,
     width: 34.5,
     height: 34.5,
-    speed: 200,
+    speed: 280,
     maxHealth: 100,
     maxStamina: 100,
     staminaRegen: 16,
     color: '#8b8b9a',
-    defaultWeapon: 'blessedWinds',
-    defaultOffhand: 'shield',
-    sprint: { multiplier: 1.66, staminaCost: 12 },
+    defaultWeapon: 'sword_rusty',
+    defaultOffhand: 'none',
+    sprint: { multiplier: 1.35, staminaCost: 12 },
     dodge: { speed: 800, duration: 0.15, cooldown: 0.5, staminaCost: 15 },
     knockback: {
       force: 1100,
@@ -300,6 +300,7 @@ const GameConfig: GameConfigShape = {
         minPackDistance: 240,
       },
       enemyTypes: ['goblin', 'goblin', 'goblinChieftain', 'skeleton', 'skeleton', 'zombie', 'zombie'],
+      enemyTier2Chance: 0.4,
       killsToUnlockPortal: 40,
       theme: {
         ground: { r: 28, g: 26, b: 24, variation: 10 },
@@ -339,6 +340,7 @@ const GameConfig: GameConfigShape = {
         minPackDistance: 260,
       },
       enemyTypes: ['skeleton', 'skeleton', 'lesserDemon', 'lesserDemon', 'greaterDemon', 'zombie', 'zombie'],
+      enemyTier2Chance: 0.4,
       killsToUnlockPortal: 50,
       theme: {
         ground: {
@@ -383,6 +385,8 @@ const GameConfig: GameConfigShape = {
         minPackDistance: 260,
       },
       enemyTypes: ['skeleton', 'skeleton', 'bandit', 'lesserDemon', 'greaterDemon', 'goblinChieftain'],
+      enemyTier2Chance: 0.35,
+      enemyTier3Chance: 0.35,
       killsToUnlockPortal: 60,
       theme: {
         ground: {
@@ -423,6 +427,8 @@ const GameConfig: GameConfigShape = {
         minPackDistance: 230,
       },
       enemyTypes: ['goblin', 'goblin', 'goblinChieftain', 'bandit', 'bandit'],
+      enemyTier2Chance: 0.35,
+      enemyTier3Chance: 0.4,
       killsToUnlockPortal: 70,
       theme: {
         ground: { r: 32, g: 42, b: 32, variation: 9, texture: 'grass' },

@@ -13,8 +13,16 @@ import type { RenderContext } from './RenderContext.ts';
 import type { EntityShape } from '../../types/entity.ts';
 import type { CameraShape } from '../../types/camera.ts';
 
-/** Enemy type IDs that are upgraded (tier-2) variants. Show a symbol so the player can tell them apart. */
-const TIER2_ENEMY_TYPES = new Set<string>(['goblinBrute', 'skeletonVeteran']);
+/** Enemy type IDs that are tier-2 (2★) variants. */
+const TIER2_ENEMY_TYPES = new Set<string>([
+  'goblinBrute', 'skeletonVeteran', 'zombieVeteran', 'banditVeteran',
+  'lesserDemonVeteran', 'greaterDemonVeteran', 'goblinChieftainVeteran', 'fireDragonAlpha'
+]);
+/** Enemy type IDs that are tier-3 (3★) variants. */
+const TIER3_ENEMY_TYPES = new Set<string>([
+  'goblinElite', 'skeletonElite', 'zombieElite', 'banditElite',
+  'lesserDemonElite', 'greaterDemonElite', 'goblinChieftainElite', 'fireDragonElite'
+]);
 
 export const EntityEffectsRenderer = {
     drawShadow(ctx: CanvasRenderingContext2D, screenX: number, screenY: number, transform: Transform, camera: CameraShape, opts: { scale?: number; offsetY?: number; fillStyle?: string } = {}): void {
@@ -105,10 +113,13 @@ export const EntityEffectsRenderer = {
         });
     },
 
-    /** Draw a small "★★ symbol above upgraded (tier-2) enemies so the player can spot them. */
+    /** Draw ★★ or ★★★ above tier-2/3 enemies so the player can spot them. */
     drawTier2Symbol(context: RenderContext, entity: EntityShape, screenX: number, barY: number, camera: CameraShape): void {
         const ai = entity.getComponent(AI);
-        if (!ai || !ai.enemyType || !TIER2_ENEMY_TYPES.has(ai.enemyType)) return;
+        if (!ai || !ai.enemyType) return;
+        const isTier3 = TIER3_ENEMY_TYPES.has(ai.enemyType);
+        const isTier2 = TIER2_ENEMY_TYPES.has(ai.enemyType);
+        if (!isTier3 && !isTier2) return;
         const { ctx } = context;
         const z = camera.zoom;
         const symbolY = barY - 18 * z;
@@ -116,10 +127,10 @@ export const EntityEffectsRenderer = {
         ctx.font = `${Math.max(10, 12 * z)}px sans-serif`;
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
-        ctx.fillStyle = '#ffcc00';
-        ctx.strokeStyle = '#996600';
+        ctx.fillStyle = isTier3 ? '#ff8800' : '#ffcc00';
+        ctx.strokeStyle = isTier3 ? '#994400' : '#996600';
         ctx.lineWidth = Math.max(1, 1.5 / z);
-        const text = '★★';
+        const text = isTier3 ? '★★★' : '★★';
         ctx.strokeText(text, screenX, symbolY);
         ctx.fillText(text, screenX, symbolY);
         ctx.restore();

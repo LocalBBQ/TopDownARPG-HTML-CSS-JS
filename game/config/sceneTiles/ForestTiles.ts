@@ -113,7 +113,7 @@ export const SceneTilesForest: Record<string, { width: number; height: number; o
 
         /** Thick grove: dense trees and bushes, few open paths. Bandits with daggers only (no goblins). */
         thickGrove: {
-            spawn: { type: 'pack', count: 1, enemyTypes: ['banditDagger'] },
+            spawn: { type: 'pack', count: 1, enemyTypes: ['bandit'] },
             width: 1200,
             height: 1200,
             obstacles: [
@@ -175,7 +175,7 @@ export const SceneTilesForest: Record<string, { width: number; height: number; o
 
         /** Small farm: shed, well, fence pen, barrels, bushes (garden), a couple trees. Bandits with daggers only (no goblins). */
         smallFarm: {
-            spawn: { type: 'pack', count: 1, enemyTypes: ['banditDagger'] },
+            spawn: { type: 'pack', count: 1, enemyTypes: ['bandit'] },
             perimeterFence: { spacing: 36, size: 28 },
             width: 1200,
             height: 1200,
@@ -205,7 +205,7 @@ export const SceneTilesForest: Record<string, { width: number; height: number; o
 
         /** Bandit ambush: rocks and trees for cover, firepit, barrels. Bandits with daggers only (no goblins). */
         banditAmbush: {
-            spawn: { type: 'pack', count: 1, enemyTypes: ['banditDagger'] },
+            spawn: { type: 'pack', count: 1, enemyTypes: ['bandit'] },
             perimeterFence: { spacing: 38, size: 26 },
             width: 1200,
             height: 1200,

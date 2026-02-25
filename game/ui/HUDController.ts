@@ -4,6 +4,7 @@
 import type { EntityShape } from '../types/entity.js';
 import type { ArmorSlotId, InventorySlot, PlayingStateShape } from '../state/PlayingState.js';
 import { getSlotKey, INVENTORY_SLOT_COUNT, MAX_WEAPON_DURABILITY, MAX_ARMOR_DURABILITY, isWhetstoneSlot, isWeaponInstance } from '../state/PlayingState.js';
+import { WHETSTONE_REPAIR_PERCENT } from '../config/lootConfig.js';
 import { swapArmorWithArmor, canEquipArmorInSlot } from '../state/ArmorActions.js';
 import { getArmor } from '../armor/armorConfigs.js';
 import {
@@ -559,34 +560,27 @@ export class HUDController {
 
         const weapon = combat?.attackHandler?.weapon ?? combat?.playerAttack?.weapon;
         const weaponName = weapon && typeof weapon === 'object' && (weapon as { name?: string }).name;
-        const risingGaleBox = document.getElementById('rising-gale-box');
-        const risingGaleCountEl = document.getElementById('rising-gale-count');
-        const risingGaleDurationBar = document.getElementById('rising-gale-duration-bar');
-        if (risingGaleBox) {
+        const effectStacksGrid = document.getElementById('effect-stacks-grid');
+        const effectRisingGale = document.getElementById('effect-rising-gale');
+        const risingGaleCountEl = document.getElementById('rising-gale-stack-count');
+        let anyEffectVisible = false;
+        if (effectRisingGale && risingGaleCountEl) {
             if (weaponName === 'Blessed Winds' && statusEffects) {
-                risingGaleBox.classList.remove('hidden');
+                effectRisingGale.classList.remove('hidden');
+                anyEffectVisible = true;
                 const stacks = statusEffects.risingGaleStacks ?? 0;
-                if (risingGaleCountEl) {
-                    risingGaleCountEl.textContent = String(stacks);
-                    risingGaleCountEl.classList.toggle('ready', stacks >= 2);
-                }
+                risingGaleCountEl.textContent = stacks + '/2';
+                risingGaleCountEl.classList.toggle('ready', stacks >= 2);
                 const now = performance.now() / 1000;
-                const durationTotal = 6;
                 const remaining = Math.max(0, (statusEffects.risingGaleUntil ?? 0) - now);
-                const pct = durationTotal > 0 && stacks > 0 ? (remaining / durationTotal) * 100 : 0;
-                if (risingGaleDurationBar) risingGaleDurationBar.style.width = pct + '%';
+                const baseTitle = 'Rising Gale (Blessed Winds): 2 stacks = Storm Release';
+                effectRisingGale.title = remaining > 0 ? `${baseTitle} (${remaining.toFixed(1)}s left)` : baseTitle;
             } else {
-                risingGaleBox.classList.add('hidden');
+                effectRisingGale.classList.add('hidden');
             }
         }
-
-        const whetstoneBox = document.getElementById('whetstone-box');
-        const whetstoneCountEl = document.getElementById('whetstone-count');
-        if (whetstoneBox && whetstoneCountEl) {
-            const slots = this.ctx.playingState.inventorySlots ?? [];
-            const n = slots.reduce((sum, s) => sum + (isWhetstoneSlot(s) ? s.count : 0), 0);
-            whetstoneCountEl.textContent = String(n);
-            whetstoneBox.classList.toggle('hidden', n <= 0);
+        if (effectStacksGrid) {
+            effectStacksGrid.classList.toggle('hidden', !anyEffectVisible);
         }
 
         // Delve quest: show floor counter when in delve level
@@ -650,11 +644,6 @@ export class HUDController {
         }
         if (killsEl) killsEl.textContent = String(this.ctx.playingState.killsThisLife);
         if (goldEl) goldEl.textContent = String(this.ctx.playingState.gold);
-        const whetstoneEl = document.getElementById('inventory-stat-whetstone');
-        if (whetstoneEl) {
-            const slots = this.ctx.playingState.inventorySlots ?? [];
-            whetstoneEl.textContent = String(slots.reduce((sum, s) => sum + (isWhetstoneSlot(s) ? s.count : 0), 0));
-        }
 
         this.refreshInventoryEquipmentLabels();
         this.refreshArmorLabels();
@@ -713,7 +702,9 @@ export class HUDController {
             if (isWhetstoneSlot(item)) {
                 slot.removeAttribute('data-weapon-key');
                 slot.textContent = '◉';
-                slot.title = item.count > 1 ? `Whetstone ×${item.count} — drag onto weapon to repair` : 'Whetstone — drag onto weapon to repair';
+                const repairAmount = Math.round(MAX_WEAPON_DURABILITY * WHETSTONE_REPAIR_PERCENT);
+                const tooltip = `Drag onto a weapon to restore sharpness. Restores ${repairAmount} durability.`;
+                slot.title = item.count > 1 ? `Whetstone ×${item.count} — ${tooltip}` : `Whetstone — ${tooltip}`;
                 slot.draggable = true;
             } else if (key && Weapons[key]) {
                 slot.setAttribute('data-weapon-key', key);

@@ -4,7 +4,7 @@
 import type { WeaponInstance } from '../state/PlayingState.js';
 import { MAX_WEAPON_DURABILITY } from '../state/PlayingState.js';
 import { Weapons } from '../weapons/WeaponsRegistry.js';
-import { TIERED_WEAPON_KEYS, TIERED_OFFHAND_KEYS, MATERIALS } from '../weapons/materialTiers.js';
+import { TIERED_WEAPON_KEYS, TIERED_OFFHAND_KEYS, MATERIALS, SHIELD_MATERIALS } from '../weapons/materialTiers.js';
 import { getEquipSlotForWeapon } from '../weapons/weaponSlot.js';
 import { rollEnchantForSlot } from './enchantmentConfig.js';
 import type { EnchantmentSlot } from './enchantmentConfig.js';
@@ -66,6 +66,7 @@ export const LOOT_POOLS: Record<string, LootPoolDef> = {
       for (const base of TIERED_WEAPON_KEYS) {
         for (const mat of MATERIALS) keys.push(`${base}_${mat.id}`);
       }
+      for (const mat of SHIELD_MATERIALS) keys.push(`shield_${mat.id}`);
       for (const base of TIERED_OFFHAND_KEYS) {
         for (const mat of MATERIALS) keys.push(`${base}_${mat.id}`);
       }

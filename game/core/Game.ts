@@ -110,6 +110,8 @@ class Game {
     /** Set when pointer is over a weapon or armor slot (chest/inventory); cleared when moving away or closing. */
     tooltipHover: TooltipHover = null;
     inventoryChestUIController!: InventoryChestUIController;
+    private _debugTitleRenderLogged = false;
+    private _debugTitleDeathEntryCount = 0;
 
     /** Type-safe systems access; only use after systems are initialized. */
     private get systemsTyped(): GameSystems {
@@ -157,12 +159,30 @@ class Game {
             
             // Size canvas and create screen manager
             this.initCanvas();
-            // Initialize systems asynchronously (loads sprites)
-            this.initializeSystems().then(() => {
-                // Controllers (order: HUD first so Game can delegate setInventoryPanelVisible/refreshInventoryPanel to it)
+            // #region agent log
+            fetch('http://127.0.0.1:7243/ingest/3c21c460-5323-4315-bab2-130db5d256b7',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'Game.ts:afterInitCanvas',message:'after initCanvas',data:{hasScreenManager:!!this.screenManager,canvasW:this.canvas?.width,canvasH:this.canvas?.height},timestamp:Date.now(),hypothesisId:'H1'})}).catch(()=>{});
+            // #endregion
+            // Create systems synchronously so the game loop can run
+            this.initSystems();
+            // #region agent log
+            fetch('http://127.0.0.1:7243/ingest/3c21c460-5323-4315-bab2-130db5d256b7',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'Game.ts:afterInitSystems',message:'after initSystems',data:{hasSystems:!!this.systems},timestamp:Date.now(),hypothesisId:'H1'})}).catch(()=>{});
+            // #endregion
+            // Show title screen immediately and start the loop (title is visible while assets load)
+            this.screenManager.setScreen('title');
+            this.updateUIVisibility(false);
+            this.renderTitleOrDeathScreen();
+            this.running = true;
+            this.lastTime = performance.now();
+            // #region agent log
+            fetch('http://127.0.0.1:7243/ingest/3c21c460-5323-4315-bab2-130db5d256b7',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'Game.ts:beforeStart',message:'calling start(), running=true',data:{},timestamp:Date.now(),hypothesisId:'H4'})}).catch(()=>{});
+            // #endregion
+            this.start();
+
+            // Load assets in background; when done, wire up controllers and input so title is interactive
+            this.loadAssets().then(() => {
                 this.hudController = new HUDController({
                     playingState: this.playingState,
-                    systems: this.systems,
+                    systems: this.systems!,
                     entities: this.entities
                 });
                 this.playingStateController = new PlayingStateController(this);
@@ -182,20 +202,10 @@ class Game {
                 this.setupEventListeners();
                 this.bindGlobalInputHandlers();
                 this.bindCombatFeedbackListeners();
-
-                this.running = true;
-                this.lastTime = performance.now();
-                
                 console.log('Game initialized successfully');
-                
-                // Start with title screen and draw it once immediately (before game loop)
-                this.screenManager.setScreen('title');
-                this.updateUIVisibility(false);
-                this.renderTitleOrDeathScreen();
-                this.start();
             }).catch((error) => {
                 console.error('Game initialization error:', error);
-                alert('Game failed to initialize: ' + error.message);
+                alert('Game failed to initialize: ' + (error instanceof Error ? error.message : String(error)));
             });
             
         } catch (error) {
@@ -252,9 +262,8 @@ class Game {
         this.screenManager = new ScreenManager(this.canvas, this.ctx, () => this.clearPlayerInputsForMenu());
     }
 
-    async initializeSystems() {
-        // Register systems and core managers, then load assets
-        this.initSystems();
+    /** Load sprites and textures only. Call after initSystems(). */
+    async loadAssets() {
         await this.loadPlayerSprites();
         await this.loadEnemySprites();
         await this.loadGroundTextures();
@@ -928,13 +937,16 @@ class Game {
             const decorations: DecorationItem[] | undefined = Array.isArray(rawDecorations) ? (rawDecorations as DecorationItem[]) : undefined;
             if (decorations?.length && obstacleManager.factory) {
                 const factory = obstacleManager.factory;
+                const passableTypes = ['column', 'statueBase', 'stoneDebris', 'arch', 'brokenPillar'];
                 for (const d of decorations) {
                     const config = factory.getConfig(d.type);
                     const w = d.width ?? (config?.minSize != null && config?.maxSize != null ? (config.minSize + config.maxSize) / 2 : 40);
                     const h = d.height ?? w;
                     const spritePath = config?.defaultSpritePath ?? null;
                     const color = config?.color;
-                    obstacleManager.addObstacle(d.x, d.y, w, h, d.type, spritePath, color ? { color } : null);
+                    const passable = passableTypes.includes(d.type);
+                    const customProps = { ...(color ? { color } : {}), ...(passable ? { passable: true } : {}) };
+                    obstacleManager.addObstacle(d.x, d.y, w, h, d.type, spritePath, Object.keys(customProps).length ? customProps : null);
                 }
             }
             return;
@@ -1096,7 +1108,7 @@ class Game {
         if (!visible) {
             this.playingState.inventoryOpen = false;
             this.tooltipHover = null;
-            this.hudController.setInventoryPanelVisible(false);
+            if (this.hudController) this.hudController.setInventoryPanelVisible(false);
         }
     }
 
@@ -1213,7 +1225,7 @@ class Game {
     }
 
     setInventoryPanelVisible(visible: boolean) {
-        this.hudController.setInventoryPanelVisible(visible);
+        if (this.hudController) this.hudController.setInventoryPanelVisible(visible);
     }
 
     refreshInventoryPanel() {
@@ -1289,7 +1301,7 @@ class Game {
     /** Format enemy type key as display name (e.g. goblinChieftain -> Goblin Chieftain). */
     getEnemyDisplayName(enemyTypeKey) {
         if (!enemyTypeKey) return 'Enemy';
-        const displayNames = { banditDagger: 'Bandit' };
+        const displayNames: Record<string, string> = {};
         if (displayNames[enemyTypeKey]) return displayNames[enemyTypeKey];
         const withSpaces = enemyTypeKey
             .replace(/([a-z])([A-Z])/g, '$1 $2')
@@ -1299,6 +1311,13 @@ class Game {
 
     /** Draw only the title or death screen (shared path). Call once after setScreen('title') or from render(). */
     renderTitleOrDeathScreen() {
+        // #region agent log
+        if (this._debugTitleDeathEntryCount < 3) {
+            this._debugTitleDeathEntryCount++;
+            const isTitle = this.screenManager?.isScreen('title'); const isDeath = this.screenManager?.isScreen('death');
+            fetch('http://127.0.0.1:7243/ingest/3c21c460-5323-4315-bab2-130db5d256b7',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'Game.ts:renderTitleOrDeathScreen',message:'entry',data:{isTitle,isDeath,hasCtx:!!this.ctx,hasCanvas:!!this.canvas,canvasW:this.canvas?.width,canvasH:this.canvas?.height,currentScreen:this.screenManager?.currentScreen},timestamp:Date.now(),hypothesisId:'H2'})}).catch(()=>{});
+        }
+        // #endregion
         if (!this.screenManager?.isScreen('title') && !this.screenManager?.isScreen('death')) return;
         if (!this.ctx || !this.canvas) return;
         if (!this.canvas.width || !this.canvas.height) {
@@ -1308,11 +1327,24 @@ class Game {
         this.ctx.setTransform(1, 0, 0, 1, 0, 0);
         this.ctx.fillStyle = '#0a0806';
         this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
-        this.screenManager.render(this.settings);
+        try {
+            this.screenManager.render(this.settings);
+        } catch (e) {
+            // #region agent log
+            fetch('http://127.0.0.1:7243/ingest/3c21c460-5323-4315-bab2-130db5d256b7',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'Game.ts:renderTitleOrDeathScreen',message:'screenManager.render threw',data:{err:String(e)},timestamp:Date.now(),hypothesisId:'H5'})}).catch(()=>{});
+            // #endregion
+            throw e;
+        }
     }
 
     render() {
         try {
+            // #region agent log
+            if (!this._debugTitleRenderLogged && (this.screenManager?.currentScreen === 'title' || this.screenManager?.currentScreen === 'death')) {
+                this._debugTitleRenderLogged = true;
+                fetch('http://127.0.0.1:7243/ingest/3c21c460-5323-4315-bab2-130db5d256b7',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'Game.ts:render',message:'taking title/death branch',data:{currentScreen:this.screenManager?.currentScreen},timestamp:Date.now(),hypothesisId:'H3'})}).catch(()=>{});
+            }
+            // #endregion
             if (this.screenManager.isScreen('title') || this.screenManager.isScreen('death')) {
                 this.renderTitleOrDeathScreen();
                 return;

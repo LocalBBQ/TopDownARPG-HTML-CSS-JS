@@ -6,10 +6,23 @@ import {
     EnemyGreaterDemon,
     EnemyGoblinChieftain,
     EnemyBandit,
-    EnemyBanditDagger,
     EnemyGoblinBrute,
     EnemySkeletonVeteran,
     EnemyZombie,
+    EnemyZombieVeteran,
+    EnemyBanditVeteran,
+    EnemyLesserDemonVeteran,
+    EnemyGreaterDemonVeteran,
+    EnemyGoblinChieftainVeteran,
+    EnemyFireDragonAlpha,
+    EnemyGoblinElite,
+    EnemySkeletonElite,
+    EnemyZombieElite,
+    EnemyBanditElite,
+    EnemyLesserDemonElite,
+    EnemyGreaterDemonElite,
+    EnemyGoblinChieftainElite,
+    EnemyFireDragonElite,
     EnemyTrainingDummy,
     EnemyFireDragon
 } from '../config/enemyConfigs.ts';
@@ -26,16 +39,29 @@ export interface WeaponAndBehaviorEntry {
 const weaponAndBehavior: Record<string, WeaponAndBehaviorEntry> = {
   goblin: { weaponId: 'goblinDagger', behaviorId: 'slashAndLeap' },
   goblinBrute: { weaponId: 'goblinDagger', behaviorId: 'slashAndLeap' },
+  goblinElite: { weaponId: 'goblinDagger', behaviorId: 'slashAndLeap' },
   lesserDemon: { weaponId: 'lesserDemonClaw', behaviorId: 'slashAndLeap' },
+  lesserDemonVeteran: { weaponId: 'lesserDemonClaw', behaviorId: 'slashAndLeap' },
+  lesserDemonElite: { weaponId: 'lesserDemonClaw', behaviorId: 'slashAndLeap' },
   goblinChieftain: { weaponId: 'chieftainClub', behaviorId: 'chargeRelease' },
+  goblinChieftainVeteran: { weaponId: 'chieftainClub', behaviorId: 'chargeRelease' },
+  goblinChieftainElite: { weaponId: 'chieftainClub', behaviorId: 'chargeRelease' },
   greaterDemon: { weaponId: 'demonClaw', behaviorId: 'chargeRelease' },
+  greaterDemonVeteran: { weaponId: 'demonClaw', behaviorId: 'chargeRelease' },
+  greaterDemonElite: { weaponId: 'demonClaw', behaviorId: 'chargeRelease' },
   skeleton: { weaponId: 'skeletonNoMelee', behaviorId: 'rangedOnly' },
   skeletonVeteran: { weaponId: 'skeletonNoMelee', behaviorId: 'rangedOnly' },
+  skeletonElite: { weaponId: 'skeletonNoMelee', behaviorId: 'rangedOnly' },
   bandit: { weaponId: 'mace', behaviorId: 'comboAndCharge' },
-  banditDagger: { weaponId: 'dagger', behaviorId: 'slashAndLeap' },
+  banditVeteran: { weaponId: 'mace', behaviorId: 'comboAndCharge' },
+  banditElite: { weaponId: 'mace', behaviorId: 'comboAndCharge' },
   zombie: { weaponId: 'zombieClaw', behaviorId: 'slashOnly' },
+  zombieVeteran: { weaponId: 'zombieClaw', behaviorId: 'slashOnly' },
+  zombieElite: { weaponId: 'zombieClaw', behaviorId: 'slashOnly' },
   trainingDummy: { weaponId: 'goblinDagger', behaviorId: 'slashOnly' },
-  fireDragon: { weaponId: 'dragonClaw', behaviorId: 'slashAndLeap' }
+  fireDragon: { weaponId: 'dragonClaw', behaviorId: 'slashAndLeap' },
+  fireDragonAlpha: { weaponId: 'dragonClaw', behaviorId: 'slashAndLeap' },
+  fireDragonElite: { weaponId: 'dragonClaw', behaviorId: 'slashAndLeap' }
 };
 
 export const Enemies: Record<string, EnemyTypeDefinition | undefined> & {
@@ -49,10 +75,23 @@ export const Enemies: Record<string, EnemyTypeDefinition | undefined> & {
   greaterDemon: EnemyGreaterDemon,
   goblinChieftain: EnemyGoblinChieftain,
   bandit: EnemyBandit,
-  banditDagger: EnemyBanditDagger,
   goblinBrute: EnemyGoblinBrute,
   skeletonVeteran: EnemySkeletonVeteran,
   zombie: EnemyZombie,
+  zombieVeteran: EnemyZombieVeteran,
+  banditVeteran: EnemyBanditVeteran,
+  lesserDemonVeteran: EnemyLesserDemonVeteran,
+  greaterDemonVeteran: EnemyGreaterDemonVeteran,
+  goblinChieftainVeteran: EnemyGoblinChieftainVeteran,
+  fireDragonAlpha: EnemyFireDragonAlpha,
+  goblinElite: EnemyGoblinElite,
+  skeletonElite: EnemySkeletonElite,
+  zombieElite: EnemyZombieElite,
+  banditElite: EnemyBanditElite,
+  lesserDemonElite: EnemyLesserDemonElite,
+  greaterDemonElite: EnemyGreaterDemonElite,
+  goblinChieftainElite: EnemyGoblinChieftainElite,
+  fireDragonElite: EnemyFireDragonElite,
   trainingDummy: EnemyTrainingDummy,
   fireDragon: EnemyFireDragon,
   weaponAndBehavior,
@@ -62,11 +101,11 @@ export const Enemies: Record<string, EnemyTypeDefinition | undefined> & {
     return def?.config ?? null;
   },
 
-  createAttackHandler(enemyType: string): InstanceType<typeof WeaponAttackHandler> | InstanceType<typeof EnemyAttackHandler> | null {
+  createAttackHandler(enemyType: string, overrides?: { weaponId?: string; behaviorId?: string }): InstanceType<typeof WeaponAttackHandler> | InstanceType<typeof EnemyAttackHandler> | null {
     const map = weaponAndBehavior[enemyType];
     const config = Enemies.getConfig(enemyType) ?? (GameConfig?.enemy?.types as Record<string, Record<string, unknown>> | undefined)?.[enemyType] ?? null;
-    const weaponId = map?.weaponId ?? (config as { weaponId?: string } | null)?.weaponId;
-    const behaviorId = map?.behaviorId ?? (config as { behaviorId?: string } | null)?.behaviorId ?? 'slashOnly';
+    const weaponId = overrides?.weaponId ?? map?.weaponId ?? (config as { weaponId?: string } | null)?.weaponId;
+    const behaviorId = overrides?.behaviorId ?? map?.behaviorId ?? (config as { behaviorId?: string } | null)?.behaviorId ?? 'slashOnly';
     const weapon = EnemyWeapons.resolveWeapon(weaponId);
     const options = {
       isPlayer: false,

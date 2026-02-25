@@ -28,13 +28,39 @@ import type { Quest } from '../types/quest.ts';
 import { DELVE_LEVEL } from '../config/questConfig.ts';
 import type { HitCategory } from '../types/combat.js';
 import { rollWeaponDrop, rollWhetstoneDrop } from '../config/lootConfig.js';
+import { getBanditDaggerConfigForType, getBanditSwordConfigForType } from '../config/enemyConfigs.ts';
 import type { PlayingStateShape } from '../state/PlayingState.js';
 import { getPlayerArmorReduction } from '../armor/armorConfigs.js';
 
-/** Base enemy type -> tier-2 variant (used when difficulty has enemyTier2Chance > 0). */
+/** Weapon variants for bandits (randomized at spawn). */
+const BANDIT_WEAPON_VARIANTS = [
+  { weaponId: 'mace', behaviorId: 'comboAndCharge' as const },
+  { weaponId: 'dagger', behaviorId: 'slashAndLeap' as const },
+  { weaponId: 'sword', behaviorId: 'comboAndCharge' as const }
+] as const;
+
+/** Base enemy type -> tier-2 (2★) variant. Hard difficulty uses these. */
 const TIER2_MAP: Record<string, string> = {
     goblin: 'goblinBrute',
     skeleton: 'skeletonVeteran',
+    zombie: 'zombieVeteran',
+    bandit: 'banditVeteran',
+    lesserDemon: 'lesserDemonVeteran',
+    greaterDemon: 'greaterDemonVeteran',
+    goblinChieftain: 'goblinChieftainVeteran',
+    fireDragon: 'fireDragonAlpha',
+};
+
+/** Base enemy type -> tier-3 (3★) variant. Very Hard difficulty uses these. */
+const TIER3_MAP: Record<string, string> = {
+    goblin: 'goblinElite',
+    skeleton: 'skeletonElite',
+    zombie: 'zombieElite',
+    bandit: 'banditElite',
+    lesserDemon: 'lesserDemonElite',
+    greaterDemon: 'greaterDemonElite',
+    goblinChieftain: 'goblinChieftainElite',
+    fireDragon: 'fireDragonElite',
 };
 
 /** Inset from world edges so spawns stay inside border/perimeter (e.g. delve rock border). */
@@ -112,15 +138,35 @@ export class EnemyManager {
         idleBehaviorConfig: unknown = null
     ): Entity | null {
         if (type !== 'trainingDummy' && this.enemies.length >= this.maxEnemies) return null;
-        const config = this.config.enemy.types[type] || this.config.enemy.types.goblin;
-        
+        let config = this.config.enemy.types[type] || this.config.enemy.types.goblin;
+        let weaponIdOverride: string | undefined;
+        let behaviorIdOverride: string | undefined;
+        const isBandit = type === 'bandit' || type === 'banditVeteran' || type === 'banditElite';
+        if (isBandit) {
+            const variant = BANDIT_WEAPON_VARIANTS[Math.floor(Math.random() * BANDIT_WEAPON_VARIANTS.length)];
+            if (variant.weaponId === 'dagger') {
+                const daggerConfig = getBanditDaggerConfigForType(type);
+                if (daggerConfig) {
+                    config = daggerConfig as Record<string, unknown>;
+                    weaponIdOverride = 'dagger';
+                    behaviorIdOverride = 'slashAndLeap';
+                }
+            } else if (variant.weaponId === 'sword') {
+                const swordConfig = getBanditSwordConfigForType(type);
+                if (swordConfig) {
+                    config = swordConfig as Record<string, unknown>;
+                    weaponIdOverride = 'sword';
+                    behaviorIdOverride = 'comboAndCharge';
+                }
+            }
+        }
         const enemy = new Entity(x, y, `enemy_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`);
-        
         const AIClass = AI;
         const ai = new AIClass(config.detectionRange, config.attackRange, patrolConfig);
         ai.enemyType = type; // Store enemy type for lunge detection
+        if (weaponIdOverride) ai.weaponIdOverride = weaponIdOverride;
         // Bandits are faster; use a larger chase offset so they spread around the player instead of clumping
-        if (type === 'bandit' || type === 'banditDagger') {
+        if (type === 'bandit' || type === 'banditVeteran' || type === 'banditElite') {
             (ai as { _chaseOffsetDist: number })._chaseOffsetDist = 55 + Math.random() * 65; // 55..120 px
         }
         if (roamConfig && typeof roamConfig.centerX === 'number' && typeof roamConfig.centerY === 'number' && typeof roamConfig.radius === 'number' && roamConfig.radius > 0) {
@@ -156,13 +202,14 @@ export class EnemyManager {
             }
         }
         
-        const size = type === 'fireDragon' ? 96 : (type === 'trainingDummy' ? 32 : (type === 'greaterDemon' ? 38 : (type === 'goblinChieftain' ? 34 : (type === 'bandit' || type === 'banditDagger' ? 31 : 25))));
+        const isDragonBoss = type === 'fireDragon' || type === 'fireDragonAlpha' || type === 'fireDragonElite';
+        const size = isDragonBoss ? 120 : (type === 'trainingDummy' ? 32 : (type === 'greaterDemon' || type === 'greaterDemonVeteran' || type === 'greaterDemonElite' ? 38 : (type === 'goblinChieftain' || type === 'goblinChieftainVeteran' || type === 'goblinChieftainElite' ? 34 : (type === 'bandit' || type === 'banditVeteran' || type === 'banditElite' ? 31 : 25))));
         enemy
             .addComponent(new Transform(x, y, size, size))
             .addComponent(new Health(maxHealth))
             .addComponent(new StatusEffects(false))
             .addComponent(new EnemyMovement(config.moveSpeed != null ? config.moveSpeed : config.speed, type)) // Pass enemy type for type-specific behavior
-            .addComponent(new Combat(config.attackRange, config.attackDamage, Utils.degToRad(config.attackArcDegrees ?? 90), config.attackCooldown, config.windUpTime || 0.5, false, null, type)) // isPlayer=false, weapon=null, enemyType=type
+            .addComponent(new Combat(config.attackRange, config.attackDamage, Utils.degToRad(config.attackArcDegrees ?? 90), config.attackCooldown, config.windUpTime || 0.5, false, null, type, weaponIdOverride, behaviorIdOverride)) // isPlayer=false, weapon=null, enemyType=type, optional bandit weapon overrides
             .addComponent(ai)
             .addComponent(new Renderable('enemy', { color: config.color }));
 
@@ -351,7 +398,7 @@ export class EnemyManager {
             const packType = types[Utils.randomInt(0, types.length - 1)];
             const resolvedType = this.resolvePackType(packType);
             // Fewer bandits per pack (they're stronger than goblins)
-            const banditPackSize = packType === 'bandit' || packType === 'banditDagger';
+            const banditPackSize = packType === 'bandit';
             const enemiesInPack = banditPackSize
                 ? Utils.randomInt(1, Math.min(2, packSize.max))
                 : Utils.randomInt(packSize.min, packSize.max);
@@ -405,7 +452,7 @@ export class EnemyManager {
         const packType = types[Utils.randomInt(0, types.length - 1)];
         const resolvedType = this.resolvePackType(packType);
         // Fewer bandits per pack (they're stronger than goblins)
-        const banditPack = packType === 'bandit' || packType === 'banditDagger';
+        const banditPack = packType === 'bandit';
         const size = banditPack
             ? Utils.randomInt(1, 2)
             : (typeof packSize === 'object'
@@ -504,7 +551,8 @@ export class EnemyManager {
                 bx += offset.x;
                 by += offset.y;
             }
-            const e = this.spawnEnemy(bx, by, bossSpawn.type, entityManager, null, null, false, { centerX: bx, centerY: by, radius: 380 }, 'guard', null);
+            const bossType = this.resolvePackType(bossSpawn.type);
+            const e = this.spawnEnemy(bx, by, bossType, entityManager, null, null, false, { centerX: bx, centerY: by, radius: 380 }, 'guard', null);
             if (e) {
                 const ai = e.getComponent(AI);
                 if (ai) {
@@ -715,7 +763,7 @@ export class EnemyManager {
             for (let i = this.enemies.length - 1; i >= 0; i--) {
                 const enemy = this.enemies[i];
                 const ai = enemy.getComponent(AI);
-                if (ai?.enemyType === 'trainingDummy' || ai?.enemyType === 'fireDragon') continue;
+                if (ai?.enemyType === 'trainingDummy' || ai?.enemyType === 'fireDragon' || ai?.enemyType === 'fireDragonAlpha' || ai?.enemyType === 'fireDragonElite') continue;
                 const t = enemy.getComponent(Transform);
                 if (!t) continue;
                 const ex = t.x + t.width / 2;
@@ -1245,13 +1293,21 @@ export class EnemyManager {
         this.activeQuest = quest;
     }
 
-    /** Resolve pack type: optionally substitute tier-2 variant when difficulty has enemyTier2Chance. */
+    /** Resolve pack type: substitute tier-3 (★★★) or tier-2 (★★) variant from level tier chance or quest difficulty. */
     private resolvePackType(baseType: string): string {
+        const levelConfig = this.config.levels?.[this.currentLevel] as { enemyTier2Chance?: number; enemyTier3Chance?: number } | undefined;
         const diff = this.activeQuest?.difficulty;
-        if (!diff || !(diff.enemyTier2Chance > 0)) return baseType;
-        const tier2 = TIER2_MAP[baseType];
-        if (!tier2) return baseType;
-        return Math.random() < diff.enemyTier2Chance ? tier2 : baseType;
+        const tier3Chance = (levelConfig?.enemyTier3Chance != null ? levelConfig.enemyTier3Chance : diff?.enemyTier3Chance) ?? 0;
+        if (tier3Chance > 0) {
+            const tier3 = TIER3_MAP[baseType];
+            if (tier3 && Math.random() < tier3Chance) return tier3;
+        }
+        const tier2Chance = (levelConfig?.enemyTier2Chance != null ? levelConfig.enemyTier2Chance : diff?.enemyTier2Chance) ?? 0;
+        if (tier2Chance > 0) {
+            const tier2 = TIER2_MAP[baseType];
+            if (tier2 && Math.random() < tier2Chance) return tier2;
+        }
+        return baseType;
     }
 }
 

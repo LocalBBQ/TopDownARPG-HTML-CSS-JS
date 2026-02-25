@@ -9,6 +9,7 @@ import type { SystemManager } from '../core/SystemManager.js';
 import type { CameraShape } from '../types/camera.js';
 import type { EntityShape } from '../types/entity.js';
 import type { WeaponInstance } from '../state/PlayingState.js';
+import { drawWeaponIcon, getWeaponDisplayName } from '../ui/InventoryChestCanvas.js';
 
 export type PickupType = 'gold' | 'weapon' | 'whetstone' | 'healthOrb';
 
@@ -200,27 +201,15 @@ export class PickupManager {
 
   private _renderWeapon(ctx: CanvasRenderingContext2D, camera: CameraShape, item: WeaponPickupItem, screenX: number, screenY: number): void {
     const radius = item.radius * camera.zoom;
-    item.pulsePhase += 0.08;
-    const pulse = 1 + Math.sin(item.pulsePhase) * 0.15;
-    const r = radius * pulse;
-    const gradient = ctx.createRadialGradient(screenX, screenY, 0, screenX, screenY, r * 2);
-    gradient.addColorStop(0, 'rgba(180, 140, 80, 0.6)');
-    gradient.addColorStop(0.5, 'rgba(120, 90, 50, 0.3)');
-    gradient.addColorStop(1, 'rgba(80, 60, 40, 0)');
-    ctx.fillStyle = gradient;
-    ctx.beginPath();
-    ctx.arc(screenX, screenY, r * 2, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.strokeStyle = 'rgba(201, 162, 39, 0.8)';
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    ctx.arc(screenX, screenY, r, 0, Math.PI * 2);
-    ctx.stroke();
-    ctx.fillStyle = '#e8dcc8';
-    ctx.font = '600 10px Cinzel, Georgia, serif';
+    const iconSize = Math.max(8, radius * 1.4);
+    drawWeaponIcon(ctx, screenX, screenY, iconSize, item.instance.key);
+    const name = getWeaponDisplayName(item.instance.key, item.instance);
+    const textY = screenY + radius + 14;
+    ctx.fillStyle = '#e0c8a0';
+    ctx.font = '600 11px Cinzel, Georgia, serif';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.fillText('Weapon', screenX, screenY + r + 12);
+    ctx.fillText(name, screenX, textY);
   }
 
   private _renderWhetstone(ctx: CanvasRenderingContext2D, camera: CameraShape, item: WhetstonePickupItem, screenX: number, screenY: number): void {

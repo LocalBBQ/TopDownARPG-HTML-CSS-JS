@@ -105,7 +105,7 @@ export class EntitySpriteRenderer {
                     if (renderable && renderable.type === 'enemy') {
                         const ai = entity.getComponent(AI);
                         const showEnemyHitboxIndicators = settings && settings.showEnemyHitboxIndicators !== false;
-                        const needsWeaponOverlay = ai && (ai.enemyType === 'goblin' || ai.enemyType === 'goblinChieftain' || ai.enemyType === 'banditDagger' || ai.enemyType === 'bandit');
+                        const needsWeaponOverlay = ai && (ai.enemyType === 'goblin' || ai.enemyType === 'goblinChieftain' || ai.enemyType === 'bandit' || ai.enemyType === 'banditVeteran' || ai.enemyType === 'banditElite');
                         if (needsWeaponOverlay) {
                             const r = (transform.width / 2) * camera.zoom;
                             const h = (transform.height / 2) * camera.zoom;
@@ -116,7 +116,8 @@ export class EntitySpriteRenderer {
                                     comboColors: false
                                 });
                             }
-                            if (ai.enemyType === 'banditDagger' && combat && typeof PlayerCombatRenderer !== 'undefined') {
+                            const isBanditWithDagger = (ai.enemyType === 'bandit' || ai.enemyType === 'banditVeteran' || ai.enemyType === 'banditElite') && ai.weaponIdOverride === 'dagger';
+                            if (isBanditWithDagger && combat && typeof PlayerCombatRenderer !== 'undefined') {
                                 if (combat.isWindingUp) {
                                     PlayerCombatRenderer.drawAttackArc(ctx, screenX, screenY, combat, movement || { facingAngle: 0 }, camera, { telegraph: true, sweepProgress: 0, pullBack: 0, comboColors: false });
                                 }
@@ -125,11 +126,17 @@ export class EntitySpriteRenderer {
                                     PlayerCombatRenderer.drawAttackArc(ctx, screenX, screenY, combat, movement || { facingAngle: 0 }, camera, { sweepProgress: slashSweep, pullBack: 0, comboColors: false });
                                 }
                             }
-                            if (ai.enemyType === 'bandit' && combat && combat.weapon && combat.weapon.name === 'mace' && typeof PlayerCombatRenderer !== 'undefined') {
+                            if ((ai.enemyType === 'bandit' || ai.enemyType === 'banditVeteran' || ai.enemyType === 'banditElite') && !ai.weaponIdOverride && combat && combat.weapon && combat.weapon.name && String(combat.weapon.name).toLowerCase().includes('mace') && typeof PlayerCombatRenderer !== 'undefined') {
                                 if (showEnemyHitboxIndicators && combat.isAttacking && movement) {
                                     PlayerCombatRenderer.drawAttackArc(ctx, screenX, screenY, combat, movement, camera, { comboColors: false });
                                 }
                                 PlayerCombatRenderer.drawMace(ctx, screenX, screenY, transform, movement || { facingAngle: 0 }, combat, camera);
+                            }
+                            if ((ai.enemyType === 'bandit' || ai.enemyType === 'banditVeteran' || ai.enemyType === 'banditElite') && ai.weaponIdOverride === 'sword' && combat && typeof PlayerCombatRenderer !== 'undefined') {
+                                if (showEnemyHitboxIndicators && combat.isAttacking && movement) {
+                                    PlayerCombatRenderer.drawAttackArc(ctx, screenX, screenY, combat, movement, camera, { comboColors: false });
+                                }
+                                PlayerCombatRenderer.drawSword(ctx, screenX, screenY, transform, movement || { facingAngle: 0 }, combat, camera);
                             }
                             if (ai.enemyType !== 'bandit') {
                                 EnemyEntityRenderer.drawWeapon(context, ai.enemyType, screenX, screenY, movement ? movement.facingAngle : 0, r, h, combat);
@@ -262,7 +269,7 @@ export class EntitySpriteRenderer {
         if (renderable && renderable.type === 'enemy') {
             const ai = entity.getComponent(AI);
             const showEnemyHitboxIndicators = settings && settings.showEnemyHitboxIndicators !== false;
-            const needsWeaponOverlay = ai && (ai.enemyType === 'goblin' || ai.enemyType === 'goblinChieftain' || ai.enemyType === 'banditDagger' || ai.enemyType === 'bandit');
+            const needsWeaponOverlay = ai && (ai.enemyType === 'goblin' || ai.enemyType === 'goblinChieftain' || ai.enemyType === 'bandit' || ai.enemyType === 'banditVeteran' || ai.enemyType === 'banditElite');
             if (needsWeaponOverlay) {
                 const r = (transform.width / 2) * camera.zoom;
                 const h = (transform.height / 2) * camera.zoom;
@@ -274,8 +281,8 @@ export class EntitySpriteRenderer {
                         comboColors: false
                     });
                 }
-                // Bandit dagger: arc and weapon so attack redraws when using sprite path
-                if (ai.enemyType === 'banditDagger' && combat && typeof PlayerCombatRenderer !== 'undefined') {
+                const isBanditWithDagger = (ai.enemyType === 'bandit' || ai.enemyType === 'banditVeteran' || ai.enemyType === 'banditElite') && ai.weaponIdOverride === 'dagger';
+                if (isBanditWithDagger && combat && typeof PlayerCombatRenderer !== 'undefined') {
                     if (combat.isWindingUp) {
                         PlayerCombatRenderer.drawAttackArc(ctx, screenX, screenY, combat, movement || { facingAngle: 0 }, camera, { telegraph: true, sweepProgress: 0, pullBack: 0, comboColors: false });
                     }
@@ -284,12 +291,18 @@ export class EntitySpriteRenderer {
                         PlayerCombatRenderer.drawAttackArc(ctx, screenX, screenY, combat, movement || { facingAngle: 0 }, camera, { sweepProgress: slashSweep, pullBack: 0, comboColors: false });
                     }
                 }
-                // Bandit mace: same path as player (arc and mace from PlayerCombatRenderer)
-                if (ai.enemyType === 'bandit' && combat && combat.weapon && combat.weapon.name && String(combat.weapon.name).toLowerCase().includes('mace') && typeof PlayerCombatRenderer !== 'undefined') {
+                // Bandit mace / sword: same path as player (arc and weapon from PlayerCombatRenderer)
+                if ((ai.enemyType === 'bandit' || ai.enemyType === 'banditVeteran' || ai.enemyType === 'banditElite') && !ai.weaponIdOverride && combat && combat.weapon && combat.weapon.name && String(combat.weapon.name).toLowerCase().includes('mace') && typeof PlayerCombatRenderer !== 'undefined') {
                     if (showEnemyHitboxIndicators && combat.isAttacking && movement) {
                         PlayerCombatRenderer.drawAttackArc(ctx, screenX, screenY, combat, movement, camera, { comboColors: false });
                     }
                     PlayerCombatRenderer.drawMace(ctx, screenX, screenY, transform, movement || { facingAngle: 0 }, combat, camera);
+                }
+                if ((ai.enemyType === 'bandit' || ai.enemyType === 'banditVeteran' || ai.enemyType === 'banditElite') && ai.weaponIdOverride === 'sword' && combat && typeof PlayerCombatRenderer !== 'undefined') {
+                    if (showEnemyHitboxIndicators && combat.isAttacking && movement) {
+                        PlayerCombatRenderer.drawAttackArc(ctx, screenX, screenY, combat, movement, camera, { comboColors: false });
+                    }
+                    PlayerCombatRenderer.drawSword(ctx, screenX, screenY, transform, movement || { facingAngle: 0 }, combat, camera);
                 }
                 if (ai.enemyType !== 'bandit') {
                     EnemyEntityRenderer.drawWeapon(context, ai.enemyType, screenX, screenY, movement ? movement.facingAngle : 0, r, h, combat);

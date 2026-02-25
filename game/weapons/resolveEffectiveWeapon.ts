@@ -44,7 +44,7 @@ export function getEffectiveWeapon(
   }
   if (effective.baseStunBuildup != null) wrapper.baseStunBuildup = effective.baseStunBuildup;
 
-  const isOffhand = key === 'shield' || key.startsWith('defender_');
+  const isOffhand = key.startsWith('shield_') || key.startsWith('defender_');
   if (isOffhand && typeof baseObj.getBlockConfig === 'function') {
     const origGetBlockConfig = baseObj.getBlockConfig.bind(base);
     wrapper.getBlockConfig = function (): unknown {
