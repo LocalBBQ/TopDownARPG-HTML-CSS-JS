@@ -172,9 +172,9 @@ export interface PlayingStateShape {
   savedSanctuaryStamina?: number;
 }
 
-/** Initial chest weapon keys (one of each base at Rusty tier; shield has no tier). */
+/** Initial chest weapon keys (one of each base at Rusty tier; shield at Wooden tier). */
 const INITIAL_CHEST_WEAPON_KEYS = [
-  'sword_rusty', 'shield', 'defender_rusty', 'dagger_rusty', 'greatsword_rusty', 'crossbow_rusty', 'mace_rusty'
+  'sword_rusty', 'shield_wooden', 'defender_rusty', 'dagger_rusty', 'greatsword_rusty', 'crossbow_rusty', 'mace_rusty'
 ] as const;
 
 /** Initial chest contents: 24 slots, first 7 filled with one of each base weapon, rest empty. */

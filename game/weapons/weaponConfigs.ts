@@ -42,6 +42,7 @@ const swordConfig: WeaponConfigInput = {
     }
 };
 
+/** Base shield config; tier variants override block stats via WeaponsRegistry. */
 const shieldConfig: WeaponConfigInput = {
     name: 'shield',
     offhandOnly: true,

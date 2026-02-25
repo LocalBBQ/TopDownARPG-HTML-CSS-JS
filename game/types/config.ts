@@ -20,6 +20,8 @@ export interface PlayerConfig {
   defaultOffhand?: string;
   color?: string;
   crossbow?: { reloadTime: number; [key: string]: number };
+  sprint?: { multiplier: number; staminaCost: number };
+  dodge?: { speed: number; duration: number; cooldown: number; staminaCost: number };
   [key: string]: unknown;
 }
 
@@ -36,6 +38,10 @@ export interface LevelConfig {
     minPackDistance?: number;
   };
   enemyTypes?: string[];
+  /** Chance (0–1) for packs on this level to spawn as tier-2 (★★) variants. Tier-2 maps use this. */
+  enemyTier2Chance?: number;
+  /** Chance (0–1) for packs on this level to spawn as tier-3 (★★★) variants. Tier-3 maps use this. */
+  enemyTier3Chance?: number;
   killsToUnlockPortal?: number;
   theme?: { ground?: unknown; sky?: string; texture?: string };
   obstacles?: unknown;

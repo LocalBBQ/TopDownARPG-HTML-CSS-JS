@@ -16,6 +16,7 @@ import {
     SHOP_WEAPON_TYPE_LABELS
 } from '../config/shopConfig.js';
 import { getEnchantmentById, applyEnchantEffectsToWeapon } from '../config/enchantmentConfig.js';
+import { WHETSTONE_REPAIR_PERCENT } from '../config/lootConfig.js';
 
 function isWeaponInstance(w: unknown): w is Weapon {
     return !!w && typeof (w as Weapon).baseDamage === 'number';
@@ -46,7 +47,7 @@ const WEAPON_SYMBOLS: Record<string, string> = {
 };
 
 export const CHEST_WEAPON_ORDER: string[] = [
-    'sword_rusty', 'shield', 'defender_rusty', 'dagger_rusty', 'greatsword_rusty', 'crossbow_rusty', 'mace_rusty'
+    'sword_rusty', 'shield_wooden', 'defender_rusty', 'dagger_rusty', 'greatsword_rusty', 'crossbow_rusty', 'mace_rusty'
 ];
 
 const INVENTORY_COLS = 4;
@@ -1119,6 +1120,52 @@ export function renderArmorTooltip(
     ctx.restore();
 }
 
+export function renderWhetstoneTooltip(
+    ctx: CanvasRenderingContext2D,
+    canvas: HTMLCanvasElement,
+    hover: { x: number; y: number; count: number } | null
+): void {
+    if (!hover) return;
+    const repairAmount = Math.round(MAX_WEAPON_DURABILITY * WHETSTONE_REPAIR_PERCENT);
+    const title = hover.count > 1 ? `Whetstone ×${hover.count}` : 'Whetstone';
+    const line1 = 'Drag onto a weapon to restore sharpness.';
+    const line2 = `Restores ${repairAmount} durability.`;
+    const W = canvas.width;
+    const H = canvas.height;
+    const gap = 14;
+    ctx.font = '600 12px Cinzel, Georgia, serif';
+    const boxW = Math.min(TOOLTIP_MAX_WIDTH, Math.max(TOOLTIP_MIN_WIDTH, Math.max(ctx.measureText(line1).width, ctx.measureText(line2).width) + TOOLTIP_PADDING * 2));
+    const contentH = 28 + TOOLTIP_LINE_HEIGHT * 2;
+    const boxH = contentH;
+
+    let x = hover.x + gap;
+    let y = hover.y - boxH / 2;
+    if (x + boxW > W - 8) x = hover.x - boxW - gap;
+    if (x < 8) x = 8;
+    if (y < 8) y = 8;
+    if (y + boxH > H - 8) y = H - boxH - 8;
+
+    ctx.save();
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.fillStyle = 'rgba(22, 16, 10, 0.98)';
+    ctx.strokeStyle = 'rgba(61, 40, 23, 0.9)';
+    ctx.lineWidth = 2;
+    ctx.fillRect(x, y, boxW, boxH);
+    ctx.strokeRect(x, y, boxW, boxH);
+    ctx.fillStyle = '#c9a227';
+    ctx.font = '700 13px Cinzel, Georgia, serif';
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(title, x + TOOLTIP_PADDING, y + 14);
+    ctx.fillStyle = 'rgba(61, 40, 23, 0.6)';
+    ctx.fillRect(x + TOOLTIP_PADDING, y + 20, boxW - TOOLTIP_PADDING * 2, 1);
+    ctx.fillStyle = '#e8dcc8';
+    ctx.font = '500 11px Cinzel, Georgia, serif';
+    ctx.fillText(line1, x + TOOLTIP_PADDING, y + 20 + TOOLTIP_GAP + TOOLTIP_LINE_HEIGHT / 2);
+    ctx.fillText(line2, x + TOOLTIP_PADDING, y + 20 + TOOLTIP_GAP + TOOLTIP_LINE_HEIGHT + TOOLTIP_LINE_HEIGHT / 2);
+    ctx.restore();
+}
+
 const TOOLTIP_PADDING = 10;
 const TOOLTIP_GAP = 8;
 const TOOLTIP_LINE_HEIGHT = 16;
@@ -1486,6 +1533,7 @@ export function renderInventory(
 
     renderWeaponTooltip(ctx, canvas, tooltipHover?.type === 'weapon' ? tooltipHover : null, ps);
     renderArmorTooltip(ctx, canvas, tooltipHover?.type === 'armor' ? tooltipHover : null, ps);
+    renderWhetstoneTooltip(ctx, canvas, tooltipHover?.type === 'whetstone' ? tooltipHover : null);
     ctx.restore();
 }
 

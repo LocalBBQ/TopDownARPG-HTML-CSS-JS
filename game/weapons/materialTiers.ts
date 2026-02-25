@@ -23,8 +23,24 @@ export const MATERIALS: MaterialDef[] = [
 /** Weapon types that get material tier variants (shield is single, no tiers). */
 export const TIERED_WEAPON_KEYS = ['sword', 'greatsword', 'dagger', 'mace', 'crossbow', 'bow'] as const;
 
-/** Offhand types that get material tier variants (shield is single, no tiers). */
+/** Offhand types that get material tier variants. */
 export const TIERED_OFFHAND_KEYS = ['defender'] as const;
+
+/** Four shield tiers: Wooden (base), Iron, Steel, Rune. */
+export const SHIELD_MATERIALS: MaterialDef[] = [
+    { id: 'wooden', displayName: 'Wooden', color: '#8B6914' },
+    { id: 'iron', displayName: 'Iron', color: '#5a5a5a' },
+    { id: 'steel', displayName: 'Steel', color: '#a8a8b0' },
+    { id: 'rune', displayName: 'Rune', color: '#7eb8e8' }
+];
+
+/** Block stats per shield tier (damageReduction 0–1, staminaCost per block). */
+export const SHIELD_BLOCK_TABLE: Record<string, { damageReduction: number; staminaCost: number }> = {
+    wooden: { damageReduction: 0.55, staminaCost: 28 },
+    iron: { damageReduction: 0.62, staminaCost: 25 },
+    steel: { damageReduction: 0.70, staminaCost: 22 },
+    rune: { damageReduction: 0.78, staminaCost: 20 }
+};
 
 export type TieredWeaponKey = (typeof TIERED_WEAPON_KEYS)[number];
 

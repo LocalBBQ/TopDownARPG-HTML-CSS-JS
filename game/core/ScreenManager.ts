@@ -813,14 +813,14 @@ export class ScreenManager {
             backY: height / 2 + 160,
             rows: [
                 { key: 'sword_rusty', mainhandKey: 'sword_rusty', offhandKey: 'none', label: 'Rusty Sword', y: startY },
-                { key: 'sword_rusty+shield', mainhandKey: 'sword_rusty', offhandKey: 'shield', label: 'Rusty Sword + Shield', y: startY + rowH },
+                { key: 'sword_rusty+shield', mainhandKey: 'sword_rusty', offhandKey: 'shield_wooden', label: 'Rusty Sword + Shield', y: startY + rowH },
                 { key: 'dagger_rusty', mainhandKey: 'dagger_rusty', offhandKey: 'none', label: 'Rusty Dagger', y: startY + rowH * 2 },
-                { key: 'dagger_rusty+shield', mainhandKey: 'dagger_rusty', offhandKey: 'shield', label: 'Rusty Dagger + Shield', y: startY + rowH * 3 },
+                { key: 'dagger_rusty+shield', mainhandKey: 'dagger_rusty', offhandKey: 'shield_wooden', label: 'Rusty Dagger + Shield', y: startY + rowH * 3 },
                 { key: 'greatsword_rusty', mainhandKey: 'greatsword_rusty', offhandKey: 'none', label: 'Rusty Greatsword', y: startY + rowH * 4 },
                 { key: 'crossbow_rusty', mainhandKey: 'crossbow_rusty', offhandKey: 'none', label: 'Rusty Crossbow', y: startY + rowH * 5 },
-                { key: 'crossbow_rusty+shield', mainhandKey: 'crossbow_rusty', offhandKey: 'shield', label: 'Rusty Crossbow + Shield', y: startY + rowH * 6 },
+                { key: 'crossbow_rusty+shield', mainhandKey: 'crossbow_rusty', offhandKey: 'shield_wooden', label: 'Rusty Crossbow + Shield', y: startY + rowH * 6 },
                 { key: 'mace_rusty', mainhandKey: 'mace_rusty', offhandKey: 'none', label: 'Rusty Mace', y: startY + rowH * 7 },
-                { key: 'mace_rusty+shield', mainhandKey: 'mace_rusty', offhandKey: 'shield', label: 'Rusty Mace + Shield', y: startY + rowH * 8 }
+                { key: 'mace_rusty+shield', mainhandKey: 'mace_rusty', offhandKey: 'shield_wooden', label: 'Rusty Mace + Shield', y: startY + rowH * 8 }
             ]
         };
     }

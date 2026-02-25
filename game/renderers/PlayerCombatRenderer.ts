@@ -989,11 +989,17 @@ export const PlayerCombatRenderer = {
         if (!movement || !combat || !transform) return;
         if (!isBlockable(combat.offhandWeapon)) return;
         if (combat.weapon && combat.weapon.twoHanded) return;
-        const offhandName = combat.offhandWeapon && (combat.offhandWeapon as { name?: string }).name;
+        const offhand = combat.offhandWeapon as { name?: string; color?: string } | null;
+        const offhandName = offhand?.name;
         if (offhandName?.includes('Defender')) {
             PlayerCombatRenderer.drawDefenderDagger(ctx, screenX, screenY, transform, movement, combat, camera);
             return;
         }
+        const fill = offhand?.color ?? '#8b6914';
+        const m = fill.match(/^#?([0-9a-fA-F]{2})([0-9a-fA-F]{2})([0-9a-fA-F]{2})$/);
+        const stroke = m
+            ? '#' + [m[1], m[2], m[3]].map((x) => Math.max(0, Math.floor(parseInt(x, 16) * 0.55)).toString(16).padStart(2, '0')).join('')
+            : '#5d4a0c';
         const shieldDist = (transform.width / 2 + 8) * camera.zoom;
         const shieldW = 40 * camera.zoom;
         const shieldH = 8; // thickness constant when zooming
@@ -1003,8 +1009,8 @@ export const PlayerCombatRenderer = {
             ctx.save();
             ctx.translate(shieldX, shieldY);
             ctx.rotate(movement.facingAngle + Math.PI / 2);
-            ctx.fillStyle = '#8b6914';
-            ctx.strokeStyle = '#5d4a0c';
+            ctx.fillStyle = fill;
+            ctx.strokeStyle = stroke;
             ctx.lineWidth = 2;
             ctx.fillRect(-shieldW / 2, -shieldH / 2, shieldW, shieldH);
             ctx.strokeRect(-shieldW / 2, -shieldH / 2, shieldW, shieldH);
@@ -1017,8 +1023,8 @@ export const PlayerCombatRenderer = {
             ctx.translate(leftX, leftY);
             ctx.rotate(leftAngle + Math.PI / 2);
             ctx.globalAlpha = 0.5;
-            ctx.fillStyle = '#8b6914';
-            ctx.strokeStyle = '#5d4a0c';
+            ctx.fillStyle = fill;
+            ctx.strokeStyle = stroke;
             ctx.lineWidth = 1;
             ctx.fillRect(-shieldW / 2, -shieldH / 2, shieldW, shieldH);
             ctx.strokeRect(-shieldW / 2, -shieldH / 2, shieldW, shieldH);

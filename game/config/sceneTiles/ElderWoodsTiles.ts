@@ -146,7 +146,7 @@ export const SceneTilesElderWoods: Record<string, { width: number; height: numbe
 
   /** Bandit ambush: rocks and trees for cover, firepit, one massive trunk. Pack spawn. */
   banditAmbush: {
-    spawn: { type: 'pack', count: 1, enemyTypes: ['banditDagger'] },
+    spawn: { type: 'pack', count: 1, enemyTypes: ['bandit'] },
     perimeterFence: { spacing: 38, size: 26 },
     width: 1200,
     height: 1200,

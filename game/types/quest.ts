@@ -9,6 +9,8 @@ export interface DifficultyDef {
   packDensityMultiplier: number;
   packSizeBonus: number;
   enemyTier2Chance: number;
+  /** When > 0, spawn tier-3 (★★★) variants instead of tier-2. Very Hard only. */
+  enemyTier3Chance?: number;
 }
 
 /** Quest type: standard = level-based run; delve = dungeon descent, kill-all-per-floor. */

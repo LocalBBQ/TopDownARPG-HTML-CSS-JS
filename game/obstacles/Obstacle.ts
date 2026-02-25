@@ -21,6 +21,8 @@ export class Obstacle {
   hp?: number;
   /** Unique id for this obstacle (set by ObstacleManager). Used to avoid double-hits in one attack. */
   id?: string;
+  /** If true, entity movement is not blocked (e.g. hub decorations that may not render). */
+  passable?: boolean;
 
   constructor(x: number, y: number, width: number, height: number, type = 'tree') {
     this.x = x;

@@ -437,6 +437,12 @@ export class InventoryChestUIController {
             g.setTooltipHover(instance ? { type: 'weapon', weaponKey: invHit.key, x, y, durability: instance.durability, prefixId: instance.prefixId, suffixId: instance.suffixId } : { type: 'weapon', weaponKey: invHit.key, x, y });
             return;
         }
+        if (invHit?.type === 'inventory-slot' && invHit.itemType === 'whetstone') {
+            const slot = ps.inventorySlots?.[invHit.index];
+            const count = slot && 'count' in slot ? slot.count : 1;
+            g.setTooltipHover({ type: 'whetstone', x, y, count });
+            return;
+        }
         if (invHit?.type === 'inventory-slot' && invHit.weaponKey) {
             if (getArmor(invHit.weaponKey)) {
                 g.setTooltipHover({ type: 'armor', armorKey: invHit.weaponKey, x, y, durability: invHit.durability });

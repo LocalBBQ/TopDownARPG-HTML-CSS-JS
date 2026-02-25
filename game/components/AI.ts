@@ -64,6 +64,8 @@ export class AI implements Component {
     staminaExhausted: boolean;
     /** Pack modifier key (e.g. from packModifiers config); set by EnemyManager. */
     packModifierName: string | null;
+    /** When set (e.g. 'dagger' for bandit), this enemy uses that weapon instead of the type default. Used for bandit weapon randomization. */
+    weaponIdOverride?: string;
 
     constructor(detectionRange: number, attackRange: number, patrolConfig: PatrolConfig | null = null) {
         this.detectionRange = detectionRange;
