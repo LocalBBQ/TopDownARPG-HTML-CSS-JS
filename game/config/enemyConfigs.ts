@@ -694,6 +694,14 @@ export function getBanditDaggerConfigForType(type: string): Record<string, unkno
   return null;
 }
 
+/** Bandit sword stats (used when a bandit randomly rolls sword). Same base as mace bandit, weapon overridden to sword. */
+export function getBanditSwordConfigForType(type: string): Record<string, unknown> | null {
+  if (type === 'bandit') return banditConfig as unknown as Record<string, unknown>;
+  if (type === 'banditVeteran') return banditVeteranConfig as unknown as Record<string, unknown>;
+  if (type === 'banditElite') return banditEliteConfig as unknown as Record<string, unknown>;
+  return null;
+}
+
 export const EnemyGoblin = EnemyType.fromConfig(goblinConfig);
 export const EnemySkeleton = EnemyType.fromConfig(skeletonConfig);
 export const EnemyLesserDemon = EnemyType.fromConfig(lesserDemonConfig);
