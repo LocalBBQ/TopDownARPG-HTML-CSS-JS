@@ -41,6 +41,8 @@ export class GatherableManager {
 
     items: GatherableItem[] = [];
     useCooldown = 0;
+    /** Count of items collected this run by gatherable type (for quest objectives). Reset in clear(). */
+    collectedThisRunByType: Record<string, number> = {};
     gameRef: GameRefLike | null = null;
     gathering: GatheringState | null = null;
     gatherProgress = 0;
@@ -67,10 +69,15 @@ export class GatherableManager {
     clear(): void {
         this.items = [];
         this.useCooldown = 0;
+        this.collectedThisRunByType = {};
         this.gathering = null;
         this.gatherProgress = 0;
         this.playerInGatherableRange = false;
         this.playerNearGatherable = false;
+    }
+
+    getCollectedCount(type: string): number {
+        return this.collectedThisRunByType[type] ?? 0;
     }
 
     applyReward(type: string, player: EntityShape, _systems: SystemManager | null): void {
@@ -139,6 +146,7 @@ export class GatherableManager {
                 this.gatherProgress += deltaTime / GatherableManager.GATHER_DURATION;
                 if (this.gatherProgress >= 1) {
                     item.collected = true;
+                    this.collectedThisRunByType[item.type] = (this.collectedThisRunByType[item.type] ?? 0) + 1;
                     this.useCooldown = 0.4;
                     this.applyReward(item.type, player, systems);
                     this.gathering = null;

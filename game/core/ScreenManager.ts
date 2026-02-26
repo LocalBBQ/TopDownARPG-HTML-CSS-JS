@@ -1,6 +1,7 @@
 // Screen Manager - handles game state and screen rendering
 import { GameConfig } from '../config/GameConfig.ts';
 import { getQuestDescription } from '../config/questConfig.ts';
+import { STATIC_QUESTS } from '../config/staticQuests.ts';
 import type { Quest } from '../types/quest.ts';
 
 export type ScreenName = 'title' | 'hub' | 'playing' | 'death' | 'pause' | 'settings' | 'settings-controls' | 'help';
@@ -77,8 +78,38 @@ export class ScreenManager {
         return null;
     }
 
-    /** Bulletin board: title, then buttons (side by side), then 3 page rects. */
-    getQuestBoardBounds(questList: Quest[], _levelNames: Record<number, string>): {
+    /** Tabbed board frame (bulletin + main quest tabs). Use for hit-test and content area. */
+    getTabbedBoardFrame(): { frameX: number; frameY: number; frameW: number; frameH: number; tabBarHeight: number; contentTop: number; contentHeight: number } {
+        const width = this.canvas.width;
+        const height = this.canvas.height;
+        const cx = width / 2;
+        const cy = height / 2 - 72;
+        const framePad = 20;
+        const boardH = 420;
+        const tabBarHeight = 40;
+        const innerH = boardH + framePad * 2 + 24;
+        const frameH = innerH + tabBarHeight;
+        const boardW = 780;
+        const frameW = boardW + framePad * 2;
+        const frameX = cx - frameW / 2;
+        const frameY = cy - frameH / 2;
+        const contentTop = frameY + tabBarHeight;
+        return { frameX, frameY, frameW: 780 + framePad * 2, frameH, tabBarHeight, contentTop, contentHeight: innerH };
+    }
+
+    getBoardTabAt(x: number, y: number): 'bulletin' | 'mainQuest' | null {
+        const t = this.getTabbedBoardFrame();
+        const tabTop = t.frameY + 6;
+        const tabH = t.tabBarHeight - 12;
+        if (y < tabTop || y > tabTop + tabH) return null;
+        const mid = t.frameX + t.frameW / 2;
+        if (x >= t.frameX && x < mid) return 'mainQuest';
+        if (x >= mid && x <= t.frameX + t.frameW) return 'bulletin';
+        return null;
+    }
+
+    /** Bulletin board: title, then buttons (side by side), then 3 page rects. contentTop optional for tabbed board. */
+    getQuestBoardBounds(questList: Quest[], _levelNames: Record<number, string>, contentTop?: number): {
         cx: number;
         cy: number;
         frameY: number;
@@ -103,7 +134,7 @@ export class ScreenManager {
         const framePad = 20;
         const boardW = 780;
         const boardH = 420;
-        const frameY = cy - boardH / 2 - framePad - 24;
+        const frameY = contentTop ?? (cy - boardH / 2 - framePad - 24);
         const titleBottom = frameY + 48;
         const buttonH = 40;
         const buttonY = titleBottom + 24 + buttonH / 2;
@@ -133,8 +164,8 @@ export class ScreenManager {
         return { cx, cy, frameY, boardW, boardH, pageW, pageH, pageGap, rows, buttonY, acceptX, rerollX, backX, buttonW, buttonH, rerollButtonW };
     }
 
-    /** Board overlay button hit-test (Accept / Re-roll / Back), side by side. */
-    getHubBoardButtonAt(x: number, y: number, _questCount = 0): 'start' | 'reroll' | 'back' | null {
+    /** Board overlay button hit-test (Accept / Re-roll / Back), side by side. contentTop optional for tabbed board. */
+    getHubBoardButtonAt(x: number, y: number, _questCount = 0, contentTop?: number): 'start' | 'reroll' | 'back' | null {
         const height = this.canvas.height;
         const cx = this.canvas.width / 2;
         const buttonW = 120;
@@ -144,7 +175,7 @@ export class ScreenManager {
         const cy = height / 2 - 72;
         const framePad = 20;
         const boardH = 420;
-        const frameY = cy - boardH / 2 - framePad - 24;
+        const frameY = contentTop ?? (cy - boardH / 2 - framePad - 24);
         const buttonY = frameY + 48 + 24 + buttonH / 2;
         const totalButtonsW = buttonW + buttonGap + rerollButtonW + buttonGap + buttonW;
         const acceptX = cx - totalButtonsW / 2 + buttonW / 2;
@@ -160,9 +191,9 @@ export class ScreenManager {
         return null;
     }
 
-    getQuestSelectAt(x: number, y: number, questList: Quest[], levelNames: Record<number, string>): number | null {
+    getQuestSelectAt(x: number, y: number, questList: Quest[], levelNames: Record<number, string>, contentTop?: number): number | null {
         if (!questList.length) return null;
-        const b = this.getQuestBoardBounds(questList, levelNames);
+        const b = this.getQuestBoardBounds(questList, levelNames, contentTop);
         for (const row of b.rows) {
             if (x >= row.x && x <= row.x + row.w && y >= row.y && y <= row.y + row.h) return row.index;
         }
@@ -609,6 +640,134 @@ export class ScreenManager {
         return false;
     }
 
+    /** Main Quest overlay: quests filtered by unlockedLevelIds, one row per quest. contentTop/contentHeight optional for tabbed board. */
+    getMainQuestOverlayBounds(
+        unlockedLevelIds: number[],
+        contentTop?: number,
+        contentHeight?: number,
+    ): { titleY: number; listTop: number; rowHeight: number; rows: { index: number; quest: Quest; y: number; left: number; right: number; top: number; bottom: number }[]; buttonY: number; acceptX: number; backX: number; buttonW: number; buttonH: number } {
+        const width = this.canvas.width;
+        const height = this.canvas.height;
+        const cx = width / 2;
+        const listW = 520;
+        const rowHeight = 44;
+        const unlockedSet = new Set(unlockedLevelIds);
+        const quests = STATIC_QUESTS.filter((q) => unlockedSet.has(q.level)).sort((a, b) => a.level - b.level || (a.order ?? 0) - (b.order ?? 0));
+        const titleY = contentTop !== undefined ? contentTop + 24 : 56;
+        const listTop = contentTop !== undefined ? contentTop + 56 : 88;
+        const buttonY = contentTop !== undefined && contentHeight !== undefined ? contentTop + contentHeight - 56 : height - 56;
+        const rows: { index: number; quest: Quest; y: number; left: number; right: number; top: number; bottom: number }[] = [];
+        const left = cx - listW / 2;
+        const right = cx + listW / 2;
+        for (let i = 0; i < quests.length; i++) {
+            const y = listTop + i * rowHeight + rowHeight / 2;
+            rows.push({
+                index: i,
+                quest: quests[i],
+                y,
+                left,
+                right,
+                top: y - rowHeight / 2,
+                bottom: y + rowHeight / 2,
+            });
+        }
+        const buttonH = 40;
+        const buttonW = 120;
+        const gap = 24;
+        const acceptX = cx - buttonW / 2 - gap / 2;
+        const backX = cx + buttonW / 2 + gap / 2;
+        return { titleY, listTop, rowHeight, rows, buttonY, acceptX, backX, buttonW, buttonH };
+    }
+
+    renderMainQuestOverlay(
+        unlockedLevelIds: number[],
+        completedQuestIds: string[],
+        selectedQuestIndex: number,
+        levelNames: Record<number, string>,
+        contentTop?: number,
+        contentHeight?: number,
+    ): void {
+        this.ctx.setTransform(1, 0, 0, 1, 0, 0);
+        const width = this.canvas.width;
+        const height = this.canvas.height;
+        const cx = width / 2;
+
+        if (contentTop === undefined) {
+            this.ctx.fillStyle = 'rgba(10, 8, 6, 0.82)';
+            this.ctx.fillRect(0, 0, width, height);
+        }
+
+        const b = this.getMainQuestOverlayBounds(unlockedLevelIds, contentTop, contentHeight);
+
+        this.ctx.textAlign = 'center';
+        this.ctx.textBaseline = 'middle';
+        this.ctx.fillStyle = '#c9a227';
+        this.ctx.font = '700 24px Cinzel, Georgia, serif';
+        this.ctx.fillText('Main Quest', cx, b.titleY);
+
+        const completedSet = new Set(completedQuestIds);
+        for (const row of b.rows) {
+            const isSelected = selectedQuestIndex === row.index;
+            const completed = completedSet.has(row.quest.id);
+            const levelName = levelNames[row.quest.level] ?? 'Level ' + row.quest.level;
+
+            this.ctx.fillStyle = isSelected ? 'rgba(201, 162, 39, 0.35)' : 'rgba(26, 16, 8, 0.6)';
+            this.ctx.fillRect(row.left, row.top, row.right - row.left, row.bottom - row.top);
+            this.ctx.strokeStyle = isSelected ? '#c9a227' : '#4a3020';
+            this.ctx.lineWidth = isSelected ? 2 : 1;
+            this.ctx.strokeRect(row.left, row.top, row.right - row.left, row.bottom - row.top);
+
+            this.ctx.textAlign = 'left';
+            this.ctx.fillStyle = completed ? '#6a8a6a' : '#e8dcc8';
+            this.ctx.font = '600 15px Cinzel, Georgia, serif';
+            this.ctx.fillText(completed ? '✓ ' + row.quest.name : row.quest.name, row.left + 12, row.y);
+            this.ctx.fillStyle = '#a08060';
+            this.ctx.font = '500 12px Cinzel, Georgia, serif';
+            this.ctx.fillText(levelName, row.right - 10, row.y);
+            if (row.quest.gatesBiomeUnlock) {
+                this.ctx.fillStyle = '#c9a227';
+                this.ctx.font = '500 11px Cinzel, Georgia, serif';
+                this.ctx.fillText('Required', row.left + 14, row.y + 14);
+            }
+            this.ctx.textAlign = 'center';
+        }
+
+        const hasSelection = selectedQuestIndex >= 0 && selectedQuestIndex < b.rows.length;
+        this.ctx.fillStyle = hasSelection ? '#1a1008' : 'rgba(26, 16, 8, 0.6)';
+        this.ctx.fillRect(b.acceptX - b.buttonW / 2, b.buttonY - b.buttonH / 2, b.buttonW, b.buttonH);
+        this.ctx.strokeStyle = hasSelection ? '#c9a227' : '#4a3020';
+        this.ctx.lineWidth = 2;
+        this.ctx.strokeRect(b.acceptX - b.buttonW / 2, b.buttonY - b.buttonH / 2, b.buttonW, b.buttonH);
+        this.ctx.fillStyle = hasSelection ? '#e8dcc8' : '#6a5a50';
+        this.ctx.font = '600 14px Cinzel, Georgia, serif';
+        this.ctx.fillText('Accept', b.acceptX, b.buttonY);
+
+        this.ctx.fillStyle = '#1a1008';
+        this.ctx.fillRect(b.backX - b.buttonW / 2, b.buttonY - b.buttonH / 2, b.buttonW, b.buttonH);
+        this.ctx.strokeStyle = '#4a3020';
+        this.ctx.lineWidth = 2;
+        this.ctx.strokeRect(b.backX - b.buttonW / 2, b.buttonY - b.buttonH / 2, b.buttonW, b.buttonH);
+        this.ctx.fillStyle = '#a08060';
+        this.ctx.fillText('Back', b.backX, b.buttonY);
+    }
+
+    getMainQuestSelectAt(x: number, y: number, unlockedLevelIds: number[], contentTop?: number, contentHeight?: number): number | null {
+        const b = this.getMainQuestOverlayBounds(unlockedLevelIds, contentTop, contentHeight);
+        for (const row of b.rows) {
+            if (x >= row.left && x <= row.right && y >= row.top && y <= row.bottom) return row.index;
+        }
+        return null;
+    }
+
+    getMainQuestButtonAt(x: number, y: number, unlockedLevelIds: number[], contentTop?: number, contentHeight?: number): 'accept' | 'back' | null {
+        const b = this.getMainQuestOverlayBounds(unlockedLevelIds, contentTop, contentHeight);
+        const halfW = b.buttonW / 2;
+        const halfH = b.buttonH / 2;
+        if (x >= b.acceptX - halfW && x <= b.acceptX + halfW && y >= b.buttonY - halfH && y <= b.buttonY + halfH) return 'accept';
+        if (x >= b.backX - halfW && x <= b.backX + halfW && y >= b.buttonY - halfH && y <= b.buttonY + halfH) return 'back';
+        return null;
+    }
+
     renderDeathScreen() {
         const width = this.canvas.width;
         const height = this.canvas.height;
@@ -703,7 +862,7 @@ export class ScreenManager {
         this.ctx.textBaseline = 'middle';
         this.ctx.fillStyle = '#c9a227';
         this.ctx.font = '700 22px Cinzel, Georgia, serif';
-        this.ctx.fillText('Bulletin Board', cx, b.frameY + 22);
+        this.ctx.fillText('Investigations', cx, b.frameY + 22);
 
         const REROLL_COST = 200;
         const canReroll = gold >= REROLL_COST;
@@ -798,6 +957,150 @@ export class ScreenManager {
                 ty += descLineHeight;
             }
             this.ctx.restore();
+        }
+    }
+
+    renderBoardOverlayWithTabs(
+        boardTab: 'bulletin' | 'mainQuest',
+        questList: Quest[],
+        hubSelectedQuestIndex: number,
+        unlockedLevelIds: number[],
+        completedQuestIds: string[],
+        hubSelectedMainQuestIndex: number,
+        levelNames: Record<number, string>,
+        gold: number,
+    ): void {
+        this.ctx.setTransform(1, 0, 0, 1, 0, 0);
+        const width = this.canvas.width;
+        const height = this.canvas.height;
+        const cx = width / 2;
+
+        this.ctx.fillStyle = 'rgba(10, 8, 6, 0.82)';
+        this.ctx.fillRect(0, 0, width, height);
+
+        const t = this.getTabbedBoardFrame();
+        // Wooden frame
+        this.ctx.fillStyle = '#3d2817';
+        this.ctx.fillRect(t.frameX, t.frameY, t.frameW, t.frameH);
+        this.ctx.strokeStyle = '#5c3d22';
+        this.ctx.lineWidth = 4;
+        this.ctx.strokeRect(t.frameX, t.frameY, t.frameW, t.frameH);
+        this.ctx.fillStyle = '#2a1810';
+        this.ctx.fillRect(t.frameX + 6, t.frameY + 6, t.frameW - 12, t.frameH - 12);
+
+        // Tab bar
+        const tabTop = t.frameY + 6;
+        const tabH = t.tabBarHeight - 12;
+        const tab1Right = t.frameX + t.frameW / 2;
+        const tab2Left = tab1Right;
+        this.ctx.textAlign = 'center';
+        this.ctx.textBaseline = 'middle';
+        for (const [tab, label, left, right] of [
+            ['mainQuest' as const, 'Main Quest', t.frameX, tab1Right],
+            ['bulletin' as const, 'Investigations', tab2Left, t.frameX + t.frameW],
+        ]) {
+            const isActive = boardTab === tab;
+            this.ctx.fillStyle = isActive ? '#3d2817' : '#2a1810';
+            this.ctx.fillRect(left, tabTop, right - left, tabH);
+            this.ctx.strokeStyle = isActive ? '#c9a227' : '#4a3020';
+            this.ctx.lineWidth = isActive ? 2 : 1;
+            this.ctx.strokeRect(left, tabTop, right - left, tabH);
+            this.ctx.fillStyle = isActive ? '#e8dcc8' : '#a08060';
+            this.ctx.font = isActive ? '600 14px Cinzel, Georgia, serif' : '500 13px Cinzel, Georgia, serif';
+            this.ctx.fillText(label, (left + right) / 2, tabTop + tabH / 2);
+        }
+
+        if (boardTab === 'bulletin') {
+            if (questList.length === 0) {
+                this.ctx.fillStyle = '#a08060';
+                this.ctx.font = '500 16px Cinzel, Georgia, serif';
+                this.ctx.fillText('No quests posted.', cx, t.contentTop + t.contentHeight / 2);
+                return;
+            }
+            const b = this.getQuestBoardBounds(questList, levelNames, t.contentTop);
+            this.ctx.fillStyle = '#c9a227';
+            this.ctx.font = '700 22px Cinzel, Georgia, serif';
+            this.ctx.fillText('Investigations', cx, b.frameY + 22);
+            const REROLL_COST = 200;
+            const canReroll = gold >= REROLL_COST;
+            this.ctx.fillStyle = '#1a1008';
+            this.ctx.fillRect(b.acceptX - b.buttonW / 2, b.buttonY - b.buttonH / 2, b.buttonW, b.buttonH);
+            this.ctx.strokeStyle = '#c9a227';
+            this.ctx.lineWidth = 2;
+            this.ctx.strokeRect(b.acceptX - b.buttonW / 2, b.buttonY - b.buttonH / 2, b.buttonW, b.buttonH);
+            this.ctx.fillStyle = '#e8dcc8';
+            this.ctx.font = '600 14px Cinzel, Georgia, serif';
+            this.ctx.fillText('Accept quest', b.acceptX, b.buttonY);
+            this.ctx.fillStyle = canReroll ? '#1a1008' : 'rgba(26, 16, 8, 0.6)';
+            this.ctx.fillRect(b.rerollX - b.rerollButtonW / 2, b.buttonY - b.buttonH / 2, b.rerollButtonW, b.buttonH);
+            this.ctx.strokeStyle = canReroll ? '#c9a227' : '#4a3020';
+            this.ctx.strokeRect(b.rerollX - b.rerollButtonW / 2, b.buttonY - b.buttonH / 2, b.rerollButtonW, b.buttonH);
+            this.ctx.fillStyle = canReroll ? '#e8dcc8' : '#6a5a50';
+            this.ctx.font = '600 13px Cinzel, Georgia, serif';
+            this.ctx.fillText('Re-roll (200g)', b.rerollX, b.buttonY);
+            this.ctx.fillStyle = '#1a1008';
+            this.ctx.fillRect(b.backX - b.buttonW / 2, b.buttonY - b.buttonH / 2, b.buttonW, b.buttonH);
+            this.ctx.strokeStyle = '#4a3020';
+            this.ctx.strokeRect(b.backX - b.buttonW / 2, b.buttonY - b.buttonH / 2, b.buttonW, b.buttonH);
+            this.ctx.fillStyle = '#a08060';
+            this.ctx.fillText('Back', b.backX, b.buttonY);
+            const wrapText = (text: string, maxChars: number): string[] => {
+                const out: string[] = [];
+                let rest = text.trim();
+                while (rest.length > 0) {
+                    if (rest.length <= maxChars) {
+                        out.push(rest);
+                        break;
+                    }
+                    const breakAt = rest.slice(0, maxChars + 1).lastIndexOf(' ');
+                    out.push(rest.slice(0, breakAt <= 0 ? maxChars : breakAt).trim());
+                    rest = rest.slice(breakAt <= 0 ? maxChars : breakAt).trim();
+                }
+                return out;
+            };
+            const maxCharsPerLine = 34;
+            const descLineHeight = 18;
+            for (let i = 0; i < b.rows.length; i++) {
+                const row = b.rows[i];
+                const quest = questList[row.index];
+                const isSelected = hubSelectedQuestIndex === row.index;
+                const levelName = levelNames[quest.level] ?? 'Level ' + quest.level;
+                const diffLabel = quest.difficulty?.label ?? quest.difficultyId;
+                const descLines = getQuestDescription(quest);
+                const wrappedLines: string[] = [];
+                for (const line of descLines) {
+                    wrappedLines.push(...wrapText(line, maxCharsPerLine));
+                }
+                this.ctx.save();
+                const slightRotate = (i - 1) * 0.018;
+                this.ctx.translate(row.x + row.w / 2, row.y + row.h / 2);
+                this.ctx.rotate(slightRotate);
+                this.ctx.translate(-(row.x + row.w / 2), -(row.y + row.h / 2));
+                this.ctx.fillStyle = isSelected ? '#f4ecd8' : '#e8dfc8';
+                this.ctx.strokeStyle = isSelected ? '#c9a227' : '#8b7355';
+                this.ctx.lineWidth = isSelected ? 3 : 1.5;
+                this.ctx.fillRect(row.x, row.y, row.w, row.h);
+                this.ctx.strokeRect(row.x, row.y, row.w, row.h);
+                const pad = 12;
+                let ty = row.y + pad + 8;
+                this.ctx.fillStyle = '#1a1008';
+                this.ctx.font = '700 20px Cinzel, Georgia, serif';
+                this.ctx.fillText(levelName, row.x + row.w / 2, ty);
+                ty += 26;
+                this.ctx.fillStyle = '#4a3020';
+                this.ctx.font = '600 16px Cinzel, Georgia, serif';
+                this.ctx.fillText(diffLabel, row.x + row.w / 2, ty);
+                ty += 22;
+                this.ctx.fillStyle = '#2a1810';
+                this.ctx.font = '500 14px Cinzel, Georgia, serif';
+                for (const line of wrappedLines) {
+                    this.ctx.fillText(line, row.x + row.w / 2, ty);
+                    ty += descLineHeight;
+                }
+                this.ctx.restore();
+            }
+        } else {
+            this.renderMainQuestOverlay(unlockedLevelIds, completedQuestIds, hubSelectedMainQuestIndex, levelNames, t.contentTop, t.contentHeight);
         }
     }
 

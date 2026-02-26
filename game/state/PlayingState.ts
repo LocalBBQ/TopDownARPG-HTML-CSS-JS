@@ -166,7 +166,17 @@ export interface PlayingStateShape {
   questCompleteFlairRemaining: number;
   /** True after we've triggered the flair this run (so we don't re-trigger every frame). */
   questCompleteFlairTriggered?: boolean;
+  /** Persistent list of completed static quest ids (for biome unlock). */
+  completedQuestIds: string[];
+  /** Level ids (biomes) unlocked for play. Default [1] = Village Outskirts. */
+  unlockedLevelIds: number[];
+  /** When board is open: 'bulletin' = random quests, 'mainQuest' = static quest list. */
+  boardTab: 'bulletin' | 'mainQuest';
+  /** Index of selected row in the Main Quest tab. */
+  hubSelectedMainQuestIndex: number;
   screenBeforePause: 'playing' | 'hub' | null;
+  /** When entering a level with a survive quest, set once; used for objective completion. */
+  questSurviveStartTime?: number;
   /** When transitioning from level to sanctuary: health/stamina to restore on the new player entity. */
   savedSanctuaryHealth?: number;
   savedSanctuaryStamina?: number;
@@ -253,6 +263,10 @@ const defaultPlayingState = (defaultMainhand: string, defaultOffhand: string, ch
   lastEnemyKillY: null,
   questCompleteFlairRemaining: 0,
   questCompleteFlairTriggered: false,
+  completedQuestIds: [],
+  unlockedLevelIds: [1],
+  boardTab: 'mainQuest',
+  hubSelectedMainQuestIndex: 0,
   screenBeforePause: null
 });
 
@@ -316,7 +330,12 @@ export class PlayingState implements PlayingStateShape {
   lastEnemyKillY: number | null = null;
   questCompleteFlairRemaining = 0;
   questCompleteFlairTriggered = false;
+  completedQuestIds: string[] = [];
+  unlockedLevelIds: number[] = [1];
+  boardTab: 'bulletin' | 'mainQuest' = 'mainQuest';
+  hubSelectedMainQuestIndex = 0;
   screenBeforePause: 'playing' | 'hub' | null = null;
+  questSurviveStartTime?: number;
   savedSanctuaryHealth?: number;
   savedSanctuaryStamina?: number;
   shopExpandedWeapons?: Record<string, boolean>;

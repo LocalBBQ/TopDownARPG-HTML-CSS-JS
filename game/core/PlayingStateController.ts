@@ -3,6 +3,7 @@
  */
 import { GameConfig } from '../config/GameConfig.js';
 import { getRandomQuestsForBoard, DELVE_LEVEL } from '../config/questConfig.js';
+import { isStaticQuestComplete } from '../config/staticQuests.js';
 import { Utils } from '../utils/Utils.js';
 import type { Quest } from '../types/quest.js';
 import { Transform } from '../components/Transform.js';
@@ -73,7 +74,7 @@ export class PlayingStateController {
             g.playingState.portalUseCooldown = Math.max(0, g.playingState.portalUseCooldown - deltaTime);
         }
 
-        const enemyManager = g.systems.get('enemies') as { getCurrentLevel(): number; getEnemiesKilledThisLevel(): number; getAliveCount(): number; changeLevel(level: number, entities: unknown, obstacleManager: unknown, playerSpawn: { x: number; y: number } | null, options?: { delveFloor?: number }): void } | undefined;
+        const enemyManager = g.systems.get('enemies') as { getCurrentLevel(): number; getEnemiesKilledThisLevel(): number; getKillsByTypeThisLevel?(): Record<string, number>; getAliveCount?(): number; changeLevel(level: number, entities: unknown, obstacleManager: unknown, playerSpawn: { x: number; y: number } | null, options?: { delveFloor?: number }): void } | undefined;
         if (!enemyManager) {
             g.playingState.playerNearPortal = false;
             return;
@@ -84,12 +85,29 @@ export class PlayingStateController {
         const levelConfig = GameConfig.levels && GameConfig.levels[currentLevel];
         const nextLevel = isDelve ? DELVE_LEVEL : currentLevel + 1;
         const nextLevelExists = isDelve || !!(GameConfig.levels && GameConfig.levels[currentLevel + 1]);
-        const killsRequired = isDelve ? 999 : ((levelConfig && levelConfig.killsToUnlockPortal != null) ? levelConfig.killsToUnlockPortal : 999);
         const kills = enemyManager.getEnemiesKilledThisLevel();
         const allDead = isDelve && enemyManager.getAliveCount && enemyManager.getAliveCount() === 0;
 
+        let portalSpawned: boolean;
+        const activeQuest = g.playingState.activeQuest;
+        if (activeQuest?.objectiveType) {
+            const gatherableManager = g.systems.get('gatherables') as { getCollectedCount?(type: string): number } | undefined;
+            portalSpawned = isStaticQuestComplete(activeQuest, {
+                    getEnemiesKilledThisLevel: () => enemyManager.getEnemiesKilledThisLevel(),
+                    getKillsByTypeThisLevel: enemyManager.getKillsByTypeThisLevel ? () => enemyManager.getKillsByTypeThisLevel!() : undefined,
+                    getAliveCount: enemyManager.getAliveCount ? () => enemyManager.getAliveCount!() : undefined,
+                    getCollectedCount: gatherableManager?.getCollectedCount?.bind(gatherableManager),
+                    questSurviveStartTime: g.playingState.questSurviveStartTime,
+                    levelConfig: levelConfig as { bossSpawn?: { type: string } } | undefined,
+                    now: () => (typeof performance !== 'undefined' ? performance.now() : Date.now()) / 1000,
+                });
+        } else {
+            const killsRequired = isDelve ? 999 : ((levelConfig && levelConfig.killsToUnlockPortal != null) ? levelConfig.killsToUnlockPortal : 999);
+            portalSpawned = isDelve ? allDead : (kills >= killsRequired);
+        }
+
         g.playingState.portal.targetLevel = nextLevel;
-        g.playingState.portal.spawned = isDelve ? allDead : (kills >= killsRequired);
+        g.playingState.portal.spawned = portalSpawned;
         // Delve: always allow descending (E = next floor, B = return to sanctuary). Other quests: complete = return only.
         const isDelveQuest = g.playingState.activeQuest?.questType === 'delve';
         g.playingState.portal.hasNextLevel = isDelveQuest ? nextLevelExists : (g.playingState.activeQuest ? false : nextLevelExists);

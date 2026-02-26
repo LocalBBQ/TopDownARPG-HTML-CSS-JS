@@ -2,7 +2,8 @@
  * Handles screen-driven input: canvas click (title/hub/death/pause/settings) and global keys (Tab, Escape, Space, Enter).
  */
 import { EventTypes } from './EventTypes.js';
-import { getRandomQuestsForBoard } from '../config/questConfig.js';
+import { getRandomQuestsForBoard, difficulties } from '../config/questConfig.js';
+import { STATIC_QUESTS } from '../config/staticQuests.js';
 import type { ScreenName } from './ScreenManager.js';
 import type { SettingsLike } from './ScreenManager.js';
 import type { Quest } from '../types/quest.js';
@@ -14,8 +15,12 @@ export interface ScreenControllerContext {
         selectedStartLevel: number;
         setScreen(screen: ScreenName): void;
         getLevelSelectAt(x: number, y: number): number | null;
-        getQuestSelectAt(x: number, y: number, questList: Quest[], levelNames: Record<number, string>): number | null;
-        getHubBoardButtonAt(x: number, y: number, questCount?: number): 'start' | 'reroll' | 'back' | null;
+        getQuestSelectAt(x: number, y: number, questList: Quest[], levelNames: Record<number, string>, contentTop?: number): number | null;
+        getHubBoardButtonAt(x: number, y: number, questCount?: number, contentTop?: number): 'start' | 'reroll' | 'back' | null;
+        getBoardTabAt(x: number, y: number): 'bulletin' | 'mainQuest' | null;
+        getTabbedBoardFrame(): { contentTop: number; contentHeight: number };
+        getMainQuestSelectAt(x: number, y: number, unlockedLevelIds: number[], contentTop?: number, contentHeight?: number): number | null;
+        getMainQuestButtonAt(x: number, y: number, unlockedLevelIds: number[], contentTop?: number, contentHeight?: number): 'accept' | 'back' | null;
         getPauseButtonAt(x: number, y: number): string | null;
         getHelpBackButtonAt(x: number, y: number): boolean;
         getSettingsItemAt(x: number, y: number, settings: SettingsLike): string | null;
@@ -25,6 +30,9 @@ export interface ScreenControllerContext {
         inventoryOpen: boolean;
         chestOpen: boolean;
         boardOpen: boolean;
+        boardTab: 'bulletin' | 'mainQuest';
+        unlockedLevelIds: number[];
+        hubSelectedMainQuestIndex: number;
         shopOpen: boolean;
         rerollStationOpen?: boolean;
         equippedMainhandKey: string;
@@ -32,7 +40,7 @@ export interface ScreenControllerContext {
         hubSelectedLevel: number;
         hubSelectedQuestIndex: number;
         questList: { level: number; difficultyId: string; difficulty?: { goldMultiplier?: number; label?: string } }[];
-        activeQuest: { level: number; difficulty?: { goldMultiplier?: number } } | null;
+        activeQuest: Quest | null;
         questGoldMultiplier: number;
         chestUseCooldown: number;
         boardUseCooldown: number;
@@ -69,6 +77,12 @@ export class ScreenController {
                 ctx.startGame();
             }
         } else if (sm.isScreen('hub') && ps.boardOpen) {
+            const t = sm.getTabbedBoardFrame();
+            const tab = sm.getBoardTabAt(x, y);
+            if (tab !== null) {
+                ps.boardTab = tab;
+                return;
+            }
             const levelNames: Record<number, string> = ctx.config?.levels
                 ? Object.fromEntries(
                     Object.entries(ctx.config.levels).map(([k, v]) => [
@@ -76,32 +90,59 @@ export class ScreenController {
                         (v as { name?: string }).name ?? 'Level ' + k
                     ])
                 ) : {};
-            const questIndex = ps.questList.length > 0 ? sm.getQuestSelectAt(x, y, ps.questList, levelNames) : null;
-            if (questIndex !== null) {
-                ps.hubSelectedQuestIndex = questIndex;
-                ps.hubSelectedLevel = ps.questList[questIndex].level;
+            if (ps.boardTab === 'bulletin') {
+                const questIndex = ps.questList.length > 0 ? sm.getQuestSelectAt(x, y, ps.questList, levelNames, t.contentTop) : null;
+                if (questIndex !== null) {
+                    ps.hubSelectedQuestIndex = questIndex;
+                    ps.hubSelectedLevel = ps.questList[questIndex].level;
+                } else {
+                    const btn = sm.getHubBoardButtonAt(x, y, ps.questList.length, t.contentTop);
+                    if (btn === 'start' && ps.questList.length > 0) {
+                        const quest = ps.questList[ps.hubSelectedQuestIndex];
+                        if (quest) {
+                            ps.activeQuest = quest;
+                            ps.questGoldMultiplier = quest.difficulty?.goldMultiplier ?? 1;
+                            sm.selectedStartLevel = quest.level;
+                        }
+                        ps.boardOpen = false;
+                    } else if (btn === 'reroll') {
+                        const REROLL_COST = 200;
+                        const currentGold = ps.gold ?? 0;
+                        if (currentGold >= REROLL_COST) {
+                            ps.gold = currentGold - REROLL_COST;
+                            ps.questList = getRandomQuestsForBoard(3);
+                            ps.hubSelectedQuestIndex = 0;
+                            if (ps.questList.length > 0) ps.hubSelectedLevel = ps.questList[0].level;
+                        }
+                    } else if (btn === 'back') {
+                        ps.boardOpen = false;
+                    }
+                }
             } else {
-                const btn = sm.getHubBoardButtonAt(x, y, ps.questList.length);
-                if (btn === 'start' && ps.questList.length > 0) {
-                    const quest = ps.questList[ps.hubSelectedQuestIndex];
-                    if (quest) {
-                        ps.activeQuest = quest;
-                        ps.questGoldMultiplier = quest.difficulty?.goldMultiplier ?? 1;
-                        sm.selectedStartLevel = quest.level;
+                const unlocked = ps.unlockedLevelIds ?? [1];
+                const rowIndex = sm.getMainQuestSelectAt(x, y, unlocked, t.contentTop, t.contentHeight);
+                if (rowIndex !== null) {
+                    ps.hubSelectedMainQuestIndex = rowIndex;
+                } else {
+                    const btn = sm.getMainQuestButtonAt(x, y, unlocked, t.contentTop, t.contentHeight);
+                    if (btn === 'accept') {
+                        const quests = STATIC_QUESTS.filter((q) => unlocked.includes(q.level)).sort((a, b) => a.level - b.level || (a.order ?? 0) - (b.order ?? 0));
+                        const selected = quests[ps.hubSelectedMainQuestIndex];
+                        if (selected) {
+                            const difficulty = difficulties[selected.difficultyId ?? 'normal'];
+                            ps.activeQuest = {
+                                ...selected,
+                                difficultyId: selected.difficultyId ?? 'normal',
+                                difficulty,
+                                questType: 'standard',
+                            };
+                            ps.questGoldMultiplier = difficulty?.goldMultiplier ?? 1;
+                            sm.selectedStartLevel = selected.level;
+                            ps.boardOpen = false;
+                        }
+                    } else if (btn === 'back') {
+                        ps.boardOpen = false;
                     }
-                    ps.boardOpen = false;
-                    // Stay in hub; a quest portal will spawn for the player to enter
-                } else if (btn === 'reroll') {
-                    const REROLL_COST = 200;
-                    const currentGold = ps.gold ?? 0;
-                    if (currentGold >= REROLL_COST) {
-                        ps.gold = currentGold - REROLL_COST;
-                        ps.questList = getRandomQuestsForBoard(3);
-                        ps.hubSelectedQuestIndex = 0;
-                        if (ps.questList.length > 0) ps.hubSelectedLevel = ps.questList[0].level;
-                    }
-                } else if (btn === 'back') {
-                    ps.boardOpen = false;
                 }
             }
         } else if (sm.isScreen('death')) {
