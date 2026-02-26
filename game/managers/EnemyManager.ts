@@ -104,6 +104,8 @@ export class EnemyManager {
     currentLevel = 1;
     enemiesSpawned = false;
     enemiesKilledThisLevel = 0;
+    /** Kill count per enemy type this level (for static quest objectives). Reset in changeLevel. */
+    killsByTypeThisLevel: Record<string, number> = {};
     _packUpdateTick = 0;
     /** Scene-tile packs deferred until player is within 2 tiles; cleared on changeLevel, filled in spawnLevelEnemies. */
     pendingSceneTileSpawns: PendingTileSpawn[] = [];
@@ -801,6 +803,8 @@ export class EnemyManager {
                     continue;
                 }
                 this.enemiesKilledThisLevel++;
+                const enemyType = ai?.enemyType ?? 'unknown';
+                this.killsByTypeThisLevel[enemyType] = (this.killsByTypeThisLevel[enemyType] ?? 0) + 1;
                 let goldDrop = 0;
                 const transform = enemy.getComponent(Transform);
                 if (ai?.enemyType) {
@@ -1264,6 +1268,7 @@ export class EnemyManager {
         this.pendingPackSpawns = [];
         this.enemyFarSince.clear();
         this.enemiesKilledThisLevel = 0;
+        this.killsByTypeThisLevel = {};
         const hazardManager = this.systems ? this.systems.get('hazards') : null;
         if (hazardManager && hazardManager.clearFlamePillars) {
             hazardManager.clearFlamePillars();
@@ -1287,6 +1292,10 @@ export class EnemyManager {
 
     getEnemiesKilledThisLevel(): number {
         return this.enemiesKilledThisLevel;
+    }
+
+    getKillsByTypeThisLevel(): Record<string, number> {
+        return { ...this.killsByTypeThisLevel };
     }
 
     setActiveQuest(quest: Quest | null): void {

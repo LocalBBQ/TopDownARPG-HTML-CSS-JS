@@ -4,6 +4,7 @@ import '../bootstrap.js';
 import { EntityManager } from '../managers/EntityManager.js';
 import { GameConfig } from '../config/GameConfig.js';
 import { DELVE_LEVEL, DRAGON_ARENA_LEVEL } from '../config/questConfig.js';
+import { tryUnlockNextBiome } from '../config/staticQuests.js';
 import { ScreenManager } from './ScreenManager.js';
 import { SystemManager, type SystemLike } from './SystemManager.js';
 import { SpriteManager } from '../managers/SpriteManager.js';
@@ -988,6 +989,10 @@ class Game {
 
     quitToMainMenu() {
         this.clearAllEntitiesAndProjectiles();
+        this.playingState.activeQuest = null;
+        this.playingState.questGoldMultiplier = 1;
+        this.playingState.questCompleteFlairRemaining = 0;
+        this.playingState.questCompleteFlairTriggered = false;
         this.screenManager.setScreen('title');
         this.updateUIVisibility(false);
     }
@@ -1013,6 +1018,18 @@ class Game {
         this.clearAllEntitiesAndProjectiles();
 
         if (selectedLevel === 0 && hubLevel) {
+            // Only mark Main Quest complete when actually returning from a level via the portal, not when re-entering hub from main menu
+            if (this.screenManager.currentScreen === 'playing' && this.playingState.activeQuest?.id) {
+                const id = this.playingState.activeQuest.id;
+                if (!this.playingState.completedQuestIds.includes(id)) {
+                    this.playingState.completedQuestIds.push(id);
+                }
+                const nextLevel = tryUnlockNextBiome(this.playingState.activeQuest.level, this.playingState.completedQuestIds);
+                if (nextLevel != null && !this.playingState.unlockedLevelIds.includes(nextLevel)) {
+                    this.playingState.unlockedLevelIds.push(nextLevel);
+                    this.playingState.unlockedLevelIds.sort((a, b) => a - b);
+                }
+            }
             this.playingState.activeQuest = null;
             this.playingState.questGoldMultiplier = 1;
             this.playingState.delveFloor = 0;
@@ -1067,6 +1084,9 @@ class Game {
             this.playingState.hubSelectedLevel = 1;
             this.screenManager.setScreen('hub');
         } else {
+            if (this.playingState.activeQuest?.objectiveType === 'survive') {
+                this.playingState.questSurviveStartTime = (typeof performance !== 'undefined' ? performance.now() : Date.now()) / 1000;
+            }
             this.screenManager.setScreen('playing');
         }
         this.updateUIVisibility(true);
@@ -1412,9 +1432,13 @@ class Game {
                                     (v as { name?: string }).name ?? 'Level ' + k
                                 ])
                             ) : {};
-                        this.screenManager.renderHubBoardOverlay(
+                        this.screenManager.renderBoardOverlayWithTabs(
+                            this.playingState.boardTab,
                             this.playingState.questList,
                             this.playingState.hubSelectedQuestIndex,
+                            this.playingState.unlockedLevelIds ?? [1],
+                            this.playingState.completedQuestIds ?? [],
+                            this.playingState.hubSelectedMainQuestIndex ?? 0,
                             levelNames,
                             this.playingState.gold ?? 0
                         );
