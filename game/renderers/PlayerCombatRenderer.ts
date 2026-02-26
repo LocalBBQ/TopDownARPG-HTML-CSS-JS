@@ -112,6 +112,24 @@ export const PlayerCombatRenderer = {
         return thrustLunge * this.easeOutQuint(thrustPhase);
     },
 
+    /** Block attack (shove): forward offset in world units. Push out 0→0.35, hold 0.35→0.6, return 0.6→1. */
+    getBlockAttackShoveOffset(combat) {
+        const raw = this.getRawProgress(combat);
+        const pushEnd = 0.35;
+        const holdEnd = 0.6;
+        const maxOffset = 22;
+        if (raw <= pushEnd) {
+            return maxOffset * this.easeOutQuart(raw / pushEnd);
+        }
+        if (raw <= holdEnd) return maxOffset;
+        const returnPhase = (raw - holdEnd) / (1 - holdEnd);
+        return maxOffset * (1 - this.easeOutQuart(returnPhase));
+    },
+
+    isBlockAttack(combat) {
+        return !!(combat && (combat.isBlockAttacking || combat.currentAttackStageName === 'blockAttack'));
+    },
+
     drawAttackArc(ctx, screenX, screenY, combat, movement, camera, options) {
         const isTelegraph = options && options.telegraph && combat && combat.isWindingUp;
         const enemySwing = options && options.enemySwing;
@@ -150,7 +168,31 @@ export const PlayerCombatRenderer = {
             }
         }
         const facingAngle = movement ? movement.facingAngle : 0;
-        if (combat.currentAttackIsCircular) {
+        if (animKey === 'blockAttack') {
+            const shoveLength = range * sweepProgress;
+            const shoveHalfWidth = (40 * camera.zoom) / 2;
+            const cosA = Math.cos(facingAngle);
+            const sinA = Math.sin(facingAngle);
+            const backLeftX = screenX - shoveHalfWidth * sinA;
+            const backLeftY = screenY + shoveHalfWidth * cosA;
+            const backRightX = screenX + shoveHalfWidth * sinA;
+            const backRightY = screenY - shoveHalfWidth * cosA;
+            const frontLeftX = screenX + shoveLength * cosA - shoveHalfWidth * sinA;
+            const frontLeftY = screenY + shoveLength * sinA + shoveHalfWidth * cosA;
+            const frontRightX = screenX + shoveLength * cosA + shoveHalfWidth * sinA;
+            const frontRightY = screenY + shoveLength * sinA - shoveHalfWidth * cosA;
+            ctx.lineWidth = lw;
+            ctx.fillStyle = fillStyle;
+            ctx.beginPath();
+            ctx.moveTo(backLeftX, backLeftY);
+            ctx.lineTo(frontLeftX, frontLeftY);
+            ctx.lineTo(frontRightX, frontRightY);
+            ctx.lineTo(backRightX, backRightY);
+            ctx.closePath();
+            ctx.fill();
+            ctx.strokeStyle = edgeColor;
+            ctx.stroke();
+        } else if (combat.currentAttackIsCircular) {
             const currentRadius = range * sweepProgress;
             if (currentRadius <= 0) return; // skip arc on first frame to avoid spin blink (no zero-radius draw)
             ctx.lineWidth = useComboColors ? lwCombo : lw;
@@ -285,6 +327,15 @@ export const PlayerCombatRenderer = {
         let gripX = screenX + Math.cos(facingAngle + Math.PI / 2) * gripOrbitRadius;
         let gripY = screenY + Math.sin(facingAngle + Math.PI / 2) * gripOrbitRadius;
         let swordAngle = facingAngle;
+
+        if (this.isBlockAttack(combat)) {
+            const blockGripDist = (transform.width / 2 + 10) * camera.zoom;
+            const shoveOffset = this.getBlockAttackShoveOffset(combat) * camera.zoom;
+            gripX = screenX + Math.cos(facingAngle) * (blockGripDist + shoveOffset);
+            gripY = screenY + Math.sin(facingAngle) * (blockGripDist + shoveOffset);
+            swordAngle = facingAngle + Math.PI / 3;
+            return { gripX, gripY, swordAngle, facingAngle, gripOrbitRadius };
+        }
 
         if (combat.isBlocking && !isBlockable(combat.offhandWeapon)) {
             const blockGripDist = (transform.width / 2 + 10) * camera.zoom;
@@ -697,7 +748,13 @@ export const PlayerCombatRenderer = {
         const animKey = combat.currentAttackAnimationKey || 'melee';
         const isMeleeSpinWithPlayer = animKey === 'meleeSpin';
         let maceAngle = movement.facingAngle;
-        if (combat.isBlocking && !isBlockable(combat.offhandWeapon)) {
+        if (this.isBlockAttack(combat)) {
+            const blockGripDist = (transform.width / 2 + 10) * zoom;
+            const shoveOffset = this.getBlockAttackShoveOffset(combat) * zoom;
+            gripX = screenX + Math.cos(movement.facingAngle) * (blockGripDist + shoveOffset);
+            gripY = screenY + Math.sin(movement.facingAngle) * (blockGripDist + shoveOffset);
+            maceAngle = movement.facingAngle + Math.PI / 3;
+        } else if (combat.isBlocking && !isBlockable(combat.offhandWeapon)) {
             const blockGripDist = (transform.width / 2 + 10) * zoom;
             gripX = screenX + Math.cos(movement.facingAngle) * blockGripDist;
             gripY = screenY + Math.sin(movement.facingAngle) * blockGripDist;

@@ -118,7 +118,7 @@ export class PlayerInputController {
     bindAttackControls() {
         const cameraSystem = this.systems.get('camera');
 
-        // Handle mouse down - Start charging attack
+        // Handle mouse down - Start charging attack (or block attack when blocking)
         this.eventBus.on(EventTypes.INPUT_MOUSEDOWN, (data) => {
             // Only allow attack input while actively playing (combat levels or hub)
             if (!this.game.screenManager || !(this.game.screenManager.isScreen('playing') || this.game.screenManager.isScreen('hub'))) return;
@@ -136,10 +136,13 @@ export class PlayerInputController {
             // Can't act while stunned
             const statusEffects = player.getComponent(StatusEffects);
             if (statusEffects && statusEffects.isStunned) return;
-            // Can't charge while blocking or healing
             const healing = player.getComponent(PlayerHealing);
             if (healing && healing.isHealing) return;
-            if (combat && combat.isBlocking) return;
+            // While blocking: left-click starts charging block attack (all weapons)
+            if (combat && combat.isBlocking) {
+                combat.startChargingBlockAttack();
+                return;
+            }
             // During an attack: register a new press so the next release is accepted and can buffer; still record charge start so release can compute charge duration
             if (combat && combat.isAttacking) {
                 this.attackPressId = (this.attackPressId || 0) + 1;
@@ -183,21 +186,19 @@ export class PlayerInputController {
                 return;
             }
             
-            // While blocking: left-click = shield bash (if weapon has it), else ignore
-            if (combat && combat.isBlocking) {
+            // Block attack release: was charging block attack (left-click while blocking) or currently blocking + left release
+            const wasChargingBlockAttack = combat && combat.isChargingBlockAttack;
+            const isBlockingNow = combat && combat.isBlocking;
+            if (combat && (wasChargingBlockAttack || isBlockingNow)) {
                 this.isChargingAttack = false;
-                const blockConfig = combat._getBlockConfig ? combat._getBlockConfig() : null;
-                if (blockConfig && blockConfig.shieldBash) {
-                    if (movement && transform) {
-                        movement.facingAngle = Utils.angleTo(
-                            transform.x, transform.y,
-                            worldPos.x, worldPos.y
-                        );
-                    }
-                    if (stamina && stamina.currentStamina >= blockConfig.shieldBash.staminaCost) {
-                        combat.shieldBash(this.systems, worldPos.x, worldPos.y);
-                    }
+                if (movement && transform) {
+                    movement.facingAngle = Utils.angleTo(
+                        transform.x, transform.y,
+                        worldPos.x, worldPos.y
+                    );
                 }
+                // Generalized block attack for all blockable weapons (including shields): charge/release → lunge + high stun, low damage
+                combat.releaseBlockAttack(this.systems, worldPos.x, worldPos.y);
                 return;
             }
             

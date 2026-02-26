@@ -52,6 +52,7 @@ export interface AttackHandlerLike {
   endLunge?(...args: unknown[]): void;
   setWeapon?(weapon: unknown): void;
   getNextAttackStaminaCost?(chargeDuration: number, options?: unknown, entity?: unknown): number;
+  startBlockAttack?(result: Record<string, unknown>): void;
 }
 
 /** Entity with getComponent and optional systems. */
@@ -94,6 +95,11 @@ export class Combat implements Component {
   isBlocking: boolean;
   blockStartTime: number;
   parryFlashUntil: number;
+  /** When true, player is charging a block attack (left-click held while blocking). */
+  isChargingBlockAttack: boolean;
+  blockAttackChargeStartTime: number;
+  /** True while performing a block attack (shove); player stays in block pose and weapon animates shove. */
+  isBlockAttacking: boolean;
   blockInputBuffered: boolean;
   blockInputBufferedFacingAngle: number | null;
   attackInputBuffered: AttackInputBuffered | null;
@@ -158,6 +164,9 @@ export class Combat implements Component {
     this.isBlocking = false;
     this.blockStartTime = 0;
     this.parryFlashUntil = 0;
+    this.isChargingBlockAttack = false;
+    this.blockAttackChargeStartTime = 0;
+    this.isBlockAttacking = false;
     this.blockInputBuffered = false;
     this.blockInputBufferedFacingAngle = null;
     this.attackInputBuffered = null;
@@ -272,6 +281,22 @@ export class Combat implements Component {
     if (this.isPlayer && this.isBlocking && this.entity) {
       const statusEffects = this.entity.getComponent(StatusEffects);
       if (statusEffects?.isStunned) this.stopBlocking();
+      if (this.isChargingBlockAttack) {
+        const blockConfig = this._getBlockConfig() as { blockAttack?: { staminaCostPerSecond?: number } } | null;
+        const ba = blockConfig?.blockAttack;
+        if (ba && ba.staminaCostPerSecond > 0) {
+          const stamina = this.entity.getComponent(Stamina);
+          const cost = ba.staminaCostPerSecond * deltaTime;
+          if (stamina) {
+            if (stamina.currentStamina <= cost) {
+              this.isChargingBlockAttack = false;
+              this.blockAttackChargeStartTime = 0;
+            } else {
+              stamina.currentStamina -= cost;
+            }
+          }
+        }
+      }
     }
   }
 
@@ -344,6 +369,124 @@ export class Combat implements Component {
 
   stopBlocking(): void {
     this.isBlocking = false;
+    this.isChargingBlockAttack = false;
+    this.blockAttackChargeStartTime = 0;
+    this.isBlockAttacking = false;
+  }
+
+  /** Start charging block attack (call when left-click down while blocking). */
+  startChargingBlockAttack(): boolean {
+    const blockConfig = this._getBlockConfig() as { blockAttack?: unknown } | null;
+    if (!this.isPlayer || !this.isBlocking || !blockConfig?.blockAttack) return false;
+    this.isChargingBlockAttack = true;
+    this.blockAttackChargeStartTime = performance.now() / 1000;
+    return true;
+  }
+
+  /** Default block attack stats when weapon has no blockAttack config (ensures block attack always works). */
+  static readonly DEFAULT_BLOCK_ATTACK = {
+    minChargeTime: 0.1,
+    maxChargeTime: 0.8,
+    staminaCostPerSecond: 28,
+    damage: 6,
+    stunBuildup: 95,
+    range: 82,
+    arcRad: (120 * Math.PI) / 180,
+    lungeSpeed: 420,
+    lungeDistanceMin: 28,
+    lungeDistanceMax: 115,
+    duration: 280,
+    knockbackForce: 120
+  };
+
+  /**
+   * Release block attack: player stays blocking; lunge (distance by charge), apply hit (high stun, low damage).
+   * Stamina is already drained while charging. Block pose + shove animation for the duration.
+   */
+  releaseBlockAttack(
+    systems: SystemsMap | undefined,
+    targetX: number,
+    targetY: number
+  ): boolean {
+    if (!this.isPlayer || !this.entity) return false;
+    const blockConfig = this._getBlockConfig() as {
+      blockAttack?: {
+        minChargeTime: number;
+        maxChargeTime: number;
+        staminaCostPerSecond: number;
+        damage: number;
+        stunBuildup: number;
+        range: number;
+        arcRad: number;
+        lungeSpeed: number;
+        lungeDistanceMin: number;
+        lungeDistanceMax: number;
+        duration: number;
+        knockbackForce: number;
+      };
+    } | null;
+    const ba = blockConfig?.blockAttack ?? Combat.DEFAULT_BLOCK_ATTACK;
+
+    const chargeStart = this.blockAttackChargeStartTime;
+    const now = performance.now() / 1000;
+    const chargeDuration = chargeStart > 0 ? Math.max(0, now - chargeStart) : 0;
+    this.isChargingBlockAttack = false;
+    this.blockAttackChargeStartTime = 0;
+    this.isBlockAttacking = true;
+    // Keep isBlocking true so player remains in block pose during the shove
+
+    const span = Math.max(0.001, ba.maxChargeTime - ba.minChargeTime);
+    const chargeMultiplier = Math.max(0, Math.min(1, (chargeDuration - ba.minChargeTime) / span));
+
+    const transform = this.entity.getComponent(Transform);
+    const movement = this.entity.getComponent(Movement);
+    if (!transform || !movement) {
+      this.isBlockAttacking = false;
+      return false;
+    }
+
+    const dirX = Math.cos(movement.facingAngle);
+    const dirY = Math.sin(movement.facingAngle);
+    const lungeDistance = ba.lungeDistanceMin + (ba.lungeDistanceMax - ba.lungeDistanceMin) * chargeMultiplier;
+    const lungeDuration = lungeDistance / ba.lungeSpeed;
+    const movementWithDash = movement as Movement & { startAttackDash?(x: number, y: number, d: number, s?: number): void };
+    if (movementWithDash.startAttackDash) {
+      movementWithDash.startAttackDash(dirX, dirY, lungeDuration, ba.lungeSpeed);
+    }
+
+    const result: Record<string, unknown> = {
+      range: ba.range,
+      damage: ba.damage,
+      arc: ba.arcRad,
+      arcOffset: 0,
+      reverseSweep: false,
+      isCircular: false,
+      isThrust: false,
+      thrustWidth: 40,
+      knockbackForce: ba.knockbackForce,
+      stunBuildup: ba.stunBuildup,
+      stageName: 'blockAttack',
+      animationKey: 'blockAttack',
+      duration: ba.duration,
+      isBlockAttack: true
+    };
+
+    this._applyAttackResult(result);
+    if (this.playerAttack?.startBlockAttack) {
+      this.playerAttack.startBlockAttack(result);
+    }
+
+    const durationMs = ba.duration;
+    const combatRef = this;
+    setTimeout(() => {
+      combatRef.isBlockAttacking = false;
+      // Do not stop blocking: player can keep holding block after the attack ends
+      if (combatRef.attackHandler && typeof combatRef.attackHandler.endAttack === 'function') {
+        combatRef.attackHandler.endAttack();
+      }
+      if (!combatRef.isAttacking) combatRef._clearAttackState();
+    }, durationMs);
+    return true;
   }
 
   shieldBash(

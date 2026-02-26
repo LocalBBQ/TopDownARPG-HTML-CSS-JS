@@ -443,6 +443,18 @@ export class InventoryChestUIController {
             g.setTooltipHover({ type: 'whetstone', x, y, count });
             return;
         }
+        if (invHit?.type === 'inventory-slot' && invHit.itemType === 'herb') {
+            const slot = ps.inventorySlots?.[invHit.index];
+            const count = slot && 'count' in slot ? slot.count : 1;
+            g.setTooltipHover({ type: 'herb', x, y, count });
+            return;
+        }
+        if (invHit?.type === 'inventory-slot' && invHit.itemType === 'mushroom') {
+            const slot = ps.inventorySlots?.[invHit.index];
+            const count = slot && 'count' in slot ? slot.count : 1;
+            g.setTooltipHover({ type: 'mushroom', x, y, count });
+            return;
+        }
         if (invHit?.type === 'inventory-slot' && invHit.weaponKey) {
             if (getArmor(invHit.weaponKey)) {
                 g.setTooltipHover({ type: 'armor', armorKey: invHit.weaponKey, x, y, durability: invHit.durability });

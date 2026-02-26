@@ -1,8 +1,9 @@
-// Renders minimap panel. data: { entityManager, worldWidth, worldHeight, portal, currentLevel }
+// Renders minimap panel. data: { entityManager, worldWidth, worldHeight, portal, currentLevel, activeQuest?, questSurviveStartTime? }
 import { GameConfig } from '../../config/GameConfig.ts';
 import { DELVE_LEVEL } from '../../config/questConfig.ts';
 import { Transform } from '../../components/Transform.ts';
 import { Renderable } from '../../components/Renderable.ts';
+import type { Quest } from '../../types/quest.ts';
 import type { RenderContext } from './RenderContext.ts';
 
 export const MINIMAP_ZOOM_MIN = 0.5;
@@ -52,9 +53,9 @@ export function hitTestMinimapZoomButtons(canvasWidth: number, canvasHeight: num
 }
 
 export class MinimapRenderer {
-    render(context: RenderContext, data: { entityManager?: { get?(id: string): unknown; getGroup?(name: string): unknown[] }; worldWidth: number; worldHeight: number; portal?: unknown; currentLevel?: number }): void {
+    render(context: RenderContext, data: { entityManager?: { get?(id: string): unknown; getGroup?(name: string): unknown[] }; worldWidth: number; worldHeight: number; portal?: unknown; currentLevel?: number; activeQuest?: Quest | null; questSurviveStartTime?: number }): void {
         const { ctx, canvas, systems } = context;
-        const { entityManager, worldWidth, worldHeight, portal = null, currentLevel = 1 } = data;
+        const { entityManager, worldWidth, worldHeight, portal = null, currentLevel = 1, activeQuest = null, questSurviveStartTime } = data;
         const minimapZoom = Math.max(MINIMAP_ZOOM_MIN, Math.min(MINIMAP_ZOOM_MAX, (context.settings.minimapZoom as number) ?? 1));
 
         ctx.setTransform(1, 0, 0, 1, 0, 0);
@@ -195,9 +196,49 @@ export class MinimapRenderer {
                 return portal.hasNextLevel ? 'E Next area' : 'E Return to Sanctuary';
             }
             if (isDelve) return 'Slay all foes to open the stairs';
-            const enemyManager = systems && systems.get ? systems.get('enemies') : null;
+            const enemyManager = systems && systems.get ? (systems.get('enemies') as { getEnemiesKilledThisLevel(): number; getKillsByTypeThisLevel?(): Record<string, number>; getAliveCount?(): number } | undefined) : null;
+            const gatherableManager = systems && systems.get ? (systems.get('gatherables') as { getCollectedCount?(type: string): number } | undefined) : null;
             const kills = enemyManager ? enemyManager.getEnemiesKilledThisLevel() : 0;
             const levelCfg = GameConfig.levels && GameConfig.levels[currentLevel];
+            if (activeQuest?.objectiveType && activeQuest?.objectiveParams) {
+                const q = activeQuest;
+                const p = activeQuest.objectiveParams;
+                switch (q.objectiveType) {
+                    case 'kill': {
+                        const k = p.kill;
+                        if (!k) break;
+                        const count = k.count;
+                        const current = k.enemyTypes?.length && enemyManager?.getKillsByTypeThisLevel
+                            ? k.enemyTypes.reduce((sum, t) => sum + (enemyManager.getKillsByTypeThisLevel!()[t] ?? 0), 0)
+                            : kills;
+                        return `Slay ${count} foes (${current}/${count})`;
+                    }
+                    case 'gather': {
+                        const g = p.gather;
+                        if (!g || !gatherableManager?.getCollectedCount) break;
+                        const count = g.count;
+                        const current = gatherableManager.getCollectedCount(g.gatherableType);
+                        const name = g.gatherableType === 'ore' ? 'ore' : 'herbs';
+                        return `Gather ${count} ${name} (${current}/${count})`;
+                    }
+                    case 'survive': {
+                        const s = p.survive;
+                        if (!s || questSurviveStartTime == null) return `Survive ${s?.durationSeconds ?? 0}s`;
+                        const nowSec = (typeof performance !== 'undefined' ? performance.now() : Date.now()) / 1000;
+                        const elapsed = Math.floor(nowSec - questSurviveStartTime);
+                        const remaining = Math.max(0, (s.durationSeconds ?? 0) - elapsed);
+                        const minKills = s.minKills != null ? ` (${kills}/${s.minKills} kills)` : '';
+                        return `Survive ${remaining}s${minKills}`;
+                    }
+                    case 'clearArea':
+                        const alive = enemyManager?.getAliveCount ? enemyManager.getAliveCount() : 0;
+                        return `Clear all foes (${alive} remaining)`;
+                    case 'killBoss':
+                        return 'Slay the boss';
+                    default:
+                        break;
+                }
+            }
             const required = (levelCfg && levelCfg.killsToUnlockPortal != null) ? levelCfg.killsToUnlockPortal : 0;
             const hasPortalGoal = required > 0;
             return hasPortalGoal

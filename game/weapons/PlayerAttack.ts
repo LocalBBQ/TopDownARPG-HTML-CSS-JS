@@ -163,4 +163,13 @@ export class PlayerAttack {
     get isAttackActive(): boolean {
         return this.attackTimer > 0 && this.attackTimer < this.attackDuration;
     }
+
+    /** Start a block attack (high stun, low damage); result has duration in ms, range, damage, stunBuildup, etc. */
+    startBlockAttack(result: { duration?: number }): void {
+        const durationMs = result.duration ?? 280;
+        this.attackDuration = durationMs / 1000;
+        this.attackTimer = 0.001;
+        this.hitEnemies.clear();
+        this.hitBreakables.clear();
+    }
 }

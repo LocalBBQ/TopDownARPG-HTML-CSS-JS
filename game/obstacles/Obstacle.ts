@@ -19,6 +19,8 @@ export class Obstacle {
   breakable?: boolean;
   /** Current hit points; when <= 0 the obstacle is removed. Only used when breakable is true. */
   hp?: number;
+  /** Max hit points (for health bar). Set when breakable; defaults to initial hp. */
+  maxHp?: number;
   /** Unique id for this obstacle (set by ObstacleManager). Used to avoid double-hits in one attack. */
   id?: string;
   /** If true, entity movement is not blocked (e.g. hub decorations that may not render). */

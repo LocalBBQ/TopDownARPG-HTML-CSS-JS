@@ -43,6 +43,8 @@ import type { GameRef, GameConfigShape } from '../types/index.js';
 import type { GameSystems } from '../types/systems.js';
 import { PlayingState, INVENTORY_SLOT_COUNT, MAX_WEAPON_DURABILITY, MAX_ARMOR_DURABILITY } from '../state/PlayingState.js';
 import {
+    addHerbToInventory,
+    addMushroomToInventory,
     equipFromChest,
     equipFromChestToHand,
     equipFromInventory,
@@ -113,6 +115,9 @@ class Game {
     inventoryChestUIController!: InventoryChestUIController;
     private _debugTitleRenderLogged = false;
     private _debugTitleDeathEntryCount = 0;
+    /** Cached canvas rect for pointer events; invalidated on resize to avoid getBoundingClientRect every mousemove. */
+    private _cachedCanvasRect: { left: number; top: number; width: number; height: number } | null = null;
+    private _globalInputHandlersBound = false;
 
     /** Type-safe systems access; only use after systems are initialized. */
     private get systemsTyped(): GameSystems {
@@ -254,11 +259,13 @@ class Game {
     set playerProjectileCooldown(v) { this.playingState.playerProjectileCooldown = v; }
     get gold() { return this.playingState.gold; }
     set gold(v) { this.playingState.gold = v; }
+    addHerbToInventory(): boolean { return addHerbToInventory(this.playingState); }
+    addMushroomToInventory(): boolean { return addMushroomToInventory(this.playingState); }
 
     initCanvas() {
         this.canvas.width = window.innerWidth;
         this.canvas.height = window.innerHeight;
-        
+        this.canvas.focus(); // so keyboard (and Ctrl+key) go to the game, not browser shortcuts
         // Initialize screen manager after canvas is set up (callback clears inputs when entering menu screens)
         this.screenManager = new ScreenManager(this.canvas, this.ctx, () => this.clearPlayerInputsForMenu());
     }
@@ -298,7 +305,7 @@ class Game {
             .register('camera', new CameraSystem(initialWorldWidth, initialWorldHeight))
             .register('collision', new CollisionSystem())
             .register('obstacles', new ObstacleManager())
-            .register('gatherables', new GatherableManager(this.playingState));
+            .register('gatherables', new GatherableManager(this));
 
         const obstacleManager = this.systemsTyped.obstacles;
         if (obstacleManager && obstacleManager.init) obstacleManager.init(this.systems!);
@@ -678,12 +685,14 @@ class Game {
 
     setupEventListeners() {
         window.addEventListener('resize', () => {
+            this._cachedCanvasRect = null;
             this.canvas.width = window.innerWidth;
             this.canvas.height = window.innerHeight;
         });
         
         // Handle screen button clicks (scale to canvas buffer coords for correct hit-testing)
         this.canvas.addEventListener('click', (e) => {
+            this.canvas.focus(); // keep keyboard focus on game so Ctrl+key is captured
             const { x, y } = this.getCanvasCoords(e);
             if (this.handleInventoryChestClick(x, y, e)) {
                 e.preventDefault();
@@ -720,7 +729,20 @@ class Game {
 
     bindGlobalInputHandlers() {
         if (!this.systems?.eventBus) return;
+        if (this._globalInputHandlersBound) return; // avoid duplicate listeners (memory/performance)
+        this._globalInputHandlersBound = true;
         this.screenController.bindGlobalKeys(this.systems.eventBus as { on(event: string, fn: (key: string) => void): void });
+
+        // Alt+key bindings (reliable; Ctrl+key is often captured by the browser). Extend here for your system.
+        const inputSystem = this.systemsTyped.input as { isAltPressed(): boolean } | undefined;
+        this.systems.eventBus.on(EventTypes.INPUT_KEYDOWN, (key: string) => {
+            if (!inputSystem?.isAltPressed()) return;
+            if (key === '1') {
+                // Alt+1: add your system logic here
+            } else if (key === '2') {
+                // Alt+2: add your system logic here
+            }
+        });
     }
 
     bindCombatFeedbackListeners() {
@@ -1272,9 +1294,14 @@ class Game {
     }
 
     private getCanvasCoords(e: { clientX: number; clientY: number }): { x: number; y: number } {
-        const rect = this.canvas.getBoundingClientRect();
-        const rw = rect.width || 1;
-        const rh = rect.height || 1;
+        let rect = this._cachedCanvasRect;
+        if (!rect) {
+            const r = this.canvas.getBoundingClientRect();
+            rect = { left: r.left, top: r.top, width: r.width || 1, height: r.height || 1 };
+            this._cachedCanvasRect = rect;
+        }
+        const rw = rect.width;
+        const rh = rect.height;
         const scaleX = this.canvas.width / rw;
         const scaleY = this.canvas.height / rh;
         return {
@@ -1511,7 +1538,7 @@ class Game {
                 if (this.settings.showMinimap) {
                     const w = this._currentWorldWidth != null ? this._currentWorldWidth : worldConfig.width;
                     const h = this._currentWorldHeight != null ? this._currentWorldHeight : worldConfig.height;
-                    renderSystem.renderMinimap(cameraSystem, this.entities, w, h, this.playingState.portal, currentLevel);
+                    renderSystem.renderMinimap(cameraSystem, this.entities, w, h, this.playingState.portal, currentLevel, this.playingState.activeQuest, this.playingState.questSurviveStartTime);
                 }
                 if (this.screenManager.isScreen('playing') && this.playingState.questCompleteFlairRemaining > 0) {
                     renderQuestCompleteFlair(this.ctx, this.canvas, this.playingState.questCompleteFlairRemaining);

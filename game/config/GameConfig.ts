@@ -21,7 +21,7 @@ const GameConfig: GameConfigShape = {
     startY: 1400,
     width: 34.5,
     height: 34.5,
-    speed: 280,
+    speed: 250,
     maxHealth: 100,
     maxStamina: 100,
     staminaRegen: 16,

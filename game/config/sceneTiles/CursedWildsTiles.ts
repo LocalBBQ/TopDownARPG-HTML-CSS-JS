@@ -21,7 +21,9 @@ export const SceneTilesCursedWilds: Record<string, { width: number; height: numb
             ],
             gatherables: [
                 { type: 'herb', x: 380, y: 380, width: 32, height: 32 },
-                { type: 'ore', x: 340, y: 320, width: 40, height: 40 }
+                { type: 'ore', x: 340, y: 320, width: 40, height: 40 },
+                { type: 'mushroom', x: 260, y: 520, width: 32, height: 32 },
+                { type: 'mushroom', x: 540, y: 480, width: 32, height: 32 }
             ]
         },
 

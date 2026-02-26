@@ -7,7 +7,7 @@ import type { SystemManager } from '../core/SystemManager.ts';
 import type { CameraShape } from '../types/camera.ts';
 import type { EntityShape } from '../types/entity.ts';
 
-export type GatherableType = 'herb' | 'ore' | 'chest' | 'shrineBlessing';
+export type GatherableType = 'herb' | 'mushroom' | 'ore' | 'chest' | 'shrineBlessing';
 
 export interface GatherableItem {
     id: string;
@@ -27,6 +27,8 @@ interface GatheringState {
 interface GameRefLike {
     gold?: number;
     playerInGatherableRange?: boolean;
+    addHerbToInventory?(): boolean;
+    addMushroomToInventory?(): boolean;
 }
 
 interface InputSystemLike {
@@ -86,7 +88,10 @@ export class GatherableManager {
         const playerHealing = player.getComponent(PlayerHealing);
         switch (type) {
             case 'herb':
-                if (playerHealing) playerHealing.charges = Math.min(playerHealing.maxCharges, playerHealing.charges + 1);
+                if (game?.addHerbToInventory) game.addHerbToInventory();
+                break;
+            case 'mushroom':
+                if (game?.addMushroomToInventory) game.addMushroomToInventory();
                 break;
             case 'ore':
                 if (game && typeof game.gold === 'number') game.gold += 5;
@@ -239,6 +244,7 @@ export class GatherableManager {
     render(ctx: CanvasRenderingContext2D, camera: CameraShape): void {
         const colors: Record<string, { fill: string; glow: string }> = {
             herb: { fill: '#4a7c4a', glow: 'rgba(100, 180, 100, 0.5)' },
+            mushroom: { fill: '#6b4a3a', glow: 'rgba(160, 100, 80, 0.45)' },
             ore: { fill: '#6b5b4f', glow: 'rgba(180, 140, 90, 0.45)' },
             chest: { fill: '#8b6914', glow: 'rgba(220, 180, 80, 0.5)' },
             shrineBlessing: { fill: '#7b9ed4', glow: 'rgba(150, 180, 255, 0.5)' }

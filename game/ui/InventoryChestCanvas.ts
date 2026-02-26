@@ -4,7 +4,7 @@
  */
 import type { TooltipHover } from '../types/tooltip.js';
 import type { ArmorSlotId, InventorySlot, PlayingStateShape, WeaponInstance } from '../state/PlayingState.js';
-import { getSlotKey, INVENTORY_SLOT_COUNT, MAX_WEAPON_DURABILITY, MAX_ARMOR_DURABILITY, CHEST_SLOT_COUNT, isWeaponInstance as isWeaponSlotItem, isWhetstoneSlot } from '../state/PlayingState.js';
+import { getSlotKey, INVENTORY_SLOT_COUNT, MAX_WEAPON_DURABILITY, MAX_ARMOR_DURABILITY, CHEST_SLOT_COUNT, isWeaponInstance as isWeaponSlotItem, isWhetstoneSlot, isHerbSlot, isMushroomSlot } from '../state/PlayingState.js';
 import { getArmor, getPlayerArmorReduction, getShopArmorBySlot, SHOP_ARMOR_SLOT_ORDER, SHOP_ARMOR_SLOT_LABELS } from '../armor/armorConfigs.js';
 import { canEquipArmorInSlot } from '../state/ArmorActions.js';
 import { Weapons } from '../weapons/WeaponsRegistry.js';
@@ -429,7 +429,7 @@ export function getInventoryLayout(canvas: HTMLCanvasElement, options?: { includ
 }
 
 export type InventoryHit =
-    | { type: 'inventory-slot'; index: number; weaponKey: string | null; durability?: number; prefixId?: string; suffixId?: string; itemType?: 'weapon' | 'armor' | 'whetstone' }
+    | { type: 'inventory-slot'; index: number; weaponKey: string | null; durability?: number; prefixId?: string; suffixId?: string; itemType?: 'weapon' | 'armor' | 'whetstone' | 'herb' | 'mushroom' }
     | { type: 'equipment'; slot: 'mainhand' | 'offhand' }
     | { type: 'chest-slot'; index: number; key: string }
     | { type: 'armor-equipment'; slot: ArmorSlotId }
@@ -461,7 +461,7 @@ export function hitTestInventory(
         if (inRect(x, y, s)) {
             const slot = ps.inventorySlots?.[s.index] ?? null;
             const key = getSlotKey(slot);
-            const itemType = isWhetstoneSlot(slot) ? 'whetstone' : key ? (getArmor(key) ? 'armor' : 'weapon') : undefined;
+            const itemType = isWhetstoneSlot(slot) ? 'whetstone' : isHerbSlot(slot) ? 'herb' : isMushroomSlot(slot) ? 'mushroom' : key ? (getArmor(key) ? 'armor' : 'weapon') : undefined;
             return { type: 'inventory-slot', index: s.index, weaponKey: key, durability: slot && 'durability' in slot ? slot.durability : undefined, prefixId: slot && 'prefixId' in slot ? slot.prefixId : undefined, suffixId: slot && 'suffixId' in slot ? slot.suffixId : undefined, itemType };
         }
     }
@@ -551,7 +551,7 @@ export function hitTestChest(x: number, y: number, layout: ChestLayout, chestSlo
 // --- Shop UI (buy weapons) ---
 const SHOP_ROW_HEIGHT = 32;
 const SHOP_DROPDOWN_HEADER_HEIGHT = 36;
-const SHOP_PANEL_WIDTH = 560;
+const SHOP_PANEL_WIDTH = 1120;
 const SHOP_HEADER_HEIGHT = 72;
 const SHOP_BACK_AREA_HEIGHT = 56;
 
@@ -655,7 +655,7 @@ export interface ShopLayout {
 /** Gold per point of durability restored at the shop. */
 export const REPAIR_GOLD_PER_DURABILITY = 1;
 
-const SHOP_VISIBLE_PANEL_HEIGHT = 540;
+const SHOP_VISIBLE_PANEL_HEIGHT = 1080;
 
 const SHOP_REPAIR_HEADER_HEIGHT = 36;
 const SHOP_PARENT_HEADER_HEIGHT = 40;
@@ -1166,6 +1166,68 @@ export function renderWhetstoneTooltip(
     ctx.restore();
 }
 
+export function renderHerbTooltip(
+    ctx: CanvasRenderingContext2D,
+    canvas: HTMLCanvasElement,
+    hover: { x: number; y: number; count: number } | null
+): void {
+    if (!hover) return;
+    const title = hover.count > 1 ? `Herb ×${hover.count}` : 'Herb';
+    const line1 = 'Gathered from the wild. Used in alchemy or quests.';
+    renderGatherTooltip(ctx, canvas, title, line1, hover);
+}
+
+export function renderMushroomTooltip(
+    ctx: CanvasRenderingContext2D,
+    canvas: HTMLCanvasElement,
+    hover: { x: number; y: number; count: number } | null
+): void {
+    if (!hover) return;
+    const title = hover.count > 1 ? `Mushroom ×${hover.count}` : 'Mushroom';
+    const line1 = 'Gathered from the wild. Used in alchemy or quests.';
+    renderGatherTooltip(ctx, canvas, title, line1, hover);
+}
+
+function renderGatherTooltip(
+    ctx: CanvasRenderingContext2D,
+    canvas: HTMLCanvasElement,
+    title: string,
+    line1: string,
+    hover: { x: number; y: number }
+): void {
+    const W = canvas.width;
+    const H = canvas.height;
+    const gap = 14;
+    ctx.font = '600 12px Cinzel, Georgia, serif';
+    const boxW = Math.min(TOOLTIP_MAX_WIDTH, Math.max(TOOLTIP_MIN_WIDTH, ctx.measureText(line1).width + TOOLTIP_PADDING * 2));
+    const contentH = 28 + TOOLTIP_LINE_HEIGHT;
+    const boxH = contentH;
+    let x = hover.x + gap;
+    let y = hover.y - boxH / 2;
+    if (x + boxW > W - 8) x = hover.x - boxW - gap;
+    if (x < 8) x = 8;
+    if (y < 8) y = 8;
+    if (y + boxH > H - 8) y = H - boxH - 8;
+    ctx.save();
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.fillStyle = 'rgba(22, 16, 10, 0.98)';
+    ctx.strokeStyle = 'rgba(61, 40, 23, 0.9)';
+    ctx.lineWidth = 2;
+    ctx.fillRect(x, y, boxW, boxH);
+    ctx.strokeRect(x, y, boxW, boxH);
+    ctx.fillStyle = '#c9a227';
+    ctx.font = '700 13px Cinzel, Georgia, serif';
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(title, x + TOOLTIP_PADDING, y + 14);
+    ctx.fillStyle = 'rgba(61, 40, 23, 0.6)';
+    ctx.fillRect(x + TOOLTIP_PADDING, y + 20, boxW - TOOLTIP_PADDING * 2, 1);
+    ctx.fillStyle = '#e8dcc8';
+    ctx.font = '500 11px Cinzel, Georgia, serif';
+    ctx.fillText(line1, x + TOOLTIP_PADDING, y + 20 + TOOLTIP_GAP + TOOLTIP_LINE_HEIGHT / 2);
+    ctx.restore();
+}
+
 const TOOLTIP_PADDING = 10;
 const TOOLTIP_GAP = 8;
 const TOOLTIP_LINE_HEIGHT = 16;
@@ -1493,12 +1555,15 @@ export function renderInventory(
         const isWeapon = key ? !!Weapons[key] : false;
         const isArmor = key ? !!getArmor(key) : false;
         const isWhetstone = isWhetstoneSlot(slot);
+        const isHerb = isHerbSlot(slot);
+        const isMushroom = isMushroomSlot(slot);
+        const isConsumable = isWhetstone || isHerb || isMushroom;
         drawSlot(ctx, s, {
-            filled: !!key || isWhetstone,
+            filled: !!key || isConsumable,
             weaponKey: isWeapon ? key ?? undefined : undefined,
-            symbol: isArmor ? '◆' : isWhetstone ? '◉' : undefined,
-            emptyLabel: !key && !isWhetstone ? '—' : undefined,
-            label: isWhetstone ? (slot.count > 1 ? `Whetstone ×${slot.count}` : 'Whetstone') : undefined,
+            symbol: isArmor ? '◆' : isWhetstone ? '◉' : isHerb ? '✿' : isMushroom ? '♠' : undefined,
+            emptyLabel: !key && !isConsumable ? '—' : undefined,
+            label: isWhetstone ? (slot.count > 1 ? `Whetstone ×${slot.count}` : 'Whetstone') : isHerb ? (slot.count > 1 ? `Herb ×${slot.count}` : 'Herb') : isMushroom ? (slot.count > 1 ? `Mushroom ×${slot.count}` : 'Mushroom') : undefined,
             broken: !!(key && isWeaponSlotItem(slot) && slot.durability === 0)
         });
         if (isArmor && key && slot && 'durability' in slot) {
@@ -1534,6 +1599,8 @@ export function renderInventory(
     renderWeaponTooltip(ctx, canvas, tooltipHover?.type === 'weapon' ? tooltipHover : null, ps);
     renderArmorTooltip(ctx, canvas, tooltipHover?.type === 'armor' ? tooltipHover : null, ps);
     renderWhetstoneTooltip(ctx, canvas, tooltipHover?.type === 'whetstone' ? tooltipHover : null);
+    renderHerbTooltip(ctx, canvas, tooltipHover?.type === 'herb' ? tooltipHover : null);
+    renderMushroomTooltip(ctx, canvas, tooltipHover?.type === 'mushroom' ? tooltipHover : null);
     ctx.restore();
 }
 

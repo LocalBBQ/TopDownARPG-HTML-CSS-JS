@@ -8,6 +8,32 @@ function degToRad(deg: number): number {
     return Utils.degToRad(deg);
 }
 
+/** Block attack: charged or quick release while blocking; high stun, low damage, lunge by charge. */
+export interface BlockAttackConfigInput {
+    /** Min charge time (s) before charge multiplier starts. */
+    minChargeTime?: number;
+    /** Charge time (s) at which multiplier is 1. */
+    maxChargeTime?: number;
+    /** Stamina drained per second while charging. */
+    staminaCostPerSecond?: number;
+    /** Base damage (low). */
+    damage?: number;
+    /** Stun buildup (high). */
+    stunBuildup?: number;
+    /** Hit range. */
+    range?: number;
+    arcDegrees?: number;
+    /** Lunge speed (units/s). */
+    lungeSpeed?: number;
+    /** Lunge distance at 0 charge. */
+    lungeDistanceMin?: number;
+    /** Extra lunge distance at full charge. */
+    lungeDistanceMax?: number;
+    /** Hit window duration (ms). */
+    duration?: number;
+    knockbackForce?: number;
+}
+
 export interface BlockConfigInput {
     enabled?: boolean;
     arcDegrees?: number;
@@ -26,6 +52,23 @@ export interface BlockConfigInput {
         range?: number;
         arcDegrees?: number;
     };
+    /** Block attack: charge while blocking, release to lunge and hit (high stun, low damage). All blockable weapons get this. */
+    blockAttack?: BlockAttackConfigInput | null;
+}
+
+export interface BlockAttackResult {
+    minChargeTime: number;
+    maxChargeTime: number;
+    staminaCostPerSecond: number;
+    damage: number;
+    stunBuildup: number;
+    range: number;
+    arcRad: number;
+    lungeSpeed: number;
+    lungeDistanceMin: number;
+    lungeDistanceMax: number;
+    duration: number;
+    knockbackForce: number;
 }
 
 export interface BlockResult {
@@ -44,6 +87,7 @@ export interface BlockResult {
         range: number;
         arcRad: number;
     };
+    blockAttack: BlockAttackResult | null;
 }
 
 /** Something that can be used to block (e.g. shield, or any weapon with block config). */
@@ -174,6 +218,22 @@ export interface ParseWeaponConfigResult {
     chargeRelease: ChargeReleaseResult | null;
 }
 
+/** Default block attack: high stun, low damage, charge-based lunge. */
+const DEFAULT_BLOCK_ATTACK: BlockAttackResult = {
+    minChargeTime: 0.1,
+    maxChargeTime: 0.8,
+    staminaCostPerSecond: 28,
+    damage: 6,
+    stunBuildup: 95,
+    range: 82,
+    arcRad: degToRad(120),
+    lungeSpeed: 420,
+    lungeDistanceMin: 28,
+    lungeDistanceMax: 115,
+    duration: 280,
+    knockbackForce: 120
+};
+
 /** Default block config for weapons that don't define block (parry with weapon). */
 const DEFAULT_WEAPON_BLOCK: BlockConfigInput = {
     enabled: true,
@@ -207,6 +267,27 @@ export const WeaponBehavior = {
                 range: sb.range ?? 100,
                 arcRad: degToRad(sb.arcDegrees ?? 120)
             };
+        }
+        const ba = effective.blockAttack;
+        if (ba != null && (ba as BlockAttackConfigInput & { enabled?: boolean }).enabled === false) {
+            block.blockAttack = null;
+        } else if (ba != null && typeof ba === 'object') {
+            block.blockAttack = {
+                minChargeTime: ba.minChargeTime ?? DEFAULT_BLOCK_ATTACK.minChargeTime,
+                maxChargeTime: ba.maxChargeTime ?? DEFAULT_BLOCK_ATTACK.maxChargeTime,
+                staminaCostPerSecond: ba.staminaCostPerSecond ?? DEFAULT_BLOCK_ATTACK.staminaCostPerSecond,
+                damage: ba.damage ?? DEFAULT_BLOCK_ATTACK.damage,
+                stunBuildup: ba.stunBuildup ?? DEFAULT_BLOCK_ATTACK.stunBuildup,
+                range: ba.range ?? DEFAULT_BLOCK_ATTACK.range,
+                arcRad: ba.arcDegrees != null ? degToRad(ba.arcDegrees) : DEFAULT_BLOCK_ATTACK.arcRad,
+                lungeSpeed: ba.lungeSpeed ?? DEFAULT_BLOCK_ATTACK.lungeSpeed,
+                lungeDistanceMin: ba.lungeDistanceMin ?? DEFAULT_BLOCK_ATTACK.lungeDistanceMin,
+                lungeDistanceMax: ba.lungeDistanceMax ?? DEFAULT_BLOCK_ATTACK.lungeDistanceMax,
+                duration: ba.duration ?? DEFAULT_BLOCK_ATTACK.duration,
+                knockbackForce: ba.knockbackForce ?? DEFAULT_BLOCK_ATTACK.knockbackForce
+            };
+        } else {
+            block.blockAttack = DEFAULT_BLOCK_ATTACK;
         }
         return block;
     },

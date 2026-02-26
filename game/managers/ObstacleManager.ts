@@ -63,9 +63,15 @@ export class ObstacleManager {
         if (obstacle.breakable == null || obstacle.hp == null) {
             const config = this.factory.getConfig(type);
             if (config.breakable != null) obstacle.breakable = config.breakable;
-            if (config.hp != null) obstacle.hp = config.hp;
-            else if (obstacle.breakable) obstacle.hp = 1;
+            if (config.hp != null) {
+                obstacle.hp = config.hp;
+                obstacle.maxHp = config.hp;
+            } else if (obstacle.breakable) {
+                obstacle.hp = 1;
+                obstacle.maxHp = 1;
+            }
         }
+        if (obstacle.breakable && obstacle.hp != null && obstacle.maxHp == null) obstacle.maxHp = obstacle.hp;
         // Trees.png is a 3-frame strip: assign random variant when not set so each tree gets a random sprite
         if (type === 'tree' && (obstacle.spritePath || '').includes('Trees.png') && obstacle.spriteFrameIndex == null) {
             obstacle.spriteFrameIndex = Utils.randomInt(0, 2);
@@ -132,6 +138,7 @@ export class ObstacleManager {
         const entityTop = y - entityHeight / 2;
         const allowSwampPools = options && options.allowSwampPools;
         for (const obstacle of this.obstacles) {
+            if (obstacle.type === 'mushroom') continue;
             if (allowSwampPools && obstacle.type === 'swampPool') continue;
             if (obstacle.breakable && (obstacle.hp == null || obstacle.hp <= 0)) continue;
             const rect = this._getObstacleCollisionRect(obstacle);
@@ -150,6 +157,7 @@ export class ObstacleManager {
         const left = centerX - width / 2;
         const top = centerY - height / 2;
         for (const obstacle of this.obstacles) {
+            if (obstacle.type === 'mushroom') continue;
             if (obstacle.breakable && (obstacle.hp == null || obstacle.hp <= 0)) continue;
             const rect = this._getObstacleCollisionRect(obstacle);
             if (Utils.rectCollision(left, top, width, height, rect.x, rect.y, rect.width, rect.height)) {
@@ -159,11 +167,23 @@ export class ObstacleManager {
         return null;
     }
 
+    /** Chance that a destroyed bush drops an herb (0..1). */
+    static readonly BUSH_HERB_DROP_CHANCE = 0.5;
+
     /** Apply damage to a breakable obstacle; removes it when hp <= 0. */
     damageObstacle(obstacle: Obstacle, damage: number): void {
         if (!obstacle.breakable || obstacle.hp == null) return;
         obstacle.hp = Math.max(0, obstacle.hp - damage);
         if (obstacle.hp <= 0) {
+            if (obstacle.type === 'bush' && Math.random() < ObstacleManager.BUSH_HERB_DROP_CHANCE) {
+                const gm = this.getGatherableManager() as { add(x: number, y: number, width: number, height: number, type: string): void } | null;
+                if (gm) {
+                    const herbSize = 32;
+                    const x = obstacle.x + (obstacle.width - herbSize) / 2;
+                    const y = obstacle.y + (obstacle.height - herbSize) / 2;
+                    gm.add(x, y, herbSize, herbSize, 'herb');
+                }
+            }
             const i = this.obstacles.indexOf(obstacle);
             if (i >= 0) this.obstacles.splice(i, 1);
         }
@@ -244,6 +264,7 @@ export class ObstacleManager {
 
     wouldOverlap(x, y, width, height) {
         for (const obstacle of this.obstacles) {
+            if (obstacle.type === 'mushroom') continue;
             if (Utils.rectCollision(
                 x, y, width, height,
                 obstacle.x, obstacle.y, obstacle.width, obstacle.height

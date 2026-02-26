@@ -23,6 +23,30 @@ export class ObstacleLayerRenderer {
         const h = obstacle.height * zoom;
         if (screenX <= -w || screenX >= canvas.width + w || screenY <= -h || screenY >= canvas.height + h) return;
         this._drawObstacleBody(ctx, canvas, camera, zoom, obstacle, obstacleManager, useEnvironmentSprites);
+        this._drawBreakableHealthBar(ctx, camera, zoom, obstacle);
+    }
+
+    /** Draw a small health bar above breakable obstacles (e.g. barrels). */
+    _drawBreakableHealthBar(ctx: CanvasRenderingContext2D, camera: RenderContext['camera'], zoom: number, obstacle: ObstacleShape): void {
+        if (!obstacle.breakable || obstacle.hp == null) return;
+        const hp = Number(obstacle.hp);
+        const maxHp = Math.max(1, Number(obstacle.maxHp ?? obstacle.hp));
+        const percent = Math.max(0, Math.min(1, hp / maxHp));
+        const screenX = camera.toScreenX(obstacle.x);
+        const screenY = camera.toScreenY(obstacle.y);
+        const w = obstacle.width * zoom;
+        const h = obstacle.height * zoom;
+        const barWidth = Math.max(20, Math.min(40, w * 0.9));
+        const barHeight = 4 * zoom;
+        const barX = screenX + (w - barWidth) / 2;
+        const barY = screenY - barHeight - 4;
+        ctx.fillStyle = '#333';
+        ctx.fillRect(barX, barY, barWidth, barHeight);
+        ctx.fillStyle = percent > 0.5 ? '#8b7355' : percent > 0.25 ? '#a08050' : '#6b5344';
+        ctx.fillRect(barX, barY, barWidth * percent, barHeight);
+        ctx.strokeStyle = '#2a2018';
+        ctx.lineWidth = Math.max(1, 1 / zoom);
+        ctx.strokeRect(barX, barY, barWidth, barHeight);
     }
 
     _drawObstacleBody(ctx: CanvasRenderingContext2D, canvas: HTMLCanvasElement, camera: RenderContext['camera'], zoom: number, obstacle: ObstacleShape, obstacleManager: ObstacleManagerLike, useEnvironmentSprites: boolean): void {
@@ -583,6 +607,7 @@ export class ObstacleLayerRenderer {
             const h = obstacle.height * zoom;
             if (screenX > -w && screenX < canvas.width + w && screenY > -h && screenY < canvas.height + h) {
                 this._drawObstacleBody(ctx, canvas, camera, zoom, obstacle, obstacleManager, useEnvironmentSprites);
+                this._drawBreakableHealthBar(ctx, camera, zoom, obstacle);
             }
         }
     }

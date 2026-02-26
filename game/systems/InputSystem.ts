@@ -37,7 +37,10 @@ export class InputSystem {
   }
 
   private setupEventListeners(): void {
-    window.addEventListener('keydown', (e: KeyboardEvent) => {
+    // Note: Ctrl+key is often handled by the browser before keydown reaches the page, so we cannot
+    // reliably prevent or use it. Use Alt+key or Shift+key for game bindings (e.g. Alt+1); check
+    // isAltPressed() / isKeyPressed('shift') for modifier state.
+    const onKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Tab') {
         e.preventDefault();
         if (this.systems?.eventBus) {
@@ -45,29 +48,31 @@ export class InputSystem {
         }
         return;
       }
-      const isCtrlOrCmd = e.ctrlKey || e.metaKey;
-      const isModifierKey = e.key === 'Control' || e.key === 'Meta';
-      if (isCtrlOrCmd || isModifierKey) {
+      const isBareModifier = e.key === 'Control' || e.key === 'Meta';
+      if (isBareModifier) {
         e.preventDefault();
         return;
       }
+      e.preventDefault(); // block browser shortcuts where we can (Alt+key, etc.)
       this.keys[e.key.toLowerCase()] = true;
       this.systems!.eventBus.emit(EventTypes.INPUT_KEYDOWN, e.key.toLowerCase());
-    }, { capture: true });
-
-    window.addEventListener('keyup', (e: KeyboardEvent) => {
+    };
+    const onKeyUp = (e: KeyboardEvent) => {
       if (e.key === 'Tab') {
         e.preventDefault();
         return;
       }
-      const isCtrlOrCmd = e.ctrlKey || e.metaKey;
-      if (isCtrlOrCmd || e.key === 'Control' || e.key === 'Meta') {
+      const isBareModifier = e.key === 'Control' || e.key === 'Meta';
+      if (isBareModifier) {
         e.preventDefault();
         return;
       }
+      e.preventDefault();
       this.keys[e.key.toLowerCase()] = false;
       this.systems!.eventBus.emit(EventTypes.INPUT_KEYUP, e.key.toLowerCase());
-    }, { capture: true });
+    };
+    window.addEventListener('keydown', onKeyDown, { capture: true });
+    window.addEventListener('keyup', onKeyUp, { capture: true });
 
     this.canvas.addEventListener('mousemove', (e: MouseEvent) => {
       const rect = this.canvas.getBoundingClientRect();
@@ -118,6 +123,11 @@ export class InputSystem {
 
   isKeyPressed(key: string): boolean {
     return !!this.keys[key.toLowerCase()];
+  }
+
+  /** Use for Alt+key bindings; Ctrl+key is often captured by the browser before we see it. */
+  isAltPressed(): boolean {
+    return !!this.keys['alt'];
   }
 
   /** Clear all key and mouse state so menu open doesn't leave stale input (e.g. W still held). */

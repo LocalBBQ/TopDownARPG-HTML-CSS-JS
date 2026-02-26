@@ -7,12 +7,16 @@ import {
   type InventorySlot,
   type WeaponInstance,
   type WhetstoneConsumable,
+  type HerbConsumable,
+  type MushroomConsumable,
   getSlotKey,
   INVENTORY_SLOT_COUNT,
   MAX_WEAPON_DURABILITY,
   CHEST_SLOT_COUNT,
   isWeaponInstance,
-  isWhetstoneSlot
+  isWhetstoneSlot,
+  isHerbSlot,
+  isMushroomSlot
 } from './PlayingState.js';
 import { Weapons } from '../weapons/WeaponsRegistry.js';
 import { canEquipWeaponInSlot, getEquipSlotForWeapon } from '../weapons/weaponSlot.js';
@@ -436,6 +440,40 @@ export function addWhetstoneToInventory(ps: PlayingStateShape): boolean {
   const empty = ps.inventorySlots.findIndex((s) => s == null);
   if (empty < 0) return false;
   ps.inventorySlots[empty] = { type: 'whetstone', count: 1 };
+  return true;
+}
+
+/**
+ * Add one herb to inventory: stack with existing herb slot or use first empty slot.
+ * Returns true if added.
+ */
+export function addHerbToInventory(ps: PlayingStateShape): boolean {
+  if (!ps.inventorySlots || ps.inventorySlots.length !== INVENTORY_SLOT_COUNT) return false;
+  const existing = ps.inventorySlots.findIndex((s): s is HerbConsumable => isHerbSlot(s));
+  if (existing >= 0) {
+    (ps.inventorySlots[existing] as HerbConsumable).count += 1;
+    return true;
+  }
+  const empty = ps.inventorySlots.findIndex((s) => s == null);
+  if (empty < 0) return false;
+  ps.inventorySlots[empty] = { type: 'herb', count: 1 };
+  return true;
+}
+
+/**
+ * Add one mushroom to inventory: stack with existing mushroom slot or use first empty slot.
+ * Returns true if added.
+ */
+export function addMushroomToInventory(ps: PlayingStateShape): boolean {
+  if (!ps.inventorySlots || ps.inventorySlots.length !== INVENTORY_SLOT_COUNT) return false;
+  const existing = ps.inventorySlots.findIndex((s): s is MushroomConsumable => isMushroomSlot(s));
+  if (existing >= 0) {
+    (ps.inventorySlots[existing] as MushroomConsumable).count += 1;
+    return true;
+  }
+  const empty = ps.inventorySlots.findIndex((s) => s == null);
+  if (empty < 0) return false;
+  ps.inventorySlots[empty] = { type: 'mushroom', count: 1 };
   return true;
 }
 

@@ -105,6 +105,11 @@ export class Animation implements Component {
       if (this.currentAnimation !== 'lunge') this.setAnimation('lunge', false);
       return;
     }
+    const combatBlockAttack = combat as (Combat & { isBlockAttacking?: boolean }) | null;
+    if (combatBlockAttack?.isBlockAttacking && this.animations.block) {
+      if (this.currentAnimation !== 'block') this.setAnimation('block', true);
+      return;
+    }
     if (combat?.isAttacking) {
       const animKey = (combat as Combat & { currentAttackAnimationKey?: string | null }).currentAttackAnimationKey ?? 'melee';
       if (this.animations[animKey]) {

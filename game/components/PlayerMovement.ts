@@ -69,6 +69,12 @@ export class PlayerMovement extends Movement {
     const transform = this.entity!.getComponent(Transform);
     if (!transform) return;
 
+    // Block stamina regen while sprinting
+    if (this.isSprinting) {
+      const stamina = this.entity!.getComponent(Stamina);
+      if (stamina) stamina.regenBlocked = true;
+    }
+
     const statusEffects = this.entity!.getComponent(StatusEffects);
     if (statusEffects?.isStunned) {
       this.velocityX = 0;

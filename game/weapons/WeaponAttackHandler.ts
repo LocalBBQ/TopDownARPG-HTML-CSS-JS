@@ -646,6 +646,16 @@ export class WeaponAttackHandler {
             return w.getStaminaCostForAttack ? w.getStaminaCostForAttack(chargeDuration, this.comboStage, options || {}) : 0;
         }
 
+        /** Start block attack state (high stun, low damage); used when releasing charged block attack. */
+        startBlockAttack(result: { duration?: number }): void {
+            if (!this.isPlayer) return;
+            const durationMs = result.duration ?? 280;
+            this.attackDuration = durationMs / 1000;
+            this.attackTimer = 0.001;
+            this.hitEnemies.clear();
+            this.hitBreakables.clear();
+        }
+
         /** Forwards to startAttack (e.g. Combat may call .attack(x, y, entity, cooldownMult)). */
         attack(targetX: number | null, targetY: number | null, entity: EntityShape | null, cooldownMultiplier?: number): unknown {
             return this.startAttack(targetX, targetY, entity, 0, { cooldownMultiplier: cooldownMultiplier });

@@ -46,8 +46,14 @@ export type WeaponInstance = {
 /** Stackable consumable in inventory (e.g. whetstone). */
 export type WhetstoneConsumable = { type: 'whetstone'; count: number };
 
+/** Stackable herb (gathered in world). */
+export type HerbConsumable = { type: 'herb'; count: number };
+
+/** Stackable mushroom (gathered in world). */
+export type MushroomConsumable = { type: 'mushroom'; count: number };
+
 /** One inventory bag slot: weapon instance, consumable, or empty. */
-export type InventorySlot = WeaponInstance | WhetstoneConsumable | null;
+export type InventorySlot = WeaponInstance | WhetstoneConsumable | HerbConsumable | MushroomConsumable | null;
 
 /** Armor equipment slot id (head, chest, hands, feet). */
 export type ArmorSlotId = 'head' | 'chest' | 'hands' | 'feet';
@@ -67,6 +73,14 @@ export function isWeaponInstance(slot: InventorySlot): slot is WeaponInstance {
 
 export function isWhetstoneSlot(slot: InventorySlot): slot is WhetstoneConsumable {
   return slot != null && 'type' in slot && (slot as WhetstoneConsumable).type === 'whetstone';
+}
+
+export function isHerbSlot(slot: InventorySlot): slot is HerbConsumable {
+  return slot != null && 'type' in slot && (slot as HerbConsumable).type === 'herb';
+}
+
+export function isMushroomSlot(slot: InventorySlot): slot is MushroomConsumable {
+  return slot != null && 'type' in slot && (slot as MushroomConsumable).type === 'mushroom';
 }
 
 /** Player inventory: 12 slots holding weapons and/or armor. */

@@ -54,7 +54,7 @@ export class ObjectFactory {
     this.configs = {
       tree: { minSize: 30, maxSize: 90, defaultSpritePath: 'assets/sprites/environment/Trees.png', color: '#2d5016' },
       rock: { minSize: 30, maxSize: 50, defaultSpritePath: 'assets/sprites/environment/rock.png', color: '#555555' },
-      bush: { minSize: 25, maxSize: 35, defaultSpritePath: 'assets/bush.png', color: '#3a5a2a' },
+      bush: { minSize: 25, maxSize: 35, defaultSpritePath: 'assets/bush.png', color: '#3a5a2a', breakable: true, hp: 5 },
       house: { minSize: 160, maxSize: 240, defaultSpritePath: 'assets/sprites/environment/house.png', color: '#8b4513' },
       wall: { minSize: 20, maxSize: 20, defaultSpritePath: 'assets/sprites/environment/wall.png', color: '#696969' },
       door: { minSize: 60, maxSize: 80, defaultSpritePath: 'assets/sprites/environment/door.png', color: '#654321' },
@@ -63,7 +63,7 @@ export class ObjectFactory {
       well: { minSize: 40, maxSize: 50, defaultSpritePath: 'assets/sprites/environment/well.png', color: '#888888' },
       fence: { minSize: 15, maxSize: 20, defaultSpritePath: 'assets/sprites/environment/fence.png', color: '#8b7355' },
       ironFence: { minSize: 12, maxSize: 22, defaultSpritePath: null, color: '#1a1a1a' },
-      barrel: { minSize: 25, maxSize: 35, defaultSpritePath: 'assets/sprites/environment/barrel.png', color: '#4a4a4a', breakable: true, hp: 1 },
+      barrel: { minSize: 25, maxSize: 35, defaultSpritePath: 'assets/sprites/environment/barrel.png', color: '#4a4a4a', breakable: true, hp: 20 },
       pillar: { minSize: 35, maxSize: 55, defaultSpritePath: 'assets/sprites/environment/pillar.png', color: '#6b6b6b' },
       brokenPillar: { minSize: 40, maxSize: 70, defaultSpritePath: 'assets/sprites/environment/broken_pillar.png', color: '#5a5a5a' },
       rubble: { minSize: 25, maxSize: 45, defaultSpritePath: 'assets/sprites/environment/rubble.png', color: '#4a4a4a' },

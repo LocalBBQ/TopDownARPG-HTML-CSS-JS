@@ -108,13 +108,15 @@ export class RenderSystem {
         this.entityLayer.render(context, data);
     }
 
-    renderMinimap(camera, entityManager, worldWidth, worldHeight, portal = null, currentLevel = 1) {
+    renderMinimap(camera, entityManager, worldWidth, worldHeight, portal = null, currentLevel = 1, activeQuest = null, questSurviveStartTime?: number) {
         this.minimapRenderer.render(this._getContext(camera), {
             entityManager,
             worldWidth,
             worldHeight,
             portal,
-            currentLevel
+            currentLevel,
+            activeQuest,
+            questSurviveStartTime
         });
     }
 
