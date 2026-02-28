@@ -31,11 +31,52 @@ export class ProjectileManager {
         airborneDuration = 0,
         width = 8,
         height = 8,
-        color?: string
+        color?: string,
+        visualType?: string,
+        aoeRadius = 0,
+        aoeDamage = 0
     ): Projectile {
-        const projectile = new Projectile(x, y, angle, speed, damage, range, owner, ownerType, stunBuildup, pierce, airborneDuration, width, height, color);
+        const projectile = new Projectile(x, y, angle, speed, damage, range, owner, ownerType, stunBuildup, pierce, airborneDuration, width, height, color, visualType, aoeRadius, aoeDamage);
         this.projectiles.push(projectile);
         return projectile;
+    }
+
+    /** Apply AOE damage from projectile impact to all enemies within projectile.aoeRadius. */
+    private applyPlayerProjectileAoe(
+        projectile: Projectile,
+        enemyManager: { enemies: unknown[] } | null,
+        systems: SystemManager | null
+    ): void {
+        if (!enemyManager || projectile.aoeRadius <= 0) return;
+        const cx = projectile.x;
+        const cy = projectile.y;
+        const r2 = projectile.aoeRadius * projectile.aoeRadius;
+        const damage = projectile.aoeDamage;
+        for (const enemy of enemyManager.enemies) {
+            const enemyId = (enemy as { id?: string }).id;
+            if (enemyId != null && projectile.hitEntityIds.has(enemyId)) continue;
+            const enemyTransform = (enemy as { getComponent: (c: unknown) => unknown }).getComponent(Transform);
+            const enemyHealth = (enemy as { getComponent: (c: unknown) => unknown }).getComponent(Health);
+            if (!enemyTransform || !enemyHealth || (enemyHealth as Health).isDead) continue;
+            const ex = (enemyTransform as Transform).x;
+            const ey = (enemyTransform as Transform).y;
+            const dx = ex - cx;
+            const dy = ey - cy;
+            if (dx * dx + dy * dy > r2) continue;
+            projectile.hitEntityIds.add(enemyId ?? '');
+            (enemyHealth as Health).takeDamage(damage);
+            const enemyStatus = (enemy as { getComponent: (c: unknown) => unknown }).getComponent(StatusEffects);
+            if (enemyStatus) {
+                (enemyStatus as StatusEffects).addStunBuildup(projectile.stunBuildup || 0);
+            }
+            const enemyMovement = (enemy as { getComponent: (c: unknown) => unknown }).getComponent(Movement);
+            if (enemyMovement) {
+                (enemyMovement as Movement).applyKnockback(dx, dy, GameConfig.player.knockback.force);
+            }
+            if (systems?.eventBus) {
+                systems.eventBus.emitTyped(EventTypes.PLAYER_HIT_ENEMY, {});
+            }
+        }
     }
 
     update(deltaTime: number, systems: SystemManager | null): void {
@@ -65,6 +106,9 @@ export class ProjectileManager {
                     if (hitObstacle && hitObstacle.breakable && hitObstacle.hp != null) {
                         obstacleManager.damageObstacle(hitObstacle, projectile.damage);
                     }
+                }
+                if (projectile.ownerType === 'player' && projectile.aoeRadius > 0) {
+                    this.applyPlayerProjectileAoe(projectile, enemyManager, systems);
                 }
                 projectile.active = false;
                 this.projectiles.splice(i, 1);
@@ -103,6 +147,9 @@ export class ProjectileManager {
                                 if (systems?.eventBus) {
                                     systems.eventBus.emitTyped(EventTypes.PLAYER_HIT_ENEMY, {});
                                 }
+                            }
+                            if (projectile.aoeRadius > 0) {
+                                this.applyPlayerProjectileAoe(projectile, enemyManager, systems);
                             }
                             if (!projectile.pierce) {
                                 projectile.active = false;
@@ -237,6 +284,31 @@ export class ProjectileManager {
                 ctx.arc(0, 0, r * 0.18, 0, Math.PI * 2);
                 ctx.fill();
                 ctx.stroke();
+            } else if (projectile.visualType === 'rock') {
+                // Ogre rock: use same style as obstacle 'rock' (irregular blob + highlight)
+                const w = projectile.width * z;
+                const h = projectile.height * z;
+                const rw = w * 0.48;
+                const rh = h * 0.44;
+                ctx.fillStyle = projectile.color || '#4a4a4a';
+                ctx.beginPath();
+                for (let i = 0; i <= 8; i++) {
+                    const a = (i / 8) * Math.PI * 2 + 0.1;
+                    const r = (i & 1 ? 1.0 : 0.88);
+                    const ex = Math.cos(a) * rw * r;
+                    const ey = Math.sin(a) * rh * r;
+                    if (i === 0) ctx.moveTo(ex, ey);
+                    else ctx.lineTo(ex, ey);
+                }
+                ctx.closePath();
+                ctx.fill();
+                ctx.strokeStyle = '#3a3a3a';
+                ctx.lineWidth = Math.max(1, 1.5 / z);
+                ctx.stroke();
+                ctx.fillStyle = 'rgba(120, 120, 130, 0.4)';
+                ctx.beginPath();
+                ctx.ellipse(-w * 0.12, -h * 0.15, w * 0.2, h * 0.18, 0, 0, Math.PI * 2);
+                ctx.fill();
             } else if (projectile.ownerType === 'enemy' && (projectile.width > 12 || projectile.height > 12)) {
                 // Large enemy projectile (e.g. boss fireball): drawn as fireball
                 const r = (Math.max(projectile.width, projectile.height) / 2) * z;
@@ -249,6 +321,25 @@ export class ProjectileManager {
                 grad.addColorStop(0.4, `rgba(${rv}, ${gv}, ${bv}, 0.85)`);
                 grad.addColorStop(0.85, `rgba(${Math.max(0, rv - 60)}, ${Math.max(0, gv - 40)}, ${Math.max(0, bv - 60)}, 0.6)`);
                 grad.addColorStop(1, `rgba(${Math.max(0, rv - 100)}, 40, 20, 0.2)`);
+                ctx.fillStyle = grad;
+                ctx.beginPath();
+                ctx.arc(0, 0, r, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.strokeStyle = `rgba(${rv}, ${gv}, ${bv}, 0.9)`;
+                ctx.lineWidth = Math.max(1, 2 / z);
+                ctx.stroke();
+            } else if (projectile.ownerType === 'player' && (projectile.width >= 20 || projectile.aoeRadius > 0)) {
+                // Magic orb (e.g. staff magic missile): large glowing circle
+                const r = (Math.max(projectile.width, projectile.height) / 2) * z;
+                const hex = (projectile.color || '#88aaff').replace('#', '');
+                const rv = parseInt(hex.slice(0, 2), 16);
+                const gv = parseInt(hex.slice(2, 4), 16);
+                const bv = parseInt(hex.slice(4, 6), 16);
+                const grad = ctx.createRadialGradient(-r * 0.2, -r * 0.2, 0, 0, 0, r);
+                grad.addColorStop(0, `rgba(255, 255, 255, 0.95)`);
+                grad.addColorStop(0.35, `rgba(${Math.min(255, rv + 80)}, ${Math.min(255, gv + 80)}, ${Math.min(255, bv + 100)}, 0.85)`);
+                grad.addColorStop(0.75, `rgba(${rv}, ${gv}, ${bv}, 0.5)`);
+                grad.addColorStop(1, `rgba(${Math.max(0, rv - 40)}, ${Math.max(0, gv - 20)}, ${Math.max(0, bv + 20)}, 0.15)`);
                 ctx.fillStyle = grad;
                 ctx.beginPath();
                 ctx.arc(0, 0, r, 0, Math.PI * 2);

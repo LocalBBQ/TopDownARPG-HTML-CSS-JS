@@ -3,7 +3,7 @@
  */
 import type { EntityShape } from '../types/entity.js';
 import type { ArmorSlotId, InventorySlot, PlayingStateShape } from '../state/PlayingState.js';
-import { getSlotKey, INVENTORY_SLOT_COUNT, MAX_WEAPON_DURABILITY, MAX_ARMOR_DURABILITY, isWhetstoneSlot, isWeaponInstance } from '../state/PlayingState.js';
+import { getSlotKey, getActiveWeaponSet, INVENTORY_SLOT_COUNT, MAX_WEAPON_DURABILITY, MAX_ARMOR_DURABILITY, isWhetstoneSlot, isWeaponInstance } from '../state/PlayingState.js';
 import { WHETSTONE_REPAIR_PERCENT } from '../config/lootConfig.js';
 import { swapArmorWithArmor, canEquipArmorInSlot } from '../state/ArmorActions.js';
 import { getArmor } from '../armor/armorConfigs.js';
@@ -21,14 +21,12 @@ import { Rally } from '../components/Rally.ts';
 import { Stamina } from '../components/Stamina.js';
 import { Combat } from '../components/Combat.js';
 import { PlayerHealing } from '../components/PlayerHealing.js';
-import { StatusEffects } from '../components/StatusEffects.js';
 import { SpriteUtils } from '../utils/SpriteUtils.js';
 import type { Weapon } from '../weapons/Weapon.js';
 import { Weapons } from '../weapons/WeaponsRegistry.js';
 import { canEquipWeaponInSlot, getEquipSlotForWeapon } from '../weapons/weaponSlot.js';
 import { getEffectiveWeapon } from '../weapons/resolveEffectiveWeapon.js';
 import { CHEST_WEAPON_ORDER, getWeaponDisplayName, getWeaponSymbol } from './InventoryChestCanvas.js';
-import { DELVE_LEVEL } from '../config/questConfig.js';
 
 export interface SystemsLike {
     get(name: string): unknown;
@@ -52,6 +50,8 @@ const DRAG_SOURCE_ARMOR = 'application/x-arpg-armor-source';
 export class HUDController {
     private ctx: HUDControllerContext;
     private chestGridInitialized = false;
+    /** When true, pause/settings/help/shop/reroll (canvas-drawn screens) are active; orbs are hidden so those screens appear in front. */
+    private overlayScreenActive = false;
 
     constructor(context: HUDControllerContext) {
         this.ctx = context;
@@ -283,7 +283,7 @@ export class HUDController {
                 el.closest('.equipment-slot')?.classList.add('equipped');
                 (el.closest('.equipment-slot') as HTMLElement)?.setAttribute('draggable', 'true');
             } else {
-                el.textContent = '—';
+                el.textContent = '';
                 el.classList.add('empty');
                 el.closest('.equipment-slot')?.classList.remove('equipped');
                 (el.closest('.equipment-slot') as HTMLElement)?.setAttribute('draggable', 'false');
@@ -303,29 +303,31 @@ export class HUDController {
         const combat = player.getComponent(Combat) as Combat | null;
         if (!combat || !combat.isPlayer) return;
         (combat as Combat & { stopBlocking?(): void }).stopBlocking?.();
+        const active = getActiveWeaponSet(ps);
         const mainhand = getEffectiveWeapon(
-            ps.equippedMainhandKey && ps.equippedMainhandKey !== 'none' ? ps.equippedMainhandKey : undefined,
-            ps.equippedMainhandPrefixId,
-            ps.equippedMainhandSuffixId
+            active.mainhandKey && active.mainhandKey !== 'none' ? active.mainhandKey : undefined,
+            active.mainhandPrefixId,
+            active.mainhandSuffixId
         );
         const offhand = getEffectiveWeapon(
-            ps.equippedOffhandKey && ps.equippedOffhandKey !== 'none' ? ps.equippedOffhandKey : undefined,
-            ps.equippedOffhandPrefixId,
-            ps.equippedOffhandSuffixId
+            active.offhandKey && active.offhandKey !== 'none' ? active.offhandKey : undefined,
+            active.offhandPrefixId,
+            active.offhandSuffixId
         );
         (combat as Combat & { setWeapons(m: unknown, o?: unknown): void }).setWeapons(mainhand, offhand);
     }
 
     private refreshChestEquipmentLabels(): void {
         const ps = this.ctx.playingState;
+        const active = getActiveWeaponSet(ps);
         const mainEl = document.getElementById('chest-equip-mainhand');
         const offEl = document.getElementById('chest-equip-offhand');
-        const mainInstance = ps.equippedMainhandKey && ps.equippedMainhandKey !== 'none' ? { prefixId: ps.equippedMainhandPrefixId, suffixId: ps.equippedMainhandSuffixId } : null;
-        const offInstance = ps.equippedOffhandKey && ps.equippedOffhandKey !== 'none' ? { prefixId: ps.equippedOffhandPrefixId, suffixId: ps.equippedOffhandSuffixId } : null;
-        const mainName = getWeaponDisplayName(ps.equippedMainhandKey, mainInstance);
-        const offName = getWeaponDisplayName(ps.equippedOffhandKey, offInstance);
-        const mainPct = ps.equippedMainhandDurability != null ? Math.round((100 * ps.equippedMainhandDurability) / MAX_WEAPON_DURABILITY) : null;
-        const offPct = ps.equippedOffhandDurability != null ? Math.round((100 * ps.equippedOffhandDurability) / MAX_WEAPON_DURABILITY) : null;
+        const mainInstance = active.mainhandKey && active.mainhandKey !== 'none' ? { prefixId: active.mainhandPrefixId, suffixId: active.mainhandSuffixId } : null;
+        const offInstance = active.offhandKey && active.offhandKey !== 'none' ? { prefixId: active.offhandPrefixId, suffixId: active.offhandSuffixId } : null;
+        const mainName = getWeaponDisplayName(active.mainhandKey, mainInstance);
+        const offName = getWeaponDisplayName(active.offhandKey, offInstance);
+        const mainPct = active.mainhandDurability != null ? Math.round((100 * active.mainhandDurability) / MAX_WEAPON_DURABILITY) : null;
+        const offPct = active.offhandDurability != null ? Math.round((100 * active.offhandDurability) / MAX_WEAPON_DURABILITY) : null;
         const mainText = mainName === '—' || !mainName ? mainName : (mainPct != null ? `${mainName} (${mainPct}%)` : mainName);
         const offText = offName === '—' || !offName ? offName : (offPct != null ? `${offName} (${offPct}%)` : offName);
         if (mainEl) {
@@ -342,14 +344,15 @@ export class HUDController {
 
     private refreshInventoryEquipmentLabels(): void {
         const ps = this.ctx.playingState;
+        const active = getActiveWeaponSet(ps);
         const mainEl = document.getElementById('inventory-equip-mainhand');
         const offEl = document.getElementById('inventory-equip-offhand');
-        const mainInstance = ps.equippedMainhandKey && ps.equippedMainhandKey !== 'none' ? { prefixId: ps.equippedMainhandPrefixId, suffixId: ps.equippedMainhandSuffixId } : null;
-        const offInstance = ps.equippedOffhandKey && ps.equippedOffhandKey !== 'none' ? { prefixId: ps.equippedOffhandPrefixId, suffixId: ps.equippedOffhandSuffixId } : null;
-        const mainName = getWeaponDisplayName(ps.equippedMainhandKey, mainInstance);
-        const offName = getWeaponDisplayName(ps.equippedOffhandKey, offInstance);
-        const mainPct = ps.equippedMainhandDurability != null ? Math.round((100 * ps.equippedMainhandDurability) / MAX_WEAPON_DURABILITY) : null;
-        const offPct = ps.equippedOffhandDurability != null ? Math.round((100 * ps.equippedOffhandDurability) / MAX_WEAPON_DURABILITY) : null;
+        const mainInstance = active.mainhandKey && active.mainhandKey !== 'none' ? { prefixId: active.mainhandPrefixId, suffixId: active.mainhandSuffixId } : null;
+        const offInstance = active.offhandKey && active.offhandKey !== 'none' ? { prefixId: active.offhandPrefixId, suffixId: active.offhandSuffixId } : null;
+        const mainName = getWeaponDisplayName(active.mainhandKey, mainInstance);
+        const offName = getWeaponDisplayName(active.offhandKey, offInstance);
+        const mainPct = active.mainhandDurability != null ? Math.round((100 * active.mainhandDurability) / MAX_WEAPON_DURABILITY) : null;
+        const offPct = active.offhandDurability != null ? Math.round((100 * active.offhandDurability) / MAX_WEAPON_DURABILITY) : null;
         const mainText = mainName === '—' || !mainName ? mainName : (mainPct != null ? `${mainName} (${mainPct}%)` : mainName);
         const offText = offName === '—' || !offName ? offName : (offPct != null ? `${offName} (${offPct}%)` : offName);
         if (mainEl) {
@@ -386,10 +389,11 @@ export class HUDController {
     /** Equip weapon by key to the given slot; finds it in chest first, then inventory. */
     private applyWeaponToSlot(key: string, slot: 'mainhand' | 'offhand'): void {
         const ps = this.ctx.playingState;
+        const active = getActiveWeaponSet(ps);
         const sync = () => this.syncPlayerWeapons();
         const chestIndex = ps.chestSlots?.findIndex((i) => i.key === key) ?? -1;
         if (chestIndex >= 0) {
-            const slotHasItem = slot === 'mainhand' ? (ps.equippedMainhandKey && ps.equippedMainhandKey !== 'none') : (ps.equippedOffhandKey && ps.equippedOffhandKey !== 'none');
+            const slotHasItem = slot === 'mainhand' ? (active.mainhandKey && active.mainhandKey !== 'none') : (active.offhandKey && active.offhandKey !== 'none');
             if (slotHasItem) unequipToInventory(ps, slot, undefined, undefined, sync);
             equipFromChestToHand(ps, chestIndex, slot, sync);
             this.refreshInventoryPanel();
@@ -397,7 +401,7 @@ export class HUDController {
         }
         const bagIndex = ps.inventorySlots?.findIndex((s) => s && getSlotKey(s) === key) ?? -1;
         if (bagIndex >= 0) {
-            const slotHasItem = slot === 'mainhand' ? (ps.equippedMainhandKey && ps.equippedMainhandKey !== 'none') : (ps.equippedOffhandKey && ps.equippedOffhandKey !== 'none');
+            const slotHasItem = slot === 'mainhand' ? (active.mainhandKey && active.mainhandKey !== 'none') : (active.offhandKey && active.offhandKey !== 'none');
             if (slotHasItem) swapEquipmentWithInventory(ps, slot, bagIndex, sync);
             else equipFromInventory(ps, bagIndex, slot, sync);
             this.refreshInventoryPanel();
@@ -449,12 +453,13 @@ export class HUDController {
     private refreshChestGridEquippedState(): void {
         const grid = this.getChestGrid();
         if (!grid) return;
-        const mainhand = this.ctx.playingState.equippedMainhandKey;
-        const offhand = this.ctx.playingState.equippedOffhandKey;
+        const ps = this.ctx.playingState;
+        const isEquipped = (k: string | null) =>
+            k && (k === ps.equippedMainhandKey || k === ps.equippedOffhandKey || k === ps.equippedMainhandKey2 || k === ps.equippedOffhandKey2);
         for (const el of grid.querySelectorAll('.equipment-chest-slot')) {
             const slot = el as HTMLElement;
             const key = slot.getAttribute('data-weapon-key');
-            slot.classList.toggle('equipped', key === mainhand || key === offhand);
+            slot.classList.toggle('equipped', isEquipped(key));
         }
     }
 
@@ -468,138 +473,22 @@ export class HUDController {
                 this.refreshChestEquipmentLabels();
             }
         }
-        this.updateGameHUDVisibility();
     }
 
-    /** Hide health/stamina orbs and stun/heal UI when any screen (inventory, chest, etc.) is open. */
-    private updateGameHUDVisibility(): void {
-        const inventoryEl = document.getElementById('inventory-screen');
-        const chestEl = this.getChestOverlay();
-        const inventoryOpen = inventoryEl ? !inventoryEl.classList.contains('hidden') : false;
-        const chestOpen = chestEl ? !chestEl.classList.contains('hidden') : false;
-        const anyScreenOpen = inventoryOpen || chestOpen;
-        const gameHudEl = document.getElementById('game-hud');
-        if (gameHudEl) gameHudEl.classList.toggle('hidden', anyScreenOpen);
+    /** Call when pause, settings, help, shop, or reroll overlay is active. */
+    setOverlayScreenActive(active: boolean): void {
+        this.overlayScreenActive = active;
     }
 
-    update(player: Entity | undefined, currentLevel?: number) {
-        if (!player) return;
+    /** No-op: stats HUD is now drawn on the game canvas and respects draw order. */
+    refreshGameHUDVisibility(): void {}
 
-        const health = player.getComponent(Health);
-        const stamina = player.getComponent(Stamina);
-        const combat = player.getComponent(Combat);
-
-        if (health) {
-            const healthPercent = health.percent * 100;
-            const healthFillEl = document.getElementById('health-orb-fill');
-            if (healthFillEl) healthFillEl.style.height = healthPercent + '%';
-            const healthTextEl = document.getElementById('health-text');
-            const rally = player.getComponent(Rally);
-            const rallyAmount = rally && rally.rallyPool > 0 ? Math.floor(rally.rallyPool) : 0;
-            if (healthTextEl) {
-                healthTextEl.textContent = rallyAmount > 0
-                    ? Math.floor(health.currentHealth) + '/' + health.maxHealth + ' (+' + rallyAmount + ' rally)'
-                    : Math.floor(health.currentHealth) + '/' + health.maxHealth;
-            }
-        }
-
-        if (stamina) {
-            const staminaPercent = stamina.percent * 100;
-            const staminaFillEl = document.getElementById('stamina-orb-fill');
-            if (staminaFillEl) staminaFillEl.style.height = staminaPercent + '%';
-            const staminaTextEl = document.getElementById('stamina-text');
-            if (staminaTextEl) staminaTextEl.textContent =
-                Math.floor(stamina.currentStamina) + '/' + stamina.maxStamina;
-            const staminaOrbEl = document.getElementById('stamina-orb');
-            if (staminaOrbEl) {
-                if (combat && combat.dashAttackFlashUntil > Date.now()) {
-                    staminaOrbEl.classList.add('stamina-pulse');
-                } else {
-                    staminaOrbEl.classList.remove('stamina-pulse');
-                }
-            }
-        }
-
-        const healing = player.getComponent(PlayerHealing);
-        const healChargesEl = document.getElementById('heal-charges');
-        const potionFillEl = document.getElementById('potion-fill');
-        const potionBottleEl = document.querySelector('.potion-bottle');
-        if (healing) {
-            if (healChargesEl) healChargesEl.textContent = healing.charges + '/' + healing.maxCharges;
-            if (potionFillEl && potionBottleEl) {
-                let fillPercent: number;
-                if (healing.phase === 'drinking' && healing.maxCharges > 0) {
-                    const chargeFraction = (healing.charges - 1) + (1 - healing.phaseTimer / healing.drinkTime);
-                    fillPercent = Math.max(0, (100 * chargeFraction) / healing.maxCharges);
-                } else {
-                    fillPercent = healing.maxCharges > 0 ? (100 * healing.charges) / healing.maxCharges : 100;
-                }
-                potionFillEl.style.height = fillPercent + '%';
-                potionBottleEl.classList.toggle('drinking', healing.phase === 'drinking');
-            }
-        }
-
-        const statusEffects = player.getComponent(StatusEffects);
-        const stunBarEl = document.getElementById('stun-bar');
-        if (statusEffects && stunBarEl) {
-            const pct = Math.min(100, statusEffects.stunMeterPercent * 100);
-            stunBarEl.style.width = pct + '%';
-        }
-
-        const stunDurationRow = document.getElementById('stun-duration-row');
-        const stunDurationBar = document.getElementById('stun-duration-bar');
-        if (statusEffects && stunDurationRow && stunDurationBar) {
-            if (statusEffects.isStunned) {
-                stunDurationRow.style.display = '';
-                const remain = statusEffects.stunDurationPercentRemaining * 100;
-                stunDurationBar.style.width = remain + '%';
-            } else {
-                stunDurationRow.style.display = 'none';
-            }
-        }
-
-        const weapon = combat?.attackHandler?.weapon ?? combat?.playerAttack?.weapon;
-        const weaponName = weapon && typeof weapon === 'object' && (weapon as { name?: string }).name;
-        const effectStacksGrid = document.getElementById('effect-stacks-grid');
-        const effectRisingGale = document.getElementById('effect-rising-gale');
-        const risingGaleCountEl = document.getElementById('rising-gale-stack-count');
-        let anyEffectVisible = false;
-        if (effectRisingGale && risingGaleCountEl) {
-            if (weaponName === 'Blessed Winds' && statusEffects) {
-                effectRisingGale.classList.remove('hidden');
-                anyEffectVisible = true;
-                const stacks = statusEffects.risingGaleStacks ?? 0;
-                risingGaleCountEl.textContent = stacks + '/2';
-                risingGaleCountEl.classList.toggle('ready', stacks >= 2);
-                const now = performance.now() / 1000;
-                const remaining = Math.max(0, (statusEffects.risingGaleUntil ?? 0) - now);
-                const baseTitle = 'Rising Gale (Blessed Winds): 2 stacks = Storm Release';
-                effectRisingGale.title = remaining > 0 ? `${baseTitle} (${remaining.toFixed(1)}s left)` : baseTitle;
-            } else {
-                effectRisingGale.classList.add('hidden');
-            }
-        }
-        if (effectStacksGrid) {
-            effectStacksGrid.classList.toggle('hidden', !anyEffectVisible);
-        }
-
-        // Delve quest: show floor counter when in delve level
-        const delveFloorEl = document.getElementById('delve-floor-indicator');
-        if (delveFloorEl) {
-            const inDelve = currentLevel === DELVE_LEVEL && this.ctx.playingState.delveFloor > 0;
-            if (inDelve) {
-                delveFloorEl.textContent = 'Floor ' + this.ctx.playingState.delveFloor;
-                delveFloorEl.classList.remove('hidden');
-            } else {
-                delveFloorEl.classList.add('hidden');
-            }
-        }
-    }
+    /** No-op: stats HUD is now drawn on the game canvas. */
+    update(_player: Entity | undefined, _currentLevel?: number) {}
 
     setInventoryPanelVisible(visible: boolean) {
         const el = document.getElementById('inventory-screen');
         if (el) el.classList.toggle('hidden', !visible);
-        this.updateGameHUDVisibility();
     }
 
     refreshInventoryPanel() {
@@ -682,8 +571,12 @@ export class HUDController {
 
     private ensureInventoryInitialized(): void {
         const ps = this.ctx.playingState;
-        if (!ps.inventorySlots || ps.inventorySlots.length !== INVENTORY_SLOT_COUNT) {
+        if (!ps.inventorySlots) {
             ps.inventorySlots = Array(INVENTORY_SLOT_COUNT).fill(null) as InventorySlot[];
+        } else if (ps.inventorySlots.length < INVENTORY_SLOT_COUNT) {
+            ps.inventorySlots = [...ps.inventorySlots, ...Array(INVENTORY_SLOT_COUNT - ps.inventorySlots.length).fill(null)] as InventorySlot[];
+        } else if (ps.inventorySlots.length > INVENTORY_SLOT_COUNT) {
+            ps.inventorySlots = ps.inventorySlots.slice(0, INVENTORY_SLOT_COUNT);
         }
         // Do not fill empty slots here: refresh runs after ctrl+equip and would overwrite inventory with default weapons.
     }

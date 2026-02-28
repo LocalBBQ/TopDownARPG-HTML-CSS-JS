@@ -1,9 +1,10 @@
 /**
  * Shop inventory: weapons the shopkeeper sells, grouped by material tier.
  * All tiers from materialTiers are sold (Rusty through Dragon).
- * Weapon keys must exist in WeaponsRegistry (e.g. sword_rusty, sword_dragon).
+ * Bow and staff use wood tiers (Oak through Elder).
+ * Weapon keys must exist in WeaponsRegistry (e.g. sword_rusty, bow_oak, staff_elder).
  */
-import { MATERIALS, TIERED_WEAPON_KEYS, TIERED_OFFHAND_KEYS } from '../weapons/materialTiers.js';
+import { MATERIALS, TIERED_WEAPON_KEYS, TIERED_OFFHAND_KEYS, WOOD_MATERIALS } from '../weapons/materialTiers.js';
 
 export interface ShopItem {
   weaponKey: string;
@@ -22,8 +23,24 @@ const RUSTY_BASE_PRICE: Record<string, number> = {
   dagger: 20,
   greatsword: 45,
   mace: 35,
-  crossbow: 40,
   defender: 22,
+};
+
+/** Base price for bow and staff at Oak tier; added per wood tier. */
+const OAK_BASE_PRICE: Record<string, number> = {
+  bow: 30,
+  staff: 35,
+};
+
+/** Crossbow is a single (non-tiered) weapon. */
+const CROSSBOW_PRICE = 40;
+
+/** Extra price per wood tier (index matches WOOD_MATERIALS order). */
+const WOOD_TIER_PRICE_ADD: Record<string, number> = {
+  oak: 0,
+  willow: 25,
+  yew: 55,
+  elder: 95,
 };
 
 /** Extra price added per material tier (index matches MATERIALS order). */
@@ -62,6 +79,22 @@ function buildShopSections(): ShopSection[] {
       items,
     });
   }
+  for (const wood of WOOD_MATERIALS) {
+    const add = WOOD_TIER_PRICE_ADD[wood.id] ?? 0;
+    const items: ShopItem[] = [];
+    const bowPrice = (OAK_BASE_PRICE.bow ?? 30) + add;
+    const staffPrice = (OAK_BASE_PRICE.staff ?? 35) + add;
+    items.push({ weaponKey: `bow_${wood.id}`, price: bowPrice });
+    items.push({ weaponKey: `staff_${wood.id}`, price: staffPrice });
+    sections.push({
+      title: `${wood.displayName} (Bow & Staff)`,
+      items,
+    });
+  }
+  sections.push({
+    title: 'Crossbow',
+    items: [{ weaponKey: 'crossbow', price: CROSSBOW_PRICE }],
+  });
   return sections;
 }
 
@@ -72,16 +105,17 @@ export const SHOP_SECTIONS: ShopSection[] = buildShopSections();
 export const SHOP_ITEMS: ShopItem[] = SHOP_SECTIONS.flatMap((s) => s.items);
 
 /** Order and display names for weapon-type dropdowns in the shop UI. */
-export const SHOP_WEAPON_TYPE_ORDER: string[] = [...TIERED_WEAPON_KEYS, ...TIERED_OFFHAND_KEYS];
+export const SHOP_WEAPON_TYPE_ORDER: string[] = [...TIERED_WEAPON_KEYS, ...TIERED_OFFHAND_KEYS, 'bow', 'staff', 'crossbow'];
 
 export const SHOP_WEAPON_TYPE_LABELS: Record<string, string> = {
   sword: 'Sword',
   dagger: 'Dagger',
   greatsword: 'Greatsword',
   mace: 'Mace',
-  crossbow: 'Crossbow',
-  bow: 'Bow',
   defender: 'Defender',
+  bow: 'Bow',
+  staff: 'Staff',
+  crossbow: 'Crossbow',
 };
 
 /** Shop items grouped by base weapon type (for dropdown menus). */

@@ -3,10 +3,10 @@
  * Game delegates to this controller so the main class no longer contains the handler bodies.
  */
 import type { PlayingStateShape } from '../state/PlayingState.js';
-import { INVENTORY_SLOT_COUNT, MAX_WEAPON_DURABILITY, MAX_ARMOR_DURABILITY } from '../state/PlayingState.js';
-import { getInventoryLayout, getChestLayout, getShopLayout, hitTestInventory, hitTestChest, hitTestShop, ensureInventoryInitialized, type DragState } from '../ui/InventoryChestCanvas.js';
+import { getActiveWeaponSet, setActiveWeaponSet, INVENTORY_SLOT_COUNT, MAX_WEAPON_DURABILITY, MAX_ARMOR_DURABILITY } from '../state/PlayingState.js';
+import { getInventoryLayout, getChestLayout, getShopLayout, hitTestInventory, hitTestChest, hitTestShop, ensureInventoryInitialized, type DragState, HEADER_H, SHOP_HEADER_HEIGHT } from '../ui/InventoryChestCanvas.js';
 import type { TooltipHover } from '../types/tooltip.js';
-import { getRerollOverlayLayout, hitTestRerollOverlay } from '../ui/RerollOverlay.js';
+import { getRerollOverlayLayout, hitTestRerollOverlay, REROLL_HEADER_H } from '../ui/RerollOverlay.js';
 import { hitTestMinimapZoomButtons, MINIMAP_ZOOM_MIN, MINIMAP_ZOOM_MAX, MINIMAP_ZOOM_STEP } from '../systems/renderers/MinimapRenderer.ts';
 import { getEquipSlotForWeapon } from '../weapons/weaponSlot.js';
 import { getArmor } from '../armor/armorConfigs.js';
@@ -18,6 +18,7 @@ import {
     putInChestFromInventory,
     putInChestFromEquipment,
     setInventorySlot,
+    swapChestSlots,
     swapEquipmentWithEquipment,
     swapEquipmentWithInventory,
     swapInventorySlots,
@@ -40,18 +41,42 @@ export interface InventoryChestUIControllerContext {
     setInventoryPanelVisible: (visible: boolean) => void;
 }
 
+type DraggablePanel = 'inventory' | 'shop' | 'reroll';
+
 export class InventoryChestUIController {
     private ctx: InventoryChestUIControllerContext;
+    private panelDrag: { panel: DraggablePanel; startX: number; startY: number; startDx: number; startDy: number } | null = null;
 
     constructor(ctx: InventoryChestUIControllerContext) {
         this.ctx = ctx;
+    }
+
+    private isOverPanelHeader(x: number, y: number): DraggablePanel | null {
+        const g = this.ctx;
+        const ps = g.playingState;
+        if (ps.rerollStationOpen) {
+            const layout = getRerollOverlayLayout(g.canvas, ps);
+            const p = layout.panel;
+            if (x >= p.x && x <= p.x + p.w && y >= p.y && y <= p.y + REROLL_HEADER_H) return 'reroll';
+        }
+        if (ps.shopOpen) {
+            const layout = getShopLayout(g.canvas, (ps.shopScrollOffset as number) ?? 0, ps.shopExpandedWeapons, ps.shopExpandedArmor, ps.shopExpandedCategories, ps);
+            const p = layout.panel;
+            if (x >= p.x && x <= p.x + p.w && y >= p.y && y <= p.y + SHOP_HEADER_HEIGHT) return 'shop';
+        }
+        if (ps.inventoryOpen || ps.chestOpen) {
+            const layout = getInventoryLayout(g.canvas, { panelOffset: ps.uiPanelOffsets?.inventory, includeChestGrid: ps.rerollStationOpen });
+            const p = layout.panel;
+            if (x >= p.x && x <= p.x + p.w && y >= p.y && y <= p.y + HEADER_H) return 'inventory';
+        }
+        return null;
     }
 
     isPointerOverUI(x: number, y: number): boolean {
         const g = this.ctx;
         if (g.playingState.chestOpen) return true;
         if (g.playingState.inventoryOpen) {
-            const layout = getInventoryLayout(g.canvas);
+            const layout = getInventoryLayout(g.canvas, { panelOffset: g.playingState.uiPanelOffsets?.inventory });
             const p = layout.panel;
             if (x >= p.x && x <= p.x + p.w && y >= p.y && y <= p.y + p.h) return true;
         }
@@ -89,7 +114,7 @@ export class InventoryChestUIController {
             }
             if (hit) return true;
             ensureInventoryInitialized(ps);
-            const invLayoutR = getInventoryLayout(g.canvas, { includeChestGrid: true });
+            const invLayoutR = getInventoryLayout(g.canvas, { includeChestGrid: true, panelOffset: ps.uiPanelOffsets?.inventory });
             const invHitR = hitTestInventory(x, y, ps, invLayoutR, ps.chestSlots ?? []);
             if (invHitR?.type === 'close') {
                 ps.rerollStationOpen = false;
@@ -99,11 +124,12 @@ export class InventoryChestUIController {
         }
         if (e?.ctrlKey && (ps.inventoryOpen || ps.chestOpen || ps.rerollStationOpen)) {
             ensureInventoryInitialized(ps);
-            const invLayout = ps.rerollStationOpen ? getInventoryLayout(g.canvas, { includeChestGrid: true }) : getInventoryLayout(g.canvas);
+            const invLayout = ps.rerollStationOpen ? getInventoryLayout(g.canvas, { includeChestGrid: true, panelOffset: ps.uiPanelOffsets?.inventory }) : getInventoryLayout(g.canvas, { panelOffset: ps.uiPanelOffsets?.inventory });
             const invHit = hitTestInventory(x, y, ps, invLayout, ps.rerollStationOpen ? (ps.chestSlots ?? []) : undefined);
             if (invHit?.type === 'chest-slot' && invHit.key) {
                 const slot = getEquipSlotForWeapon(invHit.key);
-                const slotHasItem = slot === 'mainhand' ? (ps.equippedMainhandKey && ps.equippedMainhandKey !== 'none') : (ps.equippedOffhandKey && ps.equippedOffhandKey !== 'none');
+                const active = getActiveWeaponSet(ps);
+                const slotHasItem = slot === 'mainhand' ? (active.mainhandKey && active.mainhandKey !== 'none') : (active.offhandKey && active.offhandKey !== 'none');
                 if (slotHasItem) unequipToInventory(ps, slot, undefined, undefined, sync);
                 equipFromChestToHand(ps, invHit.index, slot, sync);
                 g.refreshInventoryPanel();
@@ -119,14 +145,16 @@ export class InventoryChestUIController {
                     return true;
                 }
                 const slot = getEquipSlotForWeapon(invHit.weaponKey);
-                const slotHasItem = slot === 'mainhand' ? (ps.equippedMainhandKey && ps.equippedMainhandKey !== 'none') : (ps.equippedOffhandKey && ps.equippedOffhandKey !== 'none');
+                const active0 = getActiveWeaponSet(ps);
+                const slotHasItem = slot === 'mainhand' ? (active0.mainhandKey && active0.mainhandKey !== 'none') : (active0.offhandKey && active0.offhandKey !== 'none');
                 if (slotHasItem) swapEquipmentWithInventory(ps, slot, invHit.index, sync);
                 else equipFromInventory(ps, invHit.index, slot, sync);
                 g.refreshInventoryPanel();
                 return true;
             }
             if (invHit?.type === 'equipment') {
-                const key = invHit.slot === 'mainhand' ? ps.equippedMainhandKey : ps.equippedOffhandKey;
+                const activeEquip = getActiveWeaponSet(ps);
+                const key = invHit.slot === 'mainhand' ? activeEquip.mainhandKey : activeEquip.offhandKey;
                 if (key && key !== 'none') {
                     if (ps.chestOpen || ps.rerollStationOpen) putInChestFromEquipment(ps, invHit.slot, sync);
                     else unequipToInventory(ps, invHit.slot, undefined, undefined, sync);
@@ -147,7 +175,8 @@ export class InventoryChestUIController {
                 const chestHit = hitTestChest(x, y, layout, ps.chestSlots ?? []);
                 if (chestHit?.type === 'weapon-slot' && chestHit.key) {
                     const slot = getEquipSlotForWeapon(chestHit.key);
-                    const slotHasItem = slot === 'mainhand' ? (ps.equippedMainhandKey && ps.equippedMainhandKey !== 'none') : (ps.equippedOffhandKey && ps.equippedOffhandKey !== 'none');
+                    const activeChest = getActiveWeaponSet(ps);
+                    const slotHasItem = slot === 'mainhand' ? (activeChest.mainhandKey && activeChest.mainhandKey !== 'none') : (activeChest.offhandKey && activeChest.offhandKey !== 'none');
                     if (slotHasItem) unequipToInventory(ps, slot, undefined, undefined, sync);
                     equipFromChestToHand(ps, chestHit.index, slot, sync);
                     g.refreshInventoryPanel();
@@ -167,8 +196,8 @@ export class InventoryChestUIController {
                 const gold = (ps.gold as number) ?? 0;
                 if (gold >= hit.cost) {
                     ps.gold = gold - hit.cost;
-                    if (hit.source === 'mainhand') ps.equippedMainhandDurability = MAX_WEAPON_DURABILITY;
-                    else if (hit.source === 'offhand') ps.equippedOffhandDurability = MAX_WEAPON_DURABILITY;
+                    if (hit.source === 'mainhand') setActiveWeaponSet(ps, { mainhandDurability: MAX_WEAPON_DURABILITY });
+                    else if (hit.source === 'offhand') setActiveWeaponSet(ps, { offhandDurability: MAX_WEAPON_DURABILITY });
                     else if (hit.source === 'inventory' && 'bagIndex' in hit) {
                         const slot = ps.inventorySlots?.[hit.bagIndex];
                         if (slot) ps.inventorySlots[hit.bagIndex] = { key: slot.key, durability: MAX_WEAPON_DURABILITY };
@@ -230,7 +259,7 @@ export class InventoryChestUIController {
             return true;
         }
         if (ps.inventoryOpen) {
-            const layout = getInventoryLayout(g.canvas);
+            const layout = getInventoryLayout(g.canvas, { panelOffset: ps.uiPanelOffsets?.inventory });
             const hit = hitTestInventory(x, y, ps, layout);
             if (hit?.type === 'close') {
                 ps.inventoryOpen = false;
@@ -241,7 +270,7 @@ export class InventoryChestUIController {
             }
         }
         if (ps.chestOpen) {
-            const invLayout = getInventoryLayout(g.canvas);
+            const invLayout = getInventoryLayout(g.canvas, { panelOffset: g.playingState.uiPanelOffsets?.inventory });
             const invHit = hitTestInventory(x, y, ps, invLayout);
             if (invHit?.type === 'close') {
                 ps.chestOpen = false;
@@ -269,7 +298,7 @@ export class InventoryChestUIController {
         if (!ps.inventoryOpen && !ps.chestOpen) return false;
         ensureInventoryInitialized(ps);
         const sync = g.syncCombat;
-        const layout = getInventoryLayout(g.canvas);
+        const layout = getInventoryLayout(g.canvas, { panelOffset: g.playingState.uiPanelOffsets?.inventory });
         const hit = hitTestInventory(x, y, ps, layout);
         if (hit?.type === 'inventory-slot' && hit.weaponKey && hit.index >= 0) {
             const slot = getEquipSlotForWeapon(hit.weaponKey);
@@ -305,6 +334,17 @@ export class InventoryChestUIController {
         const ps = g.playingState;
         if (!ps.inventoryOpen && !ps.chestOpen && !ps.shopOpen && !ps.rerollStationOpen) return false;
         if (ctrlKey) return false;
+        const headerPanel = this.isOverPanelHeader(x, y);
+        if (headerPanel) {
+            const off = ps.uiPanelOffsets ?? {};
+            const inv = off.inventory ?? { dx: 0, dy: 0 };
+            const shop = off.shop ?? { dx: 0, dy: 0 };
+            const reroll = off.reroll ?? { dx: 0, dy: 0 };
+            const startDx = headerPanel === 'inventory' ? inv.dx : headerPanel === 'shop' ? shop.dx : reroll.dx;
+            const startDy = headerPanel === 'inventory' ? inv.dy : headerPanel === 'shop' ? shop.dy : reroll.dy;
+            this.panelDrag = { panel: headerPanel, startX: x, startY: y, startDx, startDy };
+            return true;
+        }
         ensureInventoryInitialized(ps);
         const ds = g.inventoryDragState;
         if (ps.rerollStationOpen && ps.rerollSlotItem?.key) {
@@ -321,7 +361,7 @@ export class InventoryChestUIController {
                 return true;
             }
         }
-        const invLayout = ps.rerollStationOpen ? getInventoryLayout(g.canvas, { includeChestGrid: true }) : getInventoryLayout(g.canvas);
+        const invLayout = ps.rerollStationOpen ? getInventoryLayout(g.canvas, { includeChestGrid: true, panelOffset: ps.uiPanelOffsets?.inventory }) : getInventoryLayout(g.canvas, { panelOffset: ps.uiPanelOffsets?.inventory });
         const invHit = hitTestInventory(x, y, ps, invLayout, ps.rerollStationOpen ? (ps.chestSlots ?? []) : undefined);
         if (invHit?.type === 'chest-slot' && invHit.key) {
             ds.isDragging = true;
@@ -332,13 +372,23 @@ export class InventoryChestUIController {
             ds.pointerY = y;
             return true;
         }
-        if (invHit?.type === 'inventory-slot' && (invHit.weaponKey || invHit.itemType === 'whetstone')) {
+        if (invHit?.type === 'inventory-slot' && (invHit.weaponKey || invHit.itemType === 'whetstone' || invHit.itemType === 'herb' || invHit.itemType === 'mushroom' || invHit.itemType === 'honey' || invHit.itemType === 'potion')) {
             if (invHit.itemType === 'whetstone') {
                 ds.isDragging = true;
                 ds.sourceSlotIndex = invHit.index;
                 ds.sourceContext = 'inventory';
                 ds.weaponKey = '';
                 ds.isWhetstone = true;
+                ds.pointerX = x;
+                ds.pointerY = y;
+                return true;
+            }
+            if (invHit.itemType === 'herb' || invHit.itemType === 'mushroom' || invHit.itemType === 'honey' || invHit.itemType === 'potion') {
+                ds.isDragging = true;
+                ds.sourceSlotIndex = invHit.index;
+                ds.sourceContext = 'inventory';
+                ds.weaponKey = '';
+                ds.dragConsumableType = invHit.itemType;
                 ds.pointerX = x;
                 ds.pointerY = y;
                 return true;
@@ -360,11 +410,12 @@ export class InventoryChestUIController {
             return true;
         }
         if (invHit?.type === 'equipment') {
-            const key = invHit.slot === 'mainhand' ? ps.equippedMainhandKey : ps.equippedOffhandKey;
+            const activeDrag = getActiveWeaponSet(ps);
+            const key = invHit.slot === 'mainhand' ? activeDrag.mainhandKey : activeDrag.offhandKey;
             if (key && key !== 'none') {
                 ds.isDragging = true;
                 ds.weaponKey = key;
-                ds.durability = invHit.slot === 'mainhand' ? ps.equippedMainhandDurability : ps.equippedOffhandDurability;
+                ds.durability = invHit.slot === 'mainhand' ? activeDrag.mainhandDurability : activeDrag.offhandDurability;
                 ds.sourceSlotIndex = invHit.slot === 'mainhand' ? 0 : 1;
                 ds.sourceContext = 'equipment';
                 ds.pointerX = x;
@@ -403,6 +454,17 @@ export class InventoryChestUIController {
 
     handlePointerMove(x: number, y: number): void {
         const g = this.ctx;
+        const pd = this.panelDrag;
+        if (pd) {
+            const ps = g.playingState;
+            if (!ps.uiPanelOffsets) ps.uiPanelOffsets = {};
+            const dx = pd.startDx + (x - pd.startX);
+            const dy = pd.startDy + (y - pd.startY);
+            if (pd.panel === 'inventory') ps.uiPanelOffsets.inventory = { dx, dy };
+            else if (pd.panel === 'shop') ps.uiPanelOffsets.shop = { dx, dy };
+            else ps.uiPanelOffsets.reroll = { dx, dy };
+            return;
+        }
         const ds = g.inventoryDragState;
         if (ds.isDragging) {
             ds.pointerX = x;
@@ -421,7 +483,7 @@ export class InventoryChestUIController {
             return;
         }
         ensureInventoryInitialized(ps);
-        const invLayout = ps.rerollStationOpen ? getInventoryLayout(g.canvas, { includeChestGrid: true }) : getInventoryLayout(g.canvas);
+        const invLayout = ps.rerollStationOpen ? getInventoryLayout(g.canvas, { includeChestGrid: true, panelOffset: ps.uiPanelOffsets?.inventory }) : getInventoryLayout(g.canvas, { panelOffset: ps.uiPanelOffsets?.inventory });
         const invHit = hitTestInventory(x, y, ps, invLayout, ps.rerollStationOpen ? (ps.chestSlots ?? []) : undefined);
         if (invHit?.type === 'armor-equipment') {
             const key = invHit.slot === 'head' ? ps.equippedArmorHeadKey : invHit.slot === 'chest' ? ps.equippedArmorChestKey : invHit.slot === 'hands' ? ps.equippedArmorHandsKey : ps.equippedArmorFeetKey;
@@ -455,6 +517,18 @@ export class InventoryChestUIController {
             g.setTooltipHover({ type: 'mushroom', x, y, count });
             return;
         }
+        if (invHit?.type === 'inventory-slot' && invHit.itemType === 'honey') {
+            const slot = ps.inventorySlots?.[invHit.index];
+            const count = slot && 'count' in slot ? slot.count : 1;
+            g.setTooltipHover({ type: 'honey', x, y, count });
+            return;
+        }
+        if (invHit?.type === 'inventory-slot' && invHit.itemType === 'potion') {
+            const slot = ps.inventorySlots?.[invHit.index];
+            const count = slot && 'count' in slot ? slot.count : 1;
+            g.setTooltipHover({ type: 'potion', x, y, count });
+            return;
+        }
         if (invHit?.type === 'inventory-slot' && invHit.weaponKey) {
             if (getArmor(invHit.weaponKey)) {
                 g.setTooltipHover({ type: 'armor', armorKey: invHit.weaponKey, x, y, durability: invHit.durability });
@@ -464,11 +538,12 @@ export class InventoryChestUIController {
             return;
         }
         if (invHit?.type === 'equipment') {
-            const key = invHit.slot === 'mainhand' ? ps.equippedMainhandKey : ps.equippedOffhandKey;
+            const activeTooltip = getActiveWeaponSet(ps);
+            const key = invHit.slot === 'mainhand' ? activeTooltip.mainhandKey : activeTooltip.offhandKey;
             if (key && key !== 'none') {
-                const prefixId = invHit.slot === 'mainhand' ? ps.equippedMainhandPrefixId : ps.equippedOffhandPrefixId;
-                const suffixId = invHit.slot === 'mainhand' ? ps.equippedMainhandSuffixId : ps.equippedOffhandSuffixId;
-                const durability = invHit.slot === 'mainhand' ? ps.equippedMainhandDurability : ps.equippedOffhandDurability;
+                const prefixId = invHit.slot === 'mainhand' ? activeTooltip.mainhandPrefixId : activeTooltip.offhandPrefixId;
+                const suffixId = invHit.slot === 'mainhand' ? activeTooltip.mainhandSuffixId : activeTooltip.offhandSuffixId;
+                const durability = invHit.slot === 'mainhand' ? activeTooltip.mainhandDurability : activeTooltip.offhandDurability;
                 g.setTooltipHover({ type: 'weapon', weaponKey: key, x, y, durability, prefixId, suffixId });
                 return;
             }
@@ -488,6 +563,10 @@ export class InventoryChestUIController {
 
     handlePointerUp(x: number, y: number): boolean {
         const g = this.ctx;
+        if (this.panelDrag) {
+            this.panelDrag = null;
+            return true;
+        }
         const ds = g.inventoryDragState;
         if (!ds.isDragging) return false;
         const weaponKey = ds.weaponKey;
@@ -505,13 +584,14 @@ export class InventoryChestUIController {
         ds.durability = undefined;
         ds.sourceSlotIndex = -1;
         ds.isWhetstone = false;
+        ds.dragConsumableType = undefined;
 
         const ps = g.playingState;
         const sync = g.syncCombat;
 
         if (!ps.inventorySlots || ps.inventorySlots.length < INVENTORY_SLOT_COUNT) {
             if (armorKey && (ps.inventoryOpen || ps.chestOpen)) {
-                const invLayout = getInventoryLayout(g.canvas);
+                const invLayout = getInventoryLayout(g.canvas, { panelOffset: g.playingState.uiPanelOffsets?.inventory });
                 const invHit = hitTestInventory(x, y, ps, invLayout);
                 if (invHit?.type === 'armor-equipment' && sourceArmorSlot !== undefined && canEquipArmorInSlot(armorKey, invHit.slot)) {
                     swapArmorWithArmor(ps, sourceArmorSlot, invHit.slot);
@@ -544,11 +624,12 @@ export class InventoryChestUIController {
         }
 
         if (ps.inventoryOpen || ps.chestOpen || ps.rerollStationOpen) {
-            const invLayout = ps.rerollStationOpen ? getInventoryLayout(g.canvas, { includeChestGrid: true }) : getInventoryLayout(g.canvas);
+            const invLayout = ps.rerollStationOpen ? getInventoryLayout(g.canvas, { includeChestGrid: true, panelOffset: ps.uiPanelOffsets?.inventory }) : getInventoryLayout(g.canvas, { panelOffset: ps.uiPanelOffsets?.inventory });
             const invHit = hitTestInventory(x, y, ps, invLayout, ps.rerollStationOpen ? (ps.chestSlots ?? []) : undefined);
             if (wasWhetstone && sourceContext === 'inventory' && sourceIndex >= 0 && invHit) {
                 if (invHit.type === 'equipment') {
-                    const key = invHit.slot === 'mainhand' ? ps.equippedMainhandKey : ps.equippedOffhandKey;
+                    const activeWhet = getActiveWeaponSet(ps);
+                    const key = invHit.slot === 'mainhand' ? activeWhet.mainhandKey : activeWhet.offhandKey;
                     if (key && key !== 'none') {
                         if (useWhetstoneOnWeapon(ps, sourceIndex, invHit.slot)) {
                             g.refreshInventoryPanel();
@@ -591,8 +672,13 @@ export class InventoryChestUIController {
                     g.refreshInventoryPanel();
                     return true;
                 }
-                if (sourceContext === 'inventory' && sourceIndex >= 0 && sourceIndex < INVENTORY_SLOT_COUNT) putInChestFromInventory(ps, sourceIndex);
-                else if (sourceContext === 'equipment') putInChestFromEquipment(ps, sourceIndex === 0 ? 'mainhand' : 'offhand', sync);
+                if (sourceContext === 'chest' && sourceIndex >= 0 && sourceIndex !== invHit.index) {
+                    swapChestSlots(ps, sourceIndex, invHit.index);
+                } else if (sourceContext === 'inventory' && sourceIndex >= 0 && sourceIndex < INVENTORY_SLOT_COUNT) {
+                    putInChestFromInventory(ps, sourceIndex);
+                } else if (sourceContext === 'equipment') {
+                    putInChestFromEquipment(ps, sourceIndex === 0 ? 'mainhand' : 'offhand', sync);
+                }
                 g.refreshInventoryPanel();
                 return true;
             }
@@ -604,11 +690,13 @@ export class InventoryChestUIController {
                 }
                 if (sourceContext === 'equipment') swapEquipmentWithEquipment(ps, sync);
                 else if (sourceContext === 'inventory' && sourceIndex >= 0 && sourceIndex < INVENTORY_SLOT_COUNT) {
-                    const slotHasItem = invHit.slot === 'mainhand' ? (ps.equippedMainhandKey && ps.equippedMainhandKey !== 'none') : (ps.equippedOffhandKey && ps.equippedOffhandKey !== 'none');
+                    const activeUp = getActiveWeaponSet(ps);
+                    const slotHasItem = invHit.slot === 'mainhand' ? (activeUp.mainhandKey && activeUp.mainhandKey !== 'none') : (activeUp.offhandKey && activeUp.offhandKey !== 'none');
                     if (slotHasItem) swapEquipmentWithInventory(ps, invHit.slot, sourceIndex, sync);
                     else equipFromInventory(ps, sourceIndex, invHit.slot, sync);
                 } else if (sourceContext === 'chest' && sourceIndex >= 0 && sourceIndex < (ps.chestSlots?.length ?? 0)) {
-                    const slotHasItem = invHit.slot === 'mainhand' ? (ps.equippedMainhandKey && ps.equippedMainhandKey !== 'none') : (ps.equippedOffhandKey && ps.equippedOffhandKey !== 'none');
+                    const activeChestUp = getActiveWeaponSet(ps);
+                    const slotHasItem = invHit.slot === 'mainhand' ? (activeChestUp.mainhandKey && activeChestUp.mainhandKey !== 'none') : (activeChestUp.offhandKey && activeChestUp.offhandKey !== 'none');
                     if (slotHasItem) unequipToInventory(ps, invHit.slot, undefined, undefined, sync);
                     equipFromChestToHand(ps, sourceIndex, invHit.slot, sync);
                 }
@@ -639,8 +727,13 @@ export class InventoryChestUIController {
                     g.refreshInventoryPanel();
                     return true;
                 }
-                if (sourceContext === 'inventory' && sourceIndex >= 0 && sourceIndex < INVENTORY_SLOT_COUNT) putInChestFromInventory(ps, sourceIndex);
-                else if (sourceContext === 'equipment') putInChestFromEquipment(ps, sourceIndex === 0 ? 'mainhand' : 'offhand', sync);
+                if (sourceContext === 'chest' && hit?.type === 'weapon-slot' && sourceIndex >= 0 && sourceIndex !== hit.index) {
+                    swapChestSlots(ps, sourceIndex, hit.index);
+                } else if (sourceContext === 'inventory' && sourceIndex >= 0 && sourceIndex < INVENTORY_SLOT_COUNT) {
+                    putInChestFromInventory(ps, sourceIndex);
+                } else if (sourceContext === 'equipment') {
+                    putInChestFromEquipment(ps, sourceIndex === 0 ? 'mainhand' : 'offhand', sync);
+                }
                 g.refreshInventoryPanel();
             }
         }

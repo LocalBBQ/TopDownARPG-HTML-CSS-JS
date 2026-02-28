@@ -119,6 +119,7 @@ export const EnemyWeapons: Record<string, EnemyWeaponLike> & {
         if (weaponId === 'mace') return weapons['mace_rusty'] ?? null;
         if (weaponId === 'dagger') return weapons['dagger_rusty'] ?? null;
         if (weaponId === 'sword') return weapons['sword_rusty'] ?? null;
+        if (weaponId === 'greatsword') return weapons['greatsword_rusty'] ?? null;
         const e = EnemyWeapons[weaponId];
         if (e && typeof e === 'object') return e;
         return null;

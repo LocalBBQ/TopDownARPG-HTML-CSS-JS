@@ -73,6 +73,15 @@ export class RenderSystem {
         this.portalRenderer.render(this._getContext(camera), { portal, playerNearPortal: showPrompt, promptLines, isStairs, channelProgress });
     }
 
+    renderCaveEntrancePrompt(worldRect: { x: number; y: number; width: number; height: number }, camera, channelProgress?: number) {
+        this.portalRenderer.renderPromptAtRect(this._getContext(camera), { worldRect, promptLines: ['E Enter'], channelProgress: channelProgress ?? 0 });
+    }
+
+    /** Doorway exit: prompt only, no channel bar (instant on E). */
+    renderCaveExitPrompt(worldRect: { x: number; y: number; width: number; height: number }, camera) {
+        this.portalRenderer.renderPromptAtRect(this._getContext(camera), { worldRect, promptLines: ['E Leave'], channelProgress: 0 });
+    }
+
     renderBoard(board, camera, playerNearBoard) {
         this.boardRenderer.render(this._getContext(camera), { board, playerNearBoard });
     }

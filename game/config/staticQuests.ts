@@ -114,6 +114,17 @@ export const STATIC_QUESTS: Quest[] = [
     order: 4,
     difficultyId: 'normal',
   },
+  {
+    id: 'outskirts_ogre_den',
+    name: "The Ogre's Den",
+    description: ['Enter the Ogre\'s Den and slay the Village Ogre.'],
+    level: 12,
+    objectiveType: 'killBoss',
+    objectiveParams: { killBoss: {} },
+    gatesBiomeUnlock: false,
+    order: 5,
+    difficultyId: 'normal',
+  },
   // ---- Cursed Wilds (level 2) ----
   {
     id: 'cursed_slay_undead',

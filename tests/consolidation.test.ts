@@ -38,9 +38,8 @@ describe('PickupManager', () => {
     const pm = new PickupManager();
     pm.spawnGold(10, 20, 5);
     pm.spawnWhetstone(30, 40);
-    pm.spawnHealthOrb(50, 60, 25);
     pm.spawnWeapon(70, 80, { key: 'sword', durability: 10, prefixId: undefined, suffixId: undefined });
-    expect(pm.items.length).toBe(4);
+    expect(pm.items.length).toBe(3);
     expect(() => pm.update(0.016, null)).not.toThrow();
     expect(pm.items.length).toBe(4);
   });

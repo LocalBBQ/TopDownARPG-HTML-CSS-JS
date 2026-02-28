@@ -24,13 +24,23 @@ export class EntityLayerRenderer {
         const isCharacter = renderable.type === 'enemy';
         try {
             if (renderable.type === 'player') {
-                if (sprite && spriteManager && useCharacterSprites) {
+                const playingState = systems?.get?.('playingState') as { playerClass?: string } | undefined;
+                const useProceduralForMage = playingState?.playerClass === 'mage';
+                const useProceduralForRogue = playingState?.playerClass === 'rogue';
+                if (!useProceduralForMage && !useProceduralForRogue && sprite && spriteManager && useCharacterSprites) {
                     if (!this._spriteRenderer) this._spriteRenderer = new EntitySpriteRenderer();
                     this._spriteRenderer.render(context, entity, screenX, screenY);
                 } else {
                     PlayerEntityRenderer.render(context, entity, screenX, screenY);
                 }
                 return;
+            }
+            if (renderable.type === 'enemy') {
+                const ai = entity.getComponent(AI);
+                if (ai && (ai.enemyType === 'bandit' || ai.enemyType === 'banditVeteran' || ai.enemyType === 'banditElite')) {
+                    EnemyEntityRenderer.render(context, entity, screenX, screenY);
+                    return;
+                }
             }
             if (sprite && spriteManager && (useCharacterSprites || !isCharacter)) {
                 if (!this._spriteRenderer) this._spriteRenderer = new EntitySpriteRenderer();
@@ -58,6 +68,9 @@ export class EntityLayerRenderer {
 
         // Fallback: no obstacleManager — draw all non-player entities then player last
         const spriteManager = systems ? systems.get('sprites') : null;
+        const playingState = systems?.get?.('playingState') as { playerClass?: string } | undefined;
+        const useProceduralForMage = playingState?.playerClass === 'mage';
+        const useProceduralForRogue = playingState?.playerClass === 'rogue';
         let playerDraw = null;
 
         for (const entity of entities) {
@@ -70,13 +83,21 @@ export class EntityLayerRenderer {
             if (screenX < -50 || screenX > canvas.width + 50 || screenY < -50 || screenY > canvas.height + 50) continue;
 
             if (renderable.type === 'player') {
-                playerDraw = { entity, screenX, screenY, useSprite: !!(spriteManager && entity.getComponent(Sprite) && useCharacterSprites) };
+                const useSprite = !useProceduralForMage && !useProceduralForRogue && !!(spriteManager && entity.getComponent(Sprite) && useCharacterSprites);
+                playerDraw = { entity, screenX, screenY, useSprite };
                 continue;
             }
 
             const sprite = entity.getComponent(Sprite);
             const isCharacter = renderable.type === 'enemy';
             try {
+                if (renderable.type === 'enemy') {
+                    const ai = entity.getComponent(AI);
+                    if (ai && (ai.enemyType === 'bandit' || ai.enemyType === 'banditVeteran' || ai.enemyType === 'banditElite')) {
+                        EnemyEntityRenderer.render(context, entity, screenX, screenY);
+                        continue;
+                    }
+                }
                 if (sprite && spriteManager && (useCharacterSprites || !isCharacter)) {
                     if (!this._spriteRenderer) this._spriteRenderer = new EntitySpriteRenderer();
                     this._spriteRenderer.render(context, entity, screenX, screenY);

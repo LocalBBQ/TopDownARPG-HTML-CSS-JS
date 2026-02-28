@@ -14,6 +14,7 @@ export interface ScreenControllerContext {
         checkButtonClick(x: number, y: number, screen: string): boolean;
         selectedStartLevel: number;
         setScreen(screen: ScreenName): void;
+        getTitleButtonAt(x: number, y: number): 'newGame' | 'loadGame' | null;
         getLevelSelectAt(x: number, y: number): number | null;
         getQuestSelectAt(x: number, y: number, questList: Quest[], levelNames: Record<number, string>, contentTop?: number): number | null;
         getHubBoardButtonAt(x: number, y: number, questCount?: number, contentTop?: number): 'start' | 'reroll' | 'back' | null;
@@ -22,6 +23,8 @@ export interface ScreenControllerContext {
         getMainQuestSelectAt(x: number, y: number, unlockedLevelIds: number[], contentTop?: number, contentHeight?: number): number | null;
         getMainQuestButtonAt(x: number, y: number, unlockedLevelIds: number[], contentTop?: number, contentHeight?: number): 'accept' | 'back' | null;
         getPauseButtonAt(x: number, y: number): string | null;
+        getClassSelectButtonAt(x: number, y: number): 'back' | 'warrior' | 'mage' | 'rogue' | null;
+        getSaveSelectButtonAt(x: number, y: number): 'back' | string | null;
         getHelpBackButtonAt(x: number, y: number): boolean;
         getSettingsItemAt(x: number, y: number, settings: SettingsLike): string | null;
         getControlsItemAt(x: number, y: number): string | null;
@@ -54,7 +57,10 @@ export interface ScreenControllerContext {
     refreshInventoryPanel(): void;
     useWhetstone?(): void;
     startGame(): void;
+    startNewGame(selectedClass: 'warrior' | 'mage' | 'rogue'): void;
+    loadGame(slotId: string): void;
     returnToSanctuaryOnDeath(): void;
+    saveGame(slotId: string): void;
     quitToMainMenu(): void;
     clearPlayerInputsForMenu(): void;
 }
@@ -70,12 +76,21 @@ export class ScreenController {
         const ctx = this.context;
         const sm = ctx.screenManager;
         const ps = ctx.playingState;
-
         if (sm.isScreen('title')) {
-            if (sm.checkButtonClick(x, y, 'title')) {
+            const titleBtn = sm.getTitleButtonAt(x, y);
+            if (titleBtn === 'newGame') sm.setScreen('classSelect');
+            else if (titleBtn === 'loadGame') sm.setScreen('saveSelect');
+        } else if (sm.isScreen('classSelect')) {
+            const classBtn = sm.getClassSelectButtonAt(x, y);
+            if (classBtn === 'back') sm.setScreen('title');
+            else if (classBtn === 'warrior' || classBtn === 'mage' || classBtn === 'rogue') {
                 sm.selectedStartLevel = 0;
-                ctx.startGame();
+                ctx.startNewGame(classBtn);
             }
+        } else if (sm.isScreen('saveSelect')) {
+            const saveBtn = sm.getSaveSelectButtonAt(x, y);
+            if (saveBtn === 'back') sm.setScreen('title');
+            else if (saveBtn && saveBtn !== 'back') ctx.loadGame(saveBtn);
         } else if (sm.isScreen('hub') && ps.boardOpen) {
             const t = sm.getTabbedBoardFrame();
             const tab = sm.getBoardTabAt(x, y);
@@ -153,6 +168,8 @@ export class ScreenController {
             const pauseBtn = sm.getPauseButtonAt(x, y);
             if (pauseBtn === 'resume') {
                 sm.setScreen(ps.screenBeforePause || 'playing');
+            } else if (pauseBtn === 'save') {
+                ctx.saveGame('1');
             } else if (pauseBtn === 'quit') {
                 ctx.quitToMainMenu();
             } else if (pauseBtn === 'settings') {

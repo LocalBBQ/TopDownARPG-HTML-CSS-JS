@@ -24,4 +24,3 @@ export const EnemyCombatRenderer = {
         return (raw - (1 - this.DANGER_RATIO)) / this.DANGER_RATIO;
     }
 };
-

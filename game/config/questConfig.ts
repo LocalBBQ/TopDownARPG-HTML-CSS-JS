@@ -10,6 +10,9 @@ export const DELVE_LEVEL = 10;
 /** Level id for the dragon arena (boss-only). Portal returns to hub. */
 export const DRAGON_ARENA_LEVEL = 11;
 
+/** Level id for the ogre den (Village Outskirts boss). Portal returns to hub. */
+export const OGRE_DEN_LEVEL = 12;
+
 export const difficulties: Record<string, DifficultyDef> = {
   normal: {
     id: 'normal',
@@ -131,7 +134,7 @@ export function getRandomQuestsForBoard(count: number = 3): Quest[] {
     chosen = shuffled.slice(0, count);
   }
   return chosen.map((q) => {
-    if (q.questType === 'delve' || q.level === DRAGON_ARENA_LEVEL) return q;
+    if (q.questType === 'delve' || q.level === DRAGON_ARENA_LEVEL || q.level === OGRE_DEN_LEVEL) return q;
     const { objectiveType, objectiveParams } = getRandomObjectiveForLevel(q.level);
     return { ...q, objectiveType, objectiveParams };
   });
@@ -157,11 +160,20 @@ export function getQuestDescription(quest: Quest): string[] {
     }
     return lines;
   }
+  if (quest.level === OGRE_DEN_LEVEL) {
+    lines.push('Slay the Ogre to open the portal.');
+    lines.push('Boss: Village Ogre');
+    if (quest.difficulty?.goldMultiplier != null && quest.difficulty.goldMultiplier > 1) {
+      lines.push(`${(quest.difficulty.goldMultiplier * 100 - 100).toFixed(0)}% bonus gold`);
+    }
+    return lines;
+  }
   const levels = GameConfig?.levels ?? {};
   const levelConfig = levels[quest.level] as { enemyTypes?: string[] } | undefined;
   const enemyLabel =
     levelConfig?.enemyTypes?.length &&
-    quest.level !== DRAGON_ARENA_LEVEL
+    quest.level !== DRAGON_ARENA_LEVEL &&
+    quest.level !== OGRE_DEN_LEVEL
       ? (() => {
           const unique = [...new Set(levelConfig.enemyTypes)];
           return unique.length <= 3 ? unique.join(', ') : `${unique.slice(0, 2).join(', ')} and more`;

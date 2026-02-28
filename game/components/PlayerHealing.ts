@@ -12,8 +12,6 @@ interface PlayerHealingEntity {
 export class PlayerHealing implements Component {
   maxCharges: number;
   charges: number;
-  chargeRegenTimer: number;
-  chargeRegenTime: number;
   drinkTime: number;
   regenRate: number;
   regenDuration: number;
@@ -22,11 +20,9 @@ export class PlayerHealing implements Component {
   entity: PlayerHealingEntity | null;
 
   constructor() {
-    const cfg = (GameConfig as { player?: { heal?: { maxCharges?: number; chargeRegenTime?: number; drinkTime?: number; regenRate?: number; regenDuration?: number } } }).player?.heal ?? {};
+    const cfg = (GameConfig as { player?: { heal?: { maxCharges?: number; initialCharges?: number; drinkTime?: number; regenRate?: number; regenDuration?: number } } }).player?.heal ?? {};
     this.maxCharges = cfg.maxCharges ?? 3;
-    this.charges = this.maxCharges;
-    this.chargeRegenTimer = 0;
-    this.chargeRegenTime = cfg.chargeRegenTime ?? 30;
+    this.charges = cfg.initialCharges ?? 0;
     this.drinkTime = cfg.drinkTime ?? 2;
     this.regenRate = cfg.regenRate ?? 20;
     this.regenDuration = cfg.regenDuration ?? 2;
@@ -93,16 +89,6 @@ export class PlayerHealing implements Component {
         this.phaseTimer = 0;
       }
       return;
-    }
-
-    if (this.charges < this.maxCharges) {
-      this.chargeRegenTimer += deltaTime;
-      if (this.chargeRegenTimer >= this.chargeRegenTime) {
-        this.charges = Math.min(this.maxCharges, this.charges + 1);
-        this.chargeRegenTimer = 0;
-      }
-    } else {
-      this.chargeRegenTimer = 0;
     }
   }
 }

@@ -25,12 +25,22 @@ const BUTTON_W = 120;
 const BUTTON_H = 32;
 const GAP = 10;
 
+/** Header height for reroll panel (drag handle area). */
+export const REROLL_HEADER_H = 45;
+
 export function getRerollOverlayLayout(canvas: HTMLCanvasElement, ps: PlayingStateShape): RerollOverlayLayout {
   const cw = canvas.width;
   const ch = canvas.height;
   const panelW = Math.min(380, cw - 80);
   const panelH = Math.min(320, ch - 80);
-  const panel = { x: (cw - panelW) / 2, y: (ch - panelH) / 2, w: panelW, h: panelH };
+  let panelX = (cw - panelW) / 2;
+  let panelY = (ch - panelH) / 2;
+  const po = ps.uiPanelOffsets?.reroll;
+  if (po) {
+    panelX += po.dx;
+    panelY += po.dy;
+  }
+  const panel = { x: panelX, y: panelY, w: panelW, h: panelH };
   const back = { x: panel.x + panel.w - 52, y: panel.y + 12, w: 40, h: 28 };
   const titleY = panel.y + 38;
   const slot = {

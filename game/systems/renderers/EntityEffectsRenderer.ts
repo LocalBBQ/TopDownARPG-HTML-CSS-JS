@@ -16,12 +16,12 @@ import type { CameraShape } from '../../types/camera.ts';
 /** Enemy type IDs that are tier-2 (2★) variants. */
 const TIER2_ENEMY_TYPES = new Set<string>([
   'goblinBrute', 'skeletonVeteran', 'zombieVeteran', 'banditVeteran',
-  'lesserDemonVeteran', 'greaterDemonVeteran', 'goblinChieftainVeteran', 'fireDragonAlpha'
+  'lesserDemonVeteran', 'greaterDemonVeteran', 'goblinChieftainVeteran', 'fireDragonAlpha', 'villageOgreAlpha'
 ]);
 /** Enemy type IDs that are tier-3 (3★) variants. */
 const TIER3_ENEMY_TYPES = new Set<string>([
   'goblinElite', 'skeletonElite', 'zombieElite', 'banditElite',
-  'lesserDemonElite', 'greaterDemonElite', 'goblinChieftainElite', 'fireDragonElite'
+  'lesserDemonElite', 'greaterDemonElite', 'goblinChieftainElite', 'fireDragonElite', 'villageOgreElite'
 ]);
 
 export const EntityEffectsRenderer = {

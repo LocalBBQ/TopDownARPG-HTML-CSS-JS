@@ -10,63 +10,32 @@
     <div id="game-container">
         <canvas id="gameCanvas" tabindex="0"></canvas>
         <div id="ui-overlay">
-            <div id="delve-floor-indicator" class="delve-floor-indicator hidden" aria-live="polite">Floor 1</div>
-            <div id="game-hud">
-            <div id="effect-stacks-grid" class="effect-stacks-grid hidden" aria-label="Status effect stacks">
-                <div id="effect-rising-gale" class="effect-box" data-effect="risingGale" title="Rising Gale (Blessed Winds): 2 stacks = Storm Release">
-                    <span id="rising-gale-stack-count" class="effect-box-count">0/2</span>
-                </div>
-            </div>
-            <div id="orb-row">
-                <div class="orb-wrapper">
-                    <div id="health-orb" class="orb health-orb" title="Health">
-                        <div class="orb-frame"></div>
-                        <div id="health-orb-fill" class="orb-fill health-fill" style="height: 100%;"></div>
-                    </div>
-                    <div class="orb-caption">
-                        <span class="orb-label">Health</span>
-                        <span id="health-text" class="orb-text">100/100</span>
-                    </div>
-                </div>
-                <div class="orb-wrapper">
-                    <div id="stamina-orb" class="orb stamina-orb" title="Stamina">
-                        <div class="orb-frame"></div>
-                        <div id="stamina-orb-fill" class="orb-fill stamina-fill" style="height: 100%;"></div>
-                    </div>
-                    <div class="orb-caption">
-                        <span class="orb-label">Stamina</span>
-                        <span id="stamina-text" class="orb-text">50/50</span>
-                    </div>
-                </div>
-            </div>
-            <div id="stats-extra">
-                <div class="stat-bar stun-buildup">
-                    <label>Stun</label>
-                    <div class="bar-container">
-                        <div id="stun-bar" class="bar stun"></div>
-                    </div>
-                </div>
-                <div id="stun-duration-row" class="stat-bar stun-duration" style="display: none;">
-                    <label>Stunned</label>
-                    <div class="bar-container">
-                        <div id="stun-duration-bar" class="bar stun-duration-bar"></div>
-                    </div>
-                </div>
-                <div class="stat-bar heal-charges">
-                    <label>Heal</label>
-                    <div class="potion-bottle" title="Healing potion charges">
-                        <div class="potion-bottle-frame"></div>
-                        <div id="potion-fill" class="potion-fill" style="height: 100%;"></div>
-                    </div>
-                    <span id="heal-charges" class="heal-charges-text">3/3</span>
-                </div>
-            </div>
-            </div>
-            </div>
+            <!-- Stats HUD (orbs, stun, heal, effect stacks, delve floor) is drawn on the game canvas in the render loop. -->
         </div>
 
         <!-- Inventory is canvas-only (Tab to open); this div is kept for visibility toggle. -->
         <div id="inventory-screen" class="inventory-screen hidden" aria-label="Inventory overlay"></div>
+
+        <!-- Leaflet: hint to open Strategy Crafting (top-left; covered when pane opens). -->
+        <div id="strategy-crafting-leaflet" class="strategy-crafting-leaflet" aria-hidden="true">
+            <span class="strategy-crafting-leaflet-text">Press</span>
+            <span class="strategy-crafting-leaflet-key">V</span>
+            <span class="strategy-crafting-leaflet-text">for Strategy Crafting</span>
+        </div>
+        <!-- Strategy Crafting: hold V to open; arrow keys enter recipe sequence. -->
+        <div id="strategy-crafting-pane" class="strategy-crafting-pane" aria-label="Strategy Crafting">
+            <div class="strategy-crafting-pane-inner">
+                <h2 class="strategy-crafting-title">Strategy Crafting</h2>
+                <p class="strategy-crafting-hint">Hold V · WASD</p>
+                <div id="strategy-crafting-buffer-wrap" class="strategy-crafting-buffer-wrap">
+                    <span class="strategy-crafting-buffer-label">Input:</span>
+                    <span id="strategy-crafting-buffer" class="strategy-crafting-buffer">—</span>
+                </div>
+                <div id="strategy-crafting-list" class="strategy-crafting-list" role="list">
+                    <!-- Filled by StrategyCraftingPane.ts -->
+                </div>
+            </div>
+        </div>
 
         <!-- Equipment chest (hub: E at chest to open, grid of weapons/equipment) -->
         <div id="equipment-chest-overlay" class="equipment-chest-overlay hidden" aria-label="Equipment chest">

@@ -334,5 +334,37 @@ export const SceneTilesForest: Record<string, { width: number; height: number; o
                 { type: 'herb', x: 320, y: 450, width: 32, height: 32 },
                 { type: 'herb', x: 450, y: 370, width: 32, height: 32 }
             ]
+        },
+
+        /** Ogre den: cave mouth with rocks, rubble, dense trees, and enterable cave entrance. No pack spawn; boss lives inside. */
+        ogreDen: {
+            width: 1200,
+            height: 1200,
+            obstacles: [
+                { type: 'rock', x: 180, y: 260, width: 90, height: 70 },
+                { type: 'rock', x: 620, y: 220, width: 85, height: 75 },
+                { type: 'rock', x: 340, y: 320, width: 70, height: 55 },
+                { type: 'rock', x: 520, y: 280, width: 65, height: 50 },
+                { type: 'rock', x: 720, y: 380, width: 80, height: 60 },
+                { type: 'rock', x: 380, y: 480, width: 75, height: 58 },
+                { type: 'rock', x: 240, y: 520, width: 88, height: 72 },
+                { type: 'rock', x: 580, y: 540, width: 62, height: 48 },
+                { type: 'rock', x: 140, y: 400, width: 78, height: 65 },
+                { type: 'rock', x: 660, y: 600, width: 72, height: 55 },
+                { type: 'rubble', x: 360, y: 380, width: 70, height: 70 },
+                { type: 'rubble', x: 500, y: 360, width: 65, height: 65 },
+                { type: 'stoneDebris', x: 440, y: 440, width: 50, height: 50 },
+                { type: 'stoneDebris', x: 320, y: 360, width: 45, height: 45 },
+                { type: 'caveEntrance', x: 455, y: 385, width: 100, height: 80, targetLevel: 12, returnLevel: 1, passable: true },
+                { type: 'tree', x: 120, y: 180, width: 120, height: 120 },
+                { type: 'tree', x: 640, y: 160, width: 110, height: 110 },
+                { type: 'tree', x: 80, y: 520, width: 100, height: 100 },
+                { type: 'tree', x: 680, y: 500, width: 115, height: 115 },
+                { type: 'tree', x: 200, y: 100, width: 95, height: 95 },
+                { type: 'tree', x: 580, y: 520, width: 105, height: 105 },
+                { type: 'bush', x: 260, y: 340, width: 52, height: 52 },
+                { type: 'bush', x: 560, y: 420, width: 48, height: 48 },
+                { type: 'bush', x: 320, y: 520, width: 50, height: 50 }
+            ]
         }
 };

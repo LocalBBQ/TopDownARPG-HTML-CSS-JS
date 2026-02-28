@@ -8,7 +8,7 @@ import { Health } from '../../components/Health.ts';
 import { Renderable } from '../../components/Renderable.ts';
 import { PlayerHealing } from '../../components/PlayerHealing.ts';
 import { Stamina } from '../../components/Stamina.ts';
-import { PlayerCombatRenderer } from '../../renderers/PlayerCombatRenderer.ts';
+import { PlayerCombatRenderer } from './PlayerCombatRenderer.ts';
 import { getBowChargeLevel } from '../../weapons/bowShotEffects.ts';
 import type { RenderContext } from './RenderContext.ts';
 import type { EntityShape } from '../../types/entity.ts';
@@ -42,7 +42,8 @@ export const PlayerEntityRenderer = {
         const weapon = combat && combat.attackHandler ? combat.attackHandler.weapon : (combat && combat.playerAttack ? combat.playerAttack.weapon : null);
         const isRanged = weapon && (weapon as { isRanged?: boolean }).isRanged === true;
         const isBow = isRanged && (weapon as { isBow?: boolean }).isBow === true;
-        const isCrossbow = isRanged && !isBow;
+        const isStaff = weapon && ((weapon as { isStaff?: boolean }).isStaff === true || (weapon.name && String(weapon.name).toLowerCase().includes('staff')));
+        const isCrossbow = isRanged && !isBow && !isStaff;
         const isMace = weapon && weapon.name && String(weapon.name).toLowerCase().includes('mace');
 
         if (movement && movement.path.length > 0) {
@@ -79,7 +80,7 @@ export const PlayerEntityRenderer = {
             ctx.beginPath();
             ctx.ellipse(screenX, screenY + (transform.height / 2 + 6) * camera.zoom, (transform.width * 0.65) * camera.zoom, (transform.height / 3.5) * camera.zoom, 0, 0, Math.PI * 2);
             ctx.fill();
-            if (weapon && showWeapon && !isRanged && !isMace) {
+            if (weapon && showWeapon && !isRanged && !isMace && !isStaff) {
                 PlayerCombatRenderer.drawSword(ctx, screenX, screenY, transform, movement, combat, camera, { part: 'handle' });
             }
             const isDodging = movement && movement.isDodging;
@@ -88,53 +89,123 @@ export const PlayerEntityRenderer = {
             if (isDodging) ctx.globalAlpha = 0.6;
             const lw = Math.max(1, 2 / camera.zoom);
             ctx.lineWidth = lw;
-            const steel = isDodging ? '#707080' : (combat && combat.isAttacking ? '#9a8b8b' : '#8b8b9a');
-            const steelDark = '#5a5a68';
-            const steelDarker = '#4a4a58';
+            const playingState = systems?.get?.('playingState') as { playerClass?: string } | undefined;
+            const playerClass = playingState?.playerClass;
+            const isMage = playerClass === 'mage';
+            const isRogue = playerClass === 'rogue';
             ctx.save();
             ctx.translate(screenX, screenY);
             ctx.rotate(movement ? movement.facingAngle : 0);
-            const helmetRx = w * 0.42;
-            const helmetRy = w * 0.38;
-            const paulOffsetY = helmetRy * 0.72;
-            const paulRx = w * 0.22;
-            const paulRy = w * 0.28;
-            ctx.fillStyle = steel;
-            ctx.strokeStyle = steelDarker;
-            ctx.lineWidth = lw;
-            ctx.beginPath();
-            ctx.ellipse(0, paulOffsetY, paulRx, paulRy, 0, 0, Math.PI * 2);
-            ctx.ellipse(0, -paulOffsetY, paulRx, paulRy, 0, 0, Math.PI * 2);
-            ctx.fill();
-            ctx.stroke();
-            ctx.fillStyle = isDodging ? '#505060' : steelDark;
-            ctx.strokeStyle = steelDarker;
-            ctx.beginPath();
-            ctx.ellipse(0, 0, helmetRx, helmetRy, 0, 0, Math.PI * 2);
-            ctx.fill();
-            ctx.stroke();
-            ctx.strokeStyle = 'rgba(0, 0, 0, 0.85)';
-            ctx.lineWidth = Math.max(1.5, lw * 1.2);
-            ctx.beginPath();
-            ctx.moveTo(helmetRx * 0.35, 0);
-            ctx.lineTo(helmetRx * 0.95, 0);
-            ctx.stroke();
-            ctx.strokeStyle = 'rgba(255, 255, 255, 0.12)';
-            ctx.lineWidth = lw * 0.5;
-            ctx.beginPath();
-            ctx.moveTo(-helmetRx * 0.5, 0);
-            ctx.lineTo(helmetRx * 0.5, 0);
-            ctx.stroke();
+            if (isMage) {
+                // Wizard top-down (matches class select): sleeves, bald head under hood, hood, hat tip
+                const hoodRx = w * 0.42;
+                const hoodRy = w * 0.38;
+                const sleeveOffsetY = hoodRy * 0.72;
+                const sleeveRx = w * 0.22;
+                const sleeveRy = w * 0.28;
+                const robeFill = isDodging ? '#2a1a3a' : (combat && combat.isAttacking ? '#4a3a5a' : '#3d2d4d');
+                const robeStroke = '#2a2035';
+                const hoodFill = isDodging ? '#2a1a32' : '#352540';
+                const hoodStroke = '#2a2035';
+                const headFill = isDodging ? '#5a4a4a' : '#8b7355';
+                const headStroke = '#6a5a48';
+                ctx.fillStyle = robeFill;
+                ctx.strokeStyle = robeStroke;
+                ctx.lineWidth = lw;
+                ctx.beginPath();
+                ctx.ellipse(0, sleeveOffsetY, sleeveRx, sleeveRy, 0, 0, Math.PI * 2);
+                ctx.ellipse(0, -sleeveOffsetY, sleeveRx, sleeveRy, 0, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.stroke();
+                // Bald head (small, mostly covered by hood)
+                ctx.fillStyle = headFill;
+                ctx.strokeStyle = headStroke;
+                ctx.beginPath();
+                ctx.ellipse(0, 0, hoodRx * 0.5, hoodRy * 0.55, 0, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.stroke();
+                // Hood covering the head
+                ctx.fillStyle = hoodFill;
+                ctx.strokeStyle = hoodStroke;
+                ctx.beginPath();
+                ctx.ellipse(0, 0, hoodRx, hoodRy, 0, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.stroke();
+            } else if (isRogue) {
+                // Rogue top-down: all brown hood and shoulders, no face opening
+                const hoodRx = w * 0.44;
+                const hoodRy = w * 0.40;
+                const shoulderOffsetY = hoodRy * 0.68;
+                const shoulderRx = w * 0.18;
+                const shoulderRy = w * 0.24;
+                const brownFill = isDodging ? '#5c4a3a' : (combat && combat.isAttacking ? '#6b5a4a' : '#5a4a3a');
+                const brownStroke = '#3d3228';
+                // Slim shoulders
+                ctx.fillStyle = brownFill;
+                ctx.strokeStyle = brownStroke;
+                ctx.lineWidth = lw;
+                ctx.beginPath();
+                ctx.ellipse(0, shoulderOffsetY, shoulderRx, shoulderRy, 0, 0, Math.PI * 2);
+                ctx.ellipse(0, -shoulderOffsetY, shoulderRx, shoulderRy, 0, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.stroke();
+                // Hood: large draping shape
+                ctx.fillStyle = brownFill;
+                ctx.strokeStyle = brownStroke;
+                ctx.lineWidth = lw;
+                ctx.beginPath();
+                ctx.ellipse(0, 0, hoodRx, hoodRy, 0, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.stroke();
+            } else {
+                // Knight: pauldrons + helmet
+                const steel = isDodging ? '#707080' : (combat && combat.isAttacking ? '#9a8b8b' : '#8b8b9a');
+                const steelDark = '#5a5a68';
+                const steelDarker = '#4a4a58';
+                const helmetRx = w * 0.42;
+                const helmetRy = w * 0.38;
+                const paulOffsetY = helmetRy * 0.72;
+                const paulRx = w * 0.22;
+                const paulRy = w * 0.28;
+                ctx.fillStyle = steel;
+                ctx.strokeStyle = steelDarker;
+                ctx.lineWidth = lw;
+                ctx.beginPath();
+                ctx.ellipse(0, paulOffsetY, paulRx, paulRy, 0, 0, Math.PI * 2);
+                ctx.ellipse(0, -paulOffsetY, paulRx, paulRy, 0, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.stroke();
+                ctx.fillStyle = isDodging ? '#505060' : steelDark;
+                ctx.strokeStyle = steelDarker;
+                ctx.beginPath();
+                ctx.ellipse(0, 0, helmetRx, helmetRy, 0, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.stroke();
+                ctx.strokeStyle = 'rgba(0, 0, 0, 0.85)';
+                ctx.lineWidth = Math.max(1.5, lw * 1.2);
+                ctx.beginPath();
+                ctx.moveTo(helmetRx * 0.35, 0);
+                ctx.lineTo(helmetRx * 0.95, 0);
+                ctx.stroke();
+                ctx.strokeStyle = 'rgba(255, 255, 255, 0.12)';
+                ctx.lineWidth = lw * 0.5;
+                ctx.beginPath();
+                ctx.moveTo(-helmetRx * 0.5, 0);
+                ctx.lineTo(helmetRx * 0.5, 0);
+                ctx.stroke();
+            }
             ctx.restore();
             ctx.globalAlpha = 1.0;
             if (weapon && showWeapon) {
                 if (isBow) {
                     const bowChargeLevel = getBowChargeLevelForRender(inputSystem, GameConfig.player?.bow);
                     PlayerCombatRenderer.drawBow(ctx, screenX, screenY, transform, movement, combat, camera, bowChargeLevel);
-                } else if (isRanged) {
+                } else if (isRanged && !isStaff) {
                     PlayerCombatRenderer.drawCrossbow(ctx, screenX, screenY, transform, movement, combat, camera);
                 } else if (isMace) {
                     PlayerCombatRenderer.drawMace(ctx, screenX, screenY, transform, movement, combat, camera);
+                } else if (isStaff) {
+                    PlayerCombatRenderer.drawStaff(ctx, screenX, screenY, transform, movement, combat, camera);
                 } else {
                     PlayerCombatRenderer.drawSword(ctx, screenX, screenY, transform, movement, combat, camera, { part: 'blade' });
                 }
@@ -282,7 +353,8 @@ export const PlayerEntityRenderer = {
         const weapon = combat && combat.attackHandler ? combat.attackHandler.weapon : (combat && combat.playerAttack ? combat.playerAttack.weapon : null);
         const isRanged = weapon && (weapon as { isRanged?: boolean }).isRanged === true;
         const isBow = isRanged && (weapon as { isBow?: boolean }).isBow === true;
-        const isCrossbow = isRanged && !isBow;
+        const isStaff = weapon && ((weapon as { isStaff?: boolean }).isStaff === true || (weapon.name && String(weapon.name).toLowerCase().includes('staff')));
+        const isCrossbow = isRanged && !isBow && !isStaff;
         const isMace = weapon && weapon.name && String(weapon.name).toLowerCase().includes('mace');
         const showWeapon = !healing || !healing.isHealing;
         const useCharacterSprites = !settings || settings.useCharacterSprites !== false;
@@ -302,10 +374,12 @@ export const PlayerEntityRenderer = {
                     if (isBow && combat && movement && transform) {
                         const bowChargeLevel = getBowChargeLevelForRender(inputSystem, GameConfig.player?.bow);
                         PlayerCombatRenderer.drawBow(ctx, screenX, screenY, transform, movement, combat, camera, bowChargeLevel);
-                    } else if (isRanged && combat && movement && transform) {
+                    } else if (isRanged && !isStaff && combat && movement && transform) {
                         PlayerCombatRenderer.drawCrossbow(ctx, screenX, screenY, transform, movement, combat, camera);
                     } else if (isMace && combat && movement && transform) {
                         PlayerCombatRenderer.drawMace(ctx, screenX, screenY, transform, movement, combat, camera);
+                    } else if (isStaff && combat && movement && transform) {
+                        PlayerCombatRenderer.drawStaff(ctx, screenX, screenY, transform, movement, combat, camera);
                     } else if (combat && movement && transform) {
                         PlayerCombatRenderer.drawSword(ctx, screenX, screenY, transform, movement, combat, camera);
                     }
@@ -322,10 +396,12 @@ export const PlayerEntityRenderer = {
                 if (isBow && combat && movement && transform) {
                     const bowChargeLevel = getBowChargeLevelForRender(inputSystem, GameConfig.player?.bow);
                     PlayerCombatRenderer.drawBow(ctx, screenX, screenY, transform, movement, combat, camera, bowChargeLevel);
-                } else if (isRanged && combat && movement && transform) {
+                } else if (isRanged && !isStaff && combat && movement && transform) {
                     PlayerCombatRenderer.drawCrossbow(ctx, screenX, screenY, transform, movement, combat, camera);
                 } else if (isMace && combat && movement && transform) {
                     PlayerCombatRenderer.drawMace(ctx, screenX, screenY, transform, movement, combat, camera);
+                } else if (isStaff && combat && movement && transform) {
+                    PlayerCombatRenderer.drawStaff(ctx, screenX, screenY, transform, movement, combat, camera);
                 } else if (combat && movement && transform) {
                     PlayerCombatRenderer.drawSword(ctx, screenX, screenY, transform, movement, combat, camera);
                 }

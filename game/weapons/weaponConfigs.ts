@@ -214,6 +214,27 @@ const bowConfig: WeaponConfigInput = {
     }
 };
 
+const staffConfig: WeaponConfigInput = {
+    name: 'staff',
+    twoHanded: false,
+    baseRange: 500,
+    baseDamage: 18,
+    baseArcDegrees: 0,
+    cooldown: 0,
+    comboWindow: 0,
+    stages: [],
+    isRanged: true,
+    isStaff: true,
+    block: {
+        enabled: true,
+        arcDegrees: 60,
+        damageReduction: 0.28,
+        staminaCost: 18,
+        animationKey: 'block',
+        blockAttack: {} // use default block attack (charge + lunge) like other blockable weapons
+    }
+};
+
 const maceConfig: WeaponConfigInput = {
     name: 'mace',
     twoHanded: false,
@@ -340,13 +361,11 @@ export const ChieftainClubWeaponInstance = Weapon.fromConfig(chieftainClubConfig
 export const GoblinDaggerWeaponInstance = Weapon.fromConfig(goblinDaggerConfig);
 export const BlessedWindsWeaponInstance = Weapon.fromConfig(blessedWindsConfig);
 
-/** Base configs for tiered player weapons (used by WeaponsRegistry to build material variants). */
+/** Base configs for tiered player weapons (used by WeaponsRegistry to build material variants). Bow, crossbow, staff use their own progression and are registered separately. */
 export const BASE_WEAPON_CONFIGS: Record<string, WeaponConfigInput> = {
     sword: swordConfig,
     greatsword: greatswordConfig,
     dagger: daggerConfig,
-    mace: maceConfig,
-    crossbow: crossbowConfig,
-    bow: bowConfig
+    mace: maceConfig
 };
-export { shieldConfig, defenderConfig, blessedWindsConfig };
+export { shieldConfig, defenderConfig, blessedWindsConfig, crossbowConfig, bowConfig, staffConfig };

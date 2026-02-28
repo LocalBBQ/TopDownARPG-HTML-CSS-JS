@@ -3,7 +3,7 @@ import '../bootstrap.js';
 
 import { EntityManager } from '../managers/EntityManager.js';
 import { GameConfig } from '../config/GameConfig.js';
-import { DELVE_LEVEL, DRAGON_ARENA_LEVEL } from '../config/questConfig.js';
+import { DELVE_LEVEL, DRAGON_ARENA_LEVEL, OGRE_DEN_LEVEL } from '../config/questConfig.js';
 import { tryUnlockNextBiome } from '../config/staticQuests.js';
 import { ScreenManager } from './ScreenManager.js';
 import { SystemManager, type SystemLike } from './SystemManager.js';
@@ -34,6 +34,7 @@ import { Sprite } from '../components/Sprite.js';
 import { Animation } from '../components/Animation.js';
 import { PlayerInputController, type GameLike } from '../controllers/PlayerInputController.js';
 import { InventoryChestUIController } from '../controllers/InventoryChestUIController.js';
+import { PlayerHealing } from '../components/PlayerHealing.js';
 import { EventTypes } from './EventTypes.js';
 import { Movement } from '../components/Movement.js';
 import { Weapons } from '../weapons/WeaponsRegistry.js';
@@ -41,7 +42,7 @@ import { getEffectiveWeapon } from '../weapons/resolveEffectiveWeapon.js';
 import { getEquipSlotForWeapon } from '../weapons/weaponSlot.js';
 import type { GameRef, GameConfigShape } from '../types/index.js';
 import type { GameSystems } from '../types/systems.js';
-import { PlayingState, INVENTORY_SLOT_COUNT, MAX_WEAPON_DURABILITY, MAX_ARMOR_DURABILITY } from '../state/PlayingState.js';
+import { PlayingState, getActiveWeaponSet, type PlayerClass, INVENTORY_SLOT_COUNT, MAX_WEAPON_DURABILITY, MAX_ARMOR_DURABILITY } from '../state/PlayingState.js';
 import {
     addHerbToInventory,
     addMushroomToInventory,
@@ -58,13 +59,17 @@ import {
 } from '../state/InventoryActions.js';
 import { equipArmorFromInventory, unequipArmorToInventory, swapArmorWithInventory, swapArmorWithArmor, canEquipArmorInSlot } from '../state/ArmorActions.js';
 import { getArmor, SHOP_ARMOR_ENTRIES } from '../armor/armorConfigs.js';
-import { createPlayer as createPlayerEntity, type PlayerConfigLike, type SpriteManagerLike } from './PlayerFactory.js';
+import { createPlayer as createPlayerEntity, type PlayerConfigLike, type SpriteManagerLike } from '../entities/PlayerFactory.js';
+import { loadSave, saveToSlot } from './SaveManager.js';
 import { ScreenController } from './ScreenController.js';
 import { PlayingStateController } from './PlayingStateController.js';
+import { StrategyCraftingInputController } from '../controllers/StrategyCraftingInputController.js';
+import { setStrategyCraftingPaneVisible, updateStrategyCraftingPane, showRecipeSuccess, initStrategyCraftingPaneDraggable } from '../ui/StrategyCraftingPane.js';
 import { HUDController } from '../ui/HUDController.js';
 import { updateCrossbowReload } from '../utils/crossbowReload.js';
 import { AI } from '../components/AI.js';
 import { renderQuestCompleteFlair } from '../ui/QuestCompleteFlair.js';
+import { renderStatsHUD } from '../ui/StatsHUDCanvas.js';
 import {
     renderInventory,
     renderChest,
@@ -113,11 +118,13 @@ class Game {
     /** Set when pointer is over a weapon or armor slot (chest/inventory); cleared when moving away or closing. */
     tooltipHover: TooltipHover = null;
     inventoryChestUIController!: InventoryChestUIController;
-    private _debugTitleRenderLogged = false;
-    private _debugTitleDeathEntryCount = 0;
+    strategyCraftingInputController!: StrategyCraftingInputController;
     /** Cached canvas rect for pointer events; invalidated on resize to avoid getBoundingClientRect every mousemove. */
     private _cachedCanvasRect: { left: number; top: number; width: number; height: number } | null = null;
     private _globalInputHandlersBound = false;
+    /** When the user selects a class before assets have loaded, we defer startNewGame until load completes. */
+    private _pendingClassAfterLoad: PlayerClass | null = null;
+    private _assetsLoaded = false;
 
     /** Type-safe systems access; only use after systems are initialized. */
     private get systemsTyped(): GameSystems {
@@ -165,34 +172,28 @@ class Game {
             
             // Size canvas and create screen manager
             this.initCanvas();
-            // #region agent log
-            fetch('http://127.0.0.1:7243/ingest/3c21c460-5323-4315-bab2-130db5d256b7',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'Game.ts:afterInitCanvas',message:'after initCanvas',data:{hasScreenManager:!!this.screenManager,canvasW:this.canvas?.width,canvasH:this.canvas?.height},timestamp:Date.now(),hypothesisId:'H1'})}).catch(()=>{});
-            // #endregion
             // Create systems synchronously so the game loop can run
             this.initSystems();
-            // #region agent log
-            fetch('http://127.0.0.1:7243/ingest/3c21c460-5323-4315-bab2-130db5d256b7',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'Game.ts:afterInitSystems',message:'after initSystems',data:{hasSystems:!!this.systems},timestamp:Date.now(),hypothesisId:'H1'})}).catch(()=>{});
-            // #endregion
-            // Show title screen immediately and start the loop (title is visible while assets load)
+            // Show title screen immediately; attach menu click listener before starting the loop so clicks work from frame one
             this.screenManager.setScreen('title');
             this.updateUIVisibility(false);
-            this.renderTitleOrDeathScreen();
+            this.renderMenuScreen();
+            this.screenController = new ScreenController(this);
+            this.setupEventListeners();
+
             this.running = true;
             this.lastTime = performance.now();
-            // #region agent log
-            fetch('http://127.0.0.1:7243/ingest/3c21c460-5323-4315-bab2-130db5d256b7',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'Game.ts:beforeStart',message:'calling start(), running=true',data:{},timestamp:Date.now(),hypothesisId:'H4'})}).catch(()=>{});
-            // #endregion
             this.start();
 
-            // Load assets in background; when done, wire up controllers and input so title is interactive
+            // Load assets in background; when done, wire up rest of controllers and run any deferred new-game
             this.loadAssets().then(() => {
+                this._assetsLoaded = true;
                 this.hudController = new HUDController({
                     playingState: this.playingState,
                     systems: this.systems!,
                     entities: this.entities
                 });
                 this.playingStateController = new PlayingStateController(this);
-                this.screenController = new ScreenController(this);
                 this.inventoryChestUIController = new InventoryChestUIController({
                     playingState: this.playingState,
                     canvas: this.canvas,
@@ -205,9 +206,17 @@ class Game {
                     setTooltipHover: (v) => { this.tooltipHover = v; },
                     setInventoryPanelVisible: (v) => this.hudController.setInventoryPanelVisible(v),
                 });
-                this.setupEventListeners();
                 this.bindGlobalInputHandlers();
                 this.bindCombatFeedbackListeners();
+                if (this._pendingClassAfterLoad != null) {
+                    const pending = this._pendingClassAfterLoad;
+                    this._pendingClassAfterLoad = null;
+                    try {
+                        this.startNewGame(pending);
+                    } catch (err) {
+                        console.error('Deferred startNewGame failed:', err);
+                    }
+                }
                 console.log('Game initialized successfully');
             }).catch((error) => {
                 console.error('Game initialization error:', error);
@@ -238,6 +247,7 @@ class Game {
     get inventoryOpen() { return this.playingState.inventoryOpen; }
     set inventoryOpen(v) { this.playingState.inventoryOpen = v; }
     get chestOpen() { return this.playingState.chestOpen; }
+    get strategyCraftingOpen() { return this.playingState.strategyCraftingOpen; }
     set chestOpen(v) { this.playingState.chestOpen = v; }
     get shopOpen() { return this.playingState.shopOpen; }
     set shopOpen(v) { this.playingState.shopOpen = v; }
@@ -652,7 +662,10 @@ class Game {
             const maxLevel = levelKeys.length ? Math.max(...levelKeys) : 3;
             const isDelve = currentLevel === DELVE_LEVEL;
             const isDragonArena = currentLevel === DRAGON_ARENA_LEVEL;
-            const portalTargetLevel = isDragonArena ? 0 : (isDelve ? DELVE_LEVEL : Math.min(currentLevel + 1, maxLevel));
+            const isOgreDen = currentLevel === OGRE_DEN_LEVEL;
+            const returnFromOgreDen = isOgreDen && this.playingState.portalReturnLevel != null;
+            const portalTargetLevel = isDragonArena ? 0
+                : (isOgreDen ? (returnFromOgreDen ? this.playingState.portalReturnLevel! : 0) : (isDelve ? DELVE_LEVEL : Math.min(currentLevel + 1, maxLevel)));
             this.playingState.portal = {
                 x: w / 2 - portalConfig.width / 2,
                 y: h / 2 - portalConfig.height / 2,
@@ -660,17 +673,18 @@ class Game {
                 height: portalConfig.height,
                 spawned: false,
                 targetLevel: portalTargetLevel,
-                hasNextLevel: isDelve || isDragonArena || currentLevel < maxLevel
+                hasNextLevel: isDelve || isDragonArena || isOgreDen || currentLevel < maxLevel
             };
         }
     }
 
     createPlayer(overrideStart: { x: number; y: number } | null = null) {
         const spriteManager = this.systemsTyped.sprites;
+        const active = getActiveWeaponSet(this.playingState);
         const player = createPlayerEntity(overrideStart, {
             spriteManager: spriteManager as SpriteManagerLike,
-            equippedMainhandKey: this.playingState.equippedMainhandKey,
-            equippedOffhandKey: this.playingState.equippedOffhandKey,
+            equippedMainhandKey: active.mainhandKey,
+            equippedOffhandKey: active.offhandKey,
             playerConfig: { ...this.config.player, color: this.config.player.color ?? '#8b8b9a' } as PlayerConfigLike
         });
         if (!this.playerInputController) {
@@ -716,6 +730,10 @@ class Game {
             this.lastPointerDownConsumedByUI = this.isPointerOverInventoryOrChestOrShopUI(x, y) ||
                 (this.settings.showMinimap && hitTestMinimapZoomButtons(this.canvas.width, this.canvas.height, x, y) !== null);
             if (this.handleInventoryChestPointerDown(x, y, e.ctrlKey)) e.preventDefault();
+            const menuScreens = ['title', 'classSelect', 'saveSelect', 'death', 'pause', 'settings', 'settings-controls', 'help'] as const;
+            if (menuScreens.includes(this.screenManager.currentScreen as typeof menuScreens[number])) {
+                this.screenManager.setPressedButton(this.screenManager.getPressedButtonAt(x, y, this.settings));
+            }
         }, true);
         this.canvas.addEventListener('mousemove', (e) => {
             const { x, y } = this.getCanvasCoords(e);
@@ -723,8 +741,14 @@ class Game {
         });
         this.canvas.addEventListener('mouseup', (e) => {
             const { x, y } = this.getCanvasCoords(e);
+            this.screenManager.setPressedButton(null);
             if (this.handleInventoryChestPointerUp(x, y)) e.preventDefault();
         });
+        this.canvas.addEventListener('mouseleave', () => {
+            this.screenManager.setPressedButton(null);
+        });
+
+        initStrategyCraftingPaneDraggable();
     }
 
     bindGlobalInputHandlers() {
@@ -732,6 +756,25 @@ class Game {
         if (this._globalInputHandlersBound) return; // avoid duplicate listeners (memory/performance)
         this._globalInputHandlersBound = true;
         this.screenController.bindGlobalKeys(this.systems.eventBus as { on(event: string, fn: (key: string) => void): void });
+
+        this.strategyCraftingInputController = new StrategyCraftingInputController();
+        this.strategyCraftingInputController.init({
+            playingState: this.playingState,
+            setStrategyCraftingPaneVisible: (v) => this.setStrategyCraftingPaneVisible(v),
+            isStrategyCraftingAllowed: () => this.screenManager.isScreen('playing') || this.screenManager.isScreen('hub'),
+            onStrategyCraftingOpen: () => this.clearPlayerInputsForMenu(),
+            onStrategyCraftSuccess: (recipeId) => showRecipeSuccess(recipeId),
+            getStrategyCraftingContext: () => ({
+                addHealCharge: () => {
+                    const player = this.entities.get('player');
+                    const healing = player?.getComponent(PlayerHealing);
+                    if (healing && healing.charges < healing.maxCharges) {
+                        healing.charges = Math.min(healing.maxCharges, healing.charges + 1);
+                    }
+                }
+            })
+        });
+        this.strategyCraftingInputController.bind(this.systems.eventBus as { on(event: string, fn: (key: string) => void): void });
 
         // Alt+key bindings (reliable; Ctrl+key is often captured by the browser). Extend here for your system.
         const inputSystem = this.systemsTyped.input as { isAltPressed(): boolean } | undefined;
@@ -1019,6 +1062,56 @@ class Game {
         this.updateUIVisibility(false);
     }
 
+    /** Start a new game with the chosen class (resets state with class loadouts, then starts in sanctuary). */
+    startNewGame(selectedClass: PlayerClass) {
+        if (!this._assetsLoaded) {
+            this._pendingClassAfterLoad = selectedClass;
+            return;
+        }
+        this.suppressDodgeUntil = Date.now() + 150;
+        const defaultWeapon = this.config.player?.defaultWeapon ?? 'sword_rusty';
+        const defaultOffhand = this.config.player?.defaultOffhand ?? 'none';
+        this.playingState.reset(defaultWeapon, defaultOffhand, selectedClass);
+        this.screenManager.selectedStartLevel = 0;
+        this.startGame();
+    }
+
+    /** Load a saved game from a slot and start the game at the saved screen/level. */
+    loadGame(slotId: string) {
+        if (!this._assetsLoaded) return;
+        const data = loadSave(slotId);
+        if (!data || !data.playingState) return;
+        const ps = this.playingState as Record<string, unknown>;
+        for (const key of Object.keys(data.playingState)) {
+            if (Object.prototype.hasOwnProperty.call(data.playingState, key)) {
+                ps[key] = data.playingState[key];
+            }
+        }
+        if (data.playerHealth != null) this.playingState.savedSanctuaryHealth = data.playerHealth;
+        if (data.playerStamina != null) this.playingState.savedSanctuaryStamina = data.playerStamina;
+        this.screenManager.selectedStartLevel = data.levelId ?? 0;
+        this.suppressDodgeUntil = Date.now() + 150;
+        this.startGame();
+    }
+
+    /** Save current game to a slot (from pause menu). Saves from hub or playing; when in hub stores current health/stamina. */
+    saveGame(slotId: string) {
+        const player = this.entities.get('player');
+        const health = player?.getComponent(Health);
+        const stamina = player?.getComponent(Stamina);
+        const screen = this.screenManager.currentScreen;
+        const levelId = screen === 'hub' ? 0 : (this.systemsTyped.enemies as { getCurrentLevel?(): number })?.getCurrentLevel?.() ?? 1;
+        const playingStateSnapshot = JSON.parse(JSON.stringify(this.playingState)) as Record<string, unknown>;
+        saveToSlot(slotId, {
+            playingState: playingStateSnapshot,
+            playerClass: (this.playingState.playerClass ?? 'warrior') as 'warrior' | 'mage' | 'rogue',
+            screen: screen === 'hub' ? 'hub' : 'playing',
+            levelId,
+            playerHealth: screen === 'hub' && health ? health.currentHealth : undefined,
+            playerStamina: screen === 'hub' && stamina ? stamina.currentStamina : undefined
+        });
+    }
+
     startGame() {
         // Prevent Space/Enter used to leave title or death from triggering dodge on the same keydown
         this.suppressDodgeUntil = Date.now() + 150;
@@ -1027,7 +1120,7 @@ class Game {
         const cameraSystem = this.systemsTyped.camera;
         const worldConfig = this.config.world;
         const levels = this.config.levels || {};
-        const hubLevel = levels[0];
+        const hubLevel = (selectedLevel === 0 ? (levels[0] ?? (this.config as { hub?: unknown }).hub) : levels[selectedLevel]) ?? undefined;
 
         if (selectedLevel === 0 && this.screenManager.currentScreen === 'playing') {
             const player = this.entities.get('player');
@@ -1059,6 +1152,7 @@ class Game {
             this.playingState.lastEnemyKillY = null;
             this.playingState.questCompleteFlairRemaining = 0;
             this.playingState.questCompleteFlairTriggered = false;
+            this.playingState.portalReturnLevel = null;
             if (enemyManager && enemyManager.setActiveQuest) enemyManager.setActiveQuest(null);
         } else {
             if (this.playingState.activeQuest?.questType === 'delve') {
@@ -1147,8 +1241,12 @@ class Game {
         if (uiOverlay) {
             uiOverlay.style.display = visible ? 'flex' : 'none';
         }
+        const leaflet = document.getElementById('strategy-crafting-leaflet');
+        if (leaflet) (leaflet as HTMLElement).style.display = visible ? '' : 'none';
         if (!visible) {
             this.playingState.inventoryOpen = false;
+            this.playingState.strategyCraftingOpen = false;
+            setStrategyCraftingPaneVisible(false);
             this.tooltipHover = null;
             if (this.hudController) this.hudController.setInventoryPanelVisible(false);
         }
@@ -1215,7 +1313,7 @@ class Game {
                     cameraSystem.follow(transform, this.canvas.width, this.canvas.height, { fastFollow });
                 }
             }
-            this.hudController.update(this.entities.get('player'), undefined);
+            this.hudController?.update(this.entities.get('player'), undefined);
             return;
         }
         if (this.screenManager.currentScreen !== 'playing') {
@@ -1229,8 +1327,8 @@ class Game {
         const player = this.entities.get('player');
         const combat = player ? player.getComponent(Combat) : null;
         const weapon = combat && combat.playerAttack ? combat.playerAttack.weapon : null;
-        const w = weapon as { isRanged?: boolean; isBow?: boolean } | null;
-        const isCrossbow = w && w.isRanged === true && !w.isBow;
+        const w = weapon as { isRanged?: boolean; isBow?: boolean; isStaff?: boolean } | null;
+        const isCrossbow = w && w.isRanged === true && !w.isBow && !w.isStaff;
         updateCrossbowReload(deltaTime, this.playingState, player, this.config, !!isCrossbow);
         this.systems!.update(deltaTime);
         if (player) {
@@ -1263,11 +1361,15 @@ class Game {
         }
         this.playingStateController.updatePortal(deltaTime, player);
         const currentLevel = this.systemsTyped.enemies?.getCurrentLevel();
-        this.hudController.update(player, currentLevel);
+        this.hudController?.update(player, currentLevel);
     }
 
     setInventoryPanelVisible(visible: boolean) {
         if (this.hudController) this.hudController.setInventoryPanelVisible(visible);
+    }
+
+    setStrategyCraftingPaneVisible(visible: boolean) {
+        setStrategyCraftingPaneVisible(visible);
     }
 
     refreshInventoryPanel() {
@@ -1286,7 +1388,7 @@ class Game {
 
     /** Handle Back/Close on inventory or chest canvas UI. Returns true if click was consumed. */
     handleInventoryChestClick(x: number, y: number, e?: MouseEvent): boolean {
-        return this.inventoryChestUIController.handleClick(x, y, e);
+        return this.inventoryChestUIController?.handleClick(x, y, e) ?? false;
     }
 
     private handleInventoryChestDoubleClick(x: number, y: number): boolean {
@@ -1312,7 +1414,7 @@ class Game {
 
     /** Returns true if click was on minimap zoom +/- and was handled. */
     private handleMinimapZoomClick(x: number, y: number): boolean {
-        return this.inventoryChestUIController.handleMinimapZoomClick(x, y);
+        return this.inventoryChestUIController?.handleMinimapZoomClick(x, y) ?? false;
     }
 
     handleInventoryChestPointerDown(x: number, y: number, ctrlKey = false): boolean {
@@ -1356,44 +1458,30 @@ class Game {
         return withSpaces.charAt(0).toUpperCase() + withSpaces.slice(1);
     }
 
-    /** Draw only the title or death screen (shared path). Call once after setScreen('title') or from render(). */
-    renderTitleOrDeathScreen() {
-        // #region agent log
-        if (this._debugTitleDeathEntryCount < 3) {
-            this._debugTitleDeathEntryCount++;
-            const isTitle = this.screenManager?.isScreen('title'); const isDeath = this.screenManager?.isScreen('death');
-            fetch('http://127.0.0.1:7243/ingest/3c21c460-5323-4315-bab2-130db5d256b7',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'Game.ts:renderTitleOrDeathScreen',message:'entry',data:{isTitle,isDeath,hasCtx:!!this.ctx,hasCanvas:!!this.canvas,canvasW:this.canvas?.width,canvasH:this.canvas?.height,currentScreen:this.screenManager?.currentScreen},timestamp:Date.now(),hypothesisId:'H2'})}).catch(()=>{});
-        }
-        // #endregion
-        if (!this.screenManager?.isScreen('title') && !this.screenManager?.isScreen('death')) return;
+    /** Draw title, death, or class-select screen (menu screens). Call from render() when on one of these. */
+    renderMenuScreen() {
+        const onMenu = this.screenManager?.isScreen('title') || this.screenManager?.isScreen('death') || this.screenManager?.isScreen('classSelect') || this.screenManager?.isScreen('saveSelect');
+        if (!onMenu) return;
         if (!this.ctx || !this.canvas) return;
         if (!this.canvas.width || !this.canvas.height) {
             this.canvas.width = window.innerWidth;
             this.canvas.height = window.innerHeight;
         }
+        this.playingState.strategyCraftingOpen = false;
+        setStrategyCraftingPaneVisible(false);
+        const leaflet = document.getElementById('strategy-crafting-leaflet');
+        if (leaflet) (leaflet as HTMLElement).style.display = 'none';
         this.ctx.setTransform(1, 0, 0, 1, 0, 0);
         this.ctx.fillStyle = '#0a0806';
         this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
-        try {
-            this.screenManager.render(this.settings);
-        } catch (e) {
-            // #region agent log
-            fetch('http://127.0.0.1:7243/ingest/3c21c460-5323-4315-bab2-130db5d256b7',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'Game.ts:renderTitleOrDeathScreen',message:'screenManager.render threw',data:{err:String(e)},timestamp:Date.now(),hypothesisId:'H5'})}).catch(()=>{});
-            // #endregion
-            throw e;
-        }
+        this.screenManager.render(this.settings);
     }
 
     render() {
         try {
-            // #region agent log
-            if (!this._debugTitleRenderLogged && (this.screenManager?.currentScreen === 'title' || this.screenManager?.currentScreen === 'death')) {
-                this._debugTitleRenderLogged = true;
-                fetch('http://127.0.0.1:7243/ingest/3c21c460-5323-4315-bab2-130db5d256b7',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'Game.ts:render',message:'taking title/death branch',data:{currentScreen:this.screenManager?.currentScreen},timestamp:Date.now(),hypothesisId:'H3'})}).catch(()=>{});
-            }
-            // #endregion
-            if (this.screenManager.isScreen('title') || this.screenManager.isScreen('death')) {
-                this.renderTitleOrDeathScreen();
+            if (this.screenManager.isScreen('title') || this.screenManager.isScreen('death') || this.screenManager.isScreen('classSelect') || this.screenManager.isScreen('saveSelect')) {
+                this.hudController?.setOverlayScreenActive(true);
+                this.renderMenuScreen();
                 return;
             }
 
@@ -1406,6 +1494,9 @@ class Game {
                 console.error('Missing render or camera system');
                 return;
             }
+
+            const overlayScreenActive = this.screenManager.isScreen('pause') || this.screenManager.isScreen('settings') || this.screenManager.isScreen('settings-controls') || this.screenManager.isScreen('help') || this.playingState.shopOpen || this.playingState.rerollStationOpen;
+            this.hudController.setOverlayScreenActive(overlayScreenActive);
 
             const inHubContext = this.screenManager.isScreen('hub') ||
                 ((this.screenManager.isScreen('pause') || this.screenManager.isScreen('settings') || this.screenManager.isScreen('settings-controls')) && this.playingState.screenBeforePause === 'hub');
@@ -1451,6 +1542,8 @@ class Game {
                     if (this.settings.showMinimap) {
                         renderSystem.renderMinimap(cameraSystem, this.entities, hubConfig.width, hubConfig.height, null, 0);
                     }
+                    const hubPlayer = this.entities.get('player');
+                    renderStatsHUD(this.ctx, this.canvas, hubPlayer, 0, { delveFloor: this.playingState.delveFloor });
                     if (this.playingState.boardOpen) {
                         const levelNames: Record<number, string> = this.config.levels
                             ? Object.fromEntries(
@@ -1484,7 +1577,10 @@ class Game {
                     if (this.playingState.inventoryOpen) {
                         renderInventory(this.ctx, this.canvas, this.playingState, this.inventoryDragState, this.tooltipHover);
                     }
-                    if (this.inventoryDragState.isDragging && (this.inventoryDragState.weaponKey || this.inventoryDragState.isWhetstone)) {
+                    if (this.playingState.strategyCraftingOpen && this.strategyCraftingInputController) {
+                        updateStrategyCraftingPane(this.playingState, this.strategyCraftingInputController.getBuffer());
+                    }
+                    if (this.inventoryDragState.isDragging && (this.inventoryDragState.weaponKey || this.inventoryDragState.isWhetstone || this.inventoryDragState.dragConsumableType)) {
                         renderDragGhost(this.ctx, this.inventoryDragState);
                     }
                     this.hudController.setChestOverlayVisible(false);
@@ -1509,6 +1605,12 @@ class Game {
                         const delvePrompt = isStairs ? [this.playingState.portal!.hasNextLevel ? 'E Descend' : 'E Return to Sanctuary'] : undefined;
                         renderSystem.renderPortalInteractionPrompt(this.playingState.portal, cameraSystem, this.playingState.playerNearPortal, delvePrompt, isStairs, this.playingState.portalChannelProgress);
                     }
+                }
+                if (this.playingState.playerNearCaveEntrance && this.playingState.caveEntranceRect) {
+                    renderSystem.renderCaveEntrancePrompt(this.playingState.caveEntranceRect, cameraSystem, this.playingState.caveEntranceChannelProgress);
+                }
+                if (this.playingState.playerNearCaveExit && this.playingState.caveExitRect) {
+                    renderSystem.renderCaveExitPrompt(this.playingState.caveExitRect, cameraSystem);
                 }
                 const gatherableManager = this.systemsTyped.gatherables;
                 if (gatherableManager) {
@@ -1562,6 +1664,8 @@ class Game {
                         const modifierDesc = modifierName && modDef ? this.screenManager.getPackModifierDescription(modifierName, modDef) : '';
                         this.screenManager.renderEnemyTooltip(displayName, modifierName, modifierDesc, health ? health.percent : null);
                     }
+                    const playerEntity = this.entities.get('player');
+                    renderStatsHUD(this.ctx, this.canvas, playerEntity, currentLevel, { delveFloor: this.playingState.delveFloor });
                 }
                 if (this.screenManager.isScreen('pause') || this.screenManager.isScreen('settings') || this.screenManager.isScreen('settings-controls') || this.screenManager.isScreen('help')) {
                     this.screenManager.render(this.settings);
@@ -1569,7 +1673,10 @@ class Game {
                 if (this.playingState.inventoryOpen) {
                     renderInventory(this.ctx, this.canvas, this.playingState, this.inventoryDragState, this.tooltipHover);
                 }
-                if (this.inventoryDragState.isDragging && (this.inventoryDragState.weaponKey || this.inventoryDragState.isWhetstone)) {
+                if (this.playingState.strategyCraftingOpen && this.strategyCraftingInputController) {
+                    updateStrategyCraftingPane(this.playingState, this.strategyCraftingInputController.getBuffer());
+                }
+                if (this.inventoryDragState.isDragging && (this.inventoryDragState.weaponKey || this.inventoryDragState.isWhetstone || this.inventoryDragState.dragConsumableType)) {
                     renderDragGhost(this.ctx, this.inventoryDragState);
                 }
             }

@@ -1,7 +1,7 @@
 /**
  * Creates the player entity with all components and animation config from sprite manager.
  */
-import { Entity } from '../entities/Entity.js';
+import { Entity } from './Entity.js';
 import { Transform } from '../components/Transform.js';
 import { Health } from '../components/Health.js';
 import { Rally } from '../components/Rally.ts';

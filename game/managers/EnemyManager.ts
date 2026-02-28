@@ -28,15 +28,14 @@ import type { Quest } from '../types/quest.ts';
 import { DELVE_LEVEL } from '../config/questConfig.ts';
 import type { HitCategory } from '../types/combat.js';
 import { rollWeaponDrop, rollWhetstoneDrop } from '../config/lootConfig.js';
-import { getBanditDaggerConfigForType, getBanditSwordConfigForType } from '../config/enemyConfigs.ts';
 import type { PlayingStateShape } from '../state/PlayingState.js';
 import { getPlayerArmorReduction } from '../armor/armorConfigs.js';
 
-/** Weapon variants for bandits (randomized at spawn). */
+/** Weapon variants for bandits (randomized at spawn). Use generic bandit config; only weapon/behavior overridden. */
 const BANDIT_WEAPON_VARIANTS = [
   { weaponId: 'mace', behaviorId: 'comboAndCharge' as const },
-  { weaponId: 'dagger', behaviorId: 'slashAndLeap' as const },
-  { weaponId: 'sword', behaviorId: 'comboAndCharge' as const }
+  { weaponId: 'sword', behaviorId: 'comboAndCharge' as const },
+  { weaponId: 'greatsword', behaviorId: 'comboAndCharge' as const }
 ] as const;
 
 /** Base enemy type -> tier-2 (2★) variant. Hard difficulty uses these. */
@@ -49,6 +48,7 @@ const TIER2_MAP: Record<string, string> = {
     greaterDemon: 'greaterDemonVeteran',
     goblinChieftain: 'goblinChieftainVeteran',
     fireDragon: 'fireDragonAlpha',
+    villageOgre: 'villageOgreAlpha',
 };
 
 /** Base enemy type -> tier-3 (3★) variant. Very Hard difficulty uses these. */
@@ -61,6 +61,7 @@ const TIER3_MAP: Record<string, string> = {
     greaterDemon: 'greaterDemonElite',
     goblinChieftain: 'goblinChieftainElite',
     fireDragon: 'fireDragonElite',
+    villageOgre: 'villageOgreElite',
 };
 
 /** Inset from world edges so spawns stay inside border/perimeter (e.g. delve rock border). */
@@ -113,6 +114,8 @@ export class EnemyManager {
     pendingPackSpawns: PendingPackSpawn[] = [];
     /** When an enemy is beyond cull distance, we store first time seen far (ms). Used to cull after delay. */
     private enemyFarSince: Map<string, number> = new Map();
+    /** Enemy ids that have already had obstacle damage applied this slam (ogre heavy smash). Cleared when attack ends. */
+    private ogreSlamObstacleDone: Set<string> = new Set();
     private config: GameConfigShape = GameConfig;
     private activeQuest: Quest | null = null;
 
@@ -146,21 +149,8 @@ export class EnemyManager {
         const isBandit = type === 'bandit' || type === 'banditVeteran' || type === 'banditElite';
         if (isBandit) {
             const variant = BANDIT_WEAPON_VARIANTS[Math.floor(Math.random() * BANDIT_WEAPON_VARIANTS.length)];
-            if (variant.weaponId === 'dagger') {
-                const daggerConfig = getBanditDaggerConfigForType(type);
-                if (daggerConfig) {
-                    config = daggerConfig as Record<string, unknown>;
-                    weaponIdOverride = 'dagger';
-                    behaviorIdOverride = 'slashAndLeap';
-                }
-            } else if (variant.weaponId === 'sword') {
-                const swordConfig = getBanditSwordConfigForType(type);
-                if (swordConfig) {
-                    config = swordConfig as Record<string, unknown>;
-                    weaponIdOverride = 'sword';
-                    behaviorIdOverride = 'comboAndCharge';
-                }
-            }
+            weaponIdOverride = variant.weaponId;
+            behaviorIdOverride = variant.behaviorId;
         }
         const enemy = new Entity(x, y, `enemy_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`);
         const AIClass = AI;
@@ -205,7 +195,8 @@ export class EnemyManager {
         }
         
         const isDragonBoss = type === 'fireDragon' || type === 'fireDragonAlpha' || type === 'fireDragonElite';
-        const size = isDragonBoss ? 120 : (type === 'trainingDummy' ? 32 : (type === 'greaterDemon' || type === 'greaterDemonVeteran' || type === 'greaterDemonElite' ? 38 : (type === 'goblinChieftain' || type === 'goblinChieftainVeteran' || type === 'goblinChieftainElite' ? 34 : (type === 'bandit' || type === 'banditVeteran' || type === 'banditElite' ? 31 : 25))));
+        const isOgreBoss = type === 'villageOgre' || type === 'villageOgreAlpha' || type === 'villageOgreElite';
+        const size = isDragonBoss ? 120 : (isOgreBoss ? 130 : (type === 'trainingDummy' ? 32 : (type === 'greaterDemon' || type === 'greaterDemonVeteran' || type === 'greaterDemonElite' ? 38 : (type === 'goblinChieftain' || type === 'goblinChieftainVeteran' || type === 'goblinChieftainElite' ? 34 : (type === 'bandit' || type === 'banditVeteran' || type === 'banditElite' ? 31 : 25)))));
         enemy
             .addComponent(new Transform(x, y, size, size))
             .addComponent(new Health(maxHealth))
@@ -765,7 +756,7 @@ export class EnemyManager {
             for (let i = this.enemies.length - 1; i >= 0; i--) {
                 const enemy = this.enemies[i];
                 const ai = enemy.getComponent(AI);
-                if (ai?.enemyType === 'trainingDummy' || ai?.enemyType === 'fireDragon' || ai?.enemyType === 'fireDragonAlpha' || ai?.enemyType === 'fireDragonElite') continue;
+                if (ai?.enemyType === 'trainingDummy' || ai?.enemyType === 'fireDragon' || ai?.enemyType === 'fireDragonAlpha' || ai?.enemyType === 'fireDragonElite' || ai?.enemyType === 'villageOgre' || ai?.enemyType === 'villageOgreAlpha' || ai?.enemyType === 'villageOgreElite') continue;
                 const t = enemy.getComponent(Transform);
                 if (!t) continue;
                 const ex = t.x + t.width / 2;
@@ -923,6 +914,8 @@ export class EnemyManager {
         for (const enemy of this.enemies) {
             const enemyHealth = enemy.getComponent(Health);
             const enemyTransform = enemy.getComponent(Transform);
+            const enemyAi = enemy.getComponent(AI);
+            const enemyMovement = enemy.getComponent(Movement);
             
             if (!enemyHealth || !enemyTransform || enemyHealth.isDead) continue;
             
@@ -930,43 +923,46 @@ export class EnemyManager {
             const alreadyHitEnemies = combat.isPlayer && combat.playerAttack ? combat.playerAttack.hitEnemies : new Set();
             if (alreadyHitEnemies.has(enemy.id)) continue;
 
-            // Account for enemy hitbox size - use the larger dimension as radius
-            const enemyHitboxRadius = Math.max(enemyTransform.width, enemyTransform.height) / 2;
+            // Build world-space hitbox points: center plus any extra points (e.g. dragon head/tail)
+            const enemyType = enemyAi?.enemyType ? String(enemyAi.enemyType) : '';
+            const enemyConfig = (this.config.enemy.types as Record<string, { hitboxPoints?: Array<{ x: number; y: number }> }>)[enemyType];
+            const hitboxPoints = enemyConfig?.hitboxPoints;
+            const enemyFacing = enemyMovement?.facingAngle ?? 0;
+            const cos = Math.cos(enemyFacing);
+            const sin = Math.sin(enemyFacing);
+            const points: Array<{ x: number; y: number }> = [{ x: enemyTransform.x, y: enemyTransform.y }];
+            if (Array.isArray(hitboxPoints) && hitboxPoints.length > 0) {
+                for (const p of hitboxPoints) {
+                    points.push({
+                        x: enemyTransform.x + cos * p.x - sin * p.y,
+                        y: enemyTransform.y + sin * p.x + cos * p.y
+                    });
+                }
+            }
+
+            // In range if any hitbox point is within attack range
+            const maxRange = combat.attackRange + rangeSensitivity;
+            const inRange = points.some(pt => Utils.distance(transform.x, transform.y, pt.x, pt.y) < maxRange);
             
-            // Check distance to edge of enemy hitbox, not center
-            const distToCenter = Utils.distance(transform.x, transform.y, enemyTransform.x, enemyTransform.y);
-            const distToEdge = Math.max(0, distToCenter - enemyHitboxRadius);
-            
-            // Apply range sensitivity buffer
-            if (distToEdge < combat.attackRange + rangeSensitivity) {
+            if (inRange) {
                 let hitEnemy = false;
                 
                 if (is360Attack) {
-                    // 360 attack hits everything in range, no arc check needed
                     hitEnemy = true;
                 } else if (combat.currentAttackIsThrust) {
-                    // Thrust: rectangle thrust forward from player (e.g. stab)
                     const facingAngle = movement ? movement.facingAngle : 0;
                     const thrustLength = combat.attackRange + rangeSensitivity;
                     const thrustHalfWidth = (combat.currentAttackThrustWidth || 40) / 2 + rangeSensitivity * 0.5;
-                    hitEnemy = Utils.pointInThrustRect(
-                        enemyTransform.x, enemyTransform.y,
-                        transform.x, transform.y,
-                        facingAngle, thrustLength, thrustHalfWidth
+                    hitEnemy = points.some(pt =>
+                        Utils.pointInThrustRect(pt.x, pt.y, transform.x, transform.y, facingAngle, thrustLength, thrustHalfWidth)
                     );
                 } else {
-                    // Normal arc-based attack (arcOffset shifts cone left/right for alternating slashes)
                     const facingAngle = movement ? movement.facingAngle : 0;
                     const arcCenter = facingAngle + (combat.attackArcOffset ?? 0);
-                    
-                    // Apply arc sensitivity buffer (wider angle tolerance)
                     const generousArc = combat.attackArc + arcSensitivity;
                     const generousRange = combat.attackRange + rangeSensitivity;
-                    
-                    hitEnemy = Utils.pointInArc(
-                        enemyTransform.x, enemyTransform.y,
-                        transform.x, transform.y,
-                        arcCenter, generousArc, generousRange
+                    hitEnemy = points.some(pt =>
+                        Utils.pointInArc(pt.x, pt.y, transform.x, transform.y, arcCenter, generousArc, generousRange)
                     );
                 }
                 
@@ -1052,7 +1048,8 @@ export class EnemyManager {
             const enemyMovement = enemy.getComponent(Movement);
             
             if (!enemyCombat || !enemyTransform || !enemyHealth || enemyHealth.isDead) continue;
-            
+            if (!enemyCombat.isAttacking) this.ogreSlamObstacleDone.delete(enemy.id);
+
             // Get player combat component to check for blocking
             const playerCombat = player.getComponent(Combat);
             const playerMovement = player.getComponent(Movement);
@@ -1133,6 +1130,20 @@ export class EnemyManager {
                 const useReleasePhase = h && h.hasChargeRelease && h.hasChargeRelease();
                 // AOE in front (e.g. chieftain club slam): circle centered in front of enemy
                 const aoeInFront = enemyCombat.currentAttackAoeInFront && enemyCombat.currentAttackAoeRadius > 0;
+                // Ogre slam: destroy any terrain in AOE once per slam
+                if (aoeInFront && enemyMovement) {
+                    const ai = enemy.getComponent(AI);
+                    const isOgre = ai && (ai.enemyType === 'villageOgre' || ai.enemyType === 'villageOgreAlpha' || ai.enemyType === 'villageOgreElite');
+                    if (isOgre && h && h.isInReleasePhase && !this.ogreSlamObstacleDone.has(enemy.id)) {
+                        const slamX = enemyTransform.x + Math.cos(enemyMovement.facingAngle) * (enemyCombat.currentAttackAoeOffset || 0);
+                        const slamY = enemyTransform.y + Math.sin(enemyMovement.facingAngle) * (enemyCombat.currentAttackAoeOffset || 0);
+                        const obstacleManager = this.systems?.get<{ damageObstaclesInCircle(x: number, y: number, r: number, d: number, o?: { destroyNonBreakable?: boolean }): void }>('obstacles');
+                        if (obstacleManager && typeof obstacleManager.damageObstaclesInCircle === 'function') {
+                            obstacleManager.damageObstaclesInCircle(slamX, slamY, enemyCombat.currentAttackAoeRadius, enemyCombat.attackDamage ?? 0, { destroyNonBreakable: true });
+                        }
+                        this.ogreSlamObstacleDone.add(enemy.id);
+                    }
+                }
                 let inRange;
                 let inArc;
                 let inHitWindow = true;

@@ -2,7 +2,7 @@
  * Handles portal and hub (sanctuary) logic: cooldowns, E/B key, level transition, board/chest.
  */
 import { GameConfig } from '../config/GameConfig.js';
-import { getRandomQuestsForBoard, DELVE_LEVEL } from '../config/questConfig.js';
+import { getRandomQuestsForBoard, DELVE_LEVEL, DRAGON_ARENA_LEVEL, OGRE_DEN_LEVEL } from '../config/questConfig.js';
 import { isStaticQuestComplete } from '../config/staticQuests.js';
 import { Utils } from '../utils/Utils.js';
 import type { Quest } from '../types/quest.js';
@@ -54,6 +54,7 @@ export interface PlayingStateControllerContext {
         setScreen(screen: string): void;
     };
     setCurrentWorldSize(width: number, height: number): void;
+    getCurrentWorldSize(): { width: number; height: number };
     startGame(): void;
     handleCameraZoom(): void;
     clearPlayerInputsForMenu(): void;
@@ -81,10 +82,113 @@ export class PlayingStateController {
         }
 
         const currentLevel = enemyManager.getCurrentLevel();
+        const transform = player?.getComponent(Transform);
+        const obstacleManager = g.systems.get('obstacles') as { obstacles: { type: string; x: number; y: number; width: number; height: number; targetLevel?: number; returnLevel?: number }[] } | undefined;
+        let caveEntranceOverlap: { targetLevel: number; returnLevel: number; x: number; y: number; width: number; height: number } | null = null;
+        if (transform && obstacleManager?.obstacles) {
+            for (const obs of obstacleManager.obstacles) {
+                if (obs.type !== 'caveEntrance' || obs.targetLevel == null) continue;
+                const overlap = Utils.rectCollision(
+                    transform.left, transform.top, transform.width, transform.height,
+                    obs.x, obs.y, obs.width, obs.height
+                );
+                if (overlap) {
+                    caveEntranceOverlap = { targetLevel: obs.targetLevel, returnLevel: obs.returnLevel ?? 1, x: obs.x, y: obs.y, width: obs.width, height: obs.height };
+                    break;
+                }
+            }
+        }
+        g.playingState.playerNearCaveEntrance = caveEntranceOverlap != null;
+        g.playingState.caveEntranceRect = caveEntranceOverlap ? { x: caveEntranceOverlap.x, y: caveEntranceOverlap.y, width: caveEntranceOverlap.width, height: caveEntranceOverlap.height } : null;
+        if (!caveEntranceOverlap) {
+            g.playingState.caveEntranceChannelProgress = 0;
+        } else {
+            const inputSystem = g.systems.get('input') as { isKeyPressed(key: string): boolean } | undefined;
+            const channelTime = (GameConfig.portal && (GameConfig.portal as { channelTime?: number }).channelTime != null) ? (GameConfig.portal as { channelTime: number }).channelTime : 1.2;
+            if (inputSystem?.isKeyPressed('e')) {
+                g.playingState.caveEntranceChannelProgress = Math.min(1, g.playingState.caveEntranceChannelProgress + deltaTime / channelTime);
+                if (g.playingState.caveEntranceChannelProgress >= 1) {
+                    g.playingState.portalReturnLevel = caveEntranceOverlap.returnLevel;
+                    // Serialize current level map so we can restore it when leaving the cave (e.g. ogre den).
+                    const returnLevel = caveEntranceOverlap.returnLevel ?? 1;
+                    const obsMgr = g.systems.get('obstacles') as { serializeWorld(): { x: number; y: number; width: number; height: number; type: string; spritePath?: string | null; spriteFrameIndex?: number; breakable?: boolean; hp?: number; maxHp?: number; passable?: boolean; targetLevel?: number; returnLevel?: number }[] } | undefined;
+                    const worldSize = g.getCurrentWorldSize();
+                    if (obsMgr?.serializeWorld) {
+                        g.playingState.serializedReturnLevelMap = {
+                            levelId: returnLevel,
+                            worldWidth: worldSize.width,
+                            worldHeight: worldSize.height,
+                            obstacles: obsMgr.serializeWorld()
+                        };
+                    }
+                    g.screenManager.selectedStartLevel = caveEntranceOverlap.targetLevel;
+                    // Do not set activeQuest here: ogre is only the quest objective when the player chose "The Ogre's Den" from the hub. Entering the cave from outskirts is a random encounter; keep current quest (or null).
+                    g.startGame();
+                    g.playingState.caveEntranceChannelProgress = 0;
+                    return;
+                }
+            } else {
+                g.playingState.caveEntranceChannelProgress = 0;
+            }
+        }
+
+        // Cave exit: only available in Ogre's Den after the ogre is killed; exit is spawned on the perimeter when ogre dies
+        if (currentLevel !== OGRE_DEN_LEVEL) {
+            g.playingState.ogreDenExitSpawned = false;
+        }
+        let caveExitOverlap: { x: number; y: number; width: number; height: number } | null = null;
+        if (currentLevel === OGRE_DEN_LEVEL && transform && obstacleManager?.obstacles) {
+            const aliveCount = enemyManager.getAliveCount?.() ?? 1;
+            if (aliveCount === 0) {
+                if (!g.playingState.ogreDenExitSpawned) {
+                    const levelConfig = GameConfig.levels && GameConfig.levels[OGRE_DEN_LEVEL] as { worldWidth?: number; worldHeight?: number } | undefined;
+                    const worldW = levelConfig?.worldWidth ?? 1200;
+                    const worldH = levelConfig?.worldHeight ?? 1200;
+                    const exitW = 160;
+                    const exitH = 80;
+                    const perimeterMargin = 24;
+                    const obsMgr = g.systems.get('obstacles') as { addObstacle(x: number, y: number, w: number, h: number, type: string, spritePath?: string | null, customProps?: Record<string, unknown> | null): unknown } | undefined;
+                    if (obsMgr?.addObstacle) {
+                        const exitX = (worldW - exitW) / 2;
+                        const exitY = perimeterMargin;
+                        obsMgr.addObstacle(exitX, exitY, exitW, exitH, 'caveExit', null, { passable: true });
+                        g.playingState.ogreDenExitSpawned = true;
+                    }
+                }
+                for (const obs of obstacleManager.obstacles) {
+                    if (obs.type !== 'caveExit') continue;
+                    const overlap = Utils.rectCollision(
+                        transform.left, transform.top, transform.width, transform.height,
+                        obs.x, obs.y, obs.width, obs.height
+                    );
+                    if (overlap) {
+                        caveExitOverlap = { x: obs.x, y: obs.y, width: obs.width, height: obs.height };
+                        break;
+                    }
+                }
+            }
+        }
+        g.playingState.playerNearCaveExit = caveExitOverlap != null;
+        g.playingState.caveExitRect = caveExitOverlap;
+        if (caveExitOverlap) {
+            const inputSystem = g.systems.get('input') as { isKeyPressed(key: string): boolean } | undefined;
+            if (inputSystem?.isKeyPressed('e')) {
+                const returnLevel = g.playingState.portalReturnLevel ?? 1;
+                g.screenManager.selectedStartLevel = returnLevel;
+                g.startGame();
+                return;
+            }
+        }
+
         const isDelve = currentLevel === DELVE_LEVEL;
+        const isDragonArena = currentLevel === DRAGON_ARENA_LEVEL;
+        const isOgreDen = currentLevel === OGRE_DEN_LEVEL;
         const levelConfig = GameConfig.levels && GameConfig.levels[currentLevel];
-        const nextLevel = isDelve ? DELVE_LEVEL : currentLevel + 1;
-        const nextLevelExists = isDelve || !!(GameConfig.levels && GameConfig.levels[currentLevel + 1]);
+        const nextLevel = isDelve ? DELVE_LEVEL
+            : isDragonArena ? 0
+            : isOgreDen ? (g.playingState.portalReturnLevel ?? 0)
+            : currentLevel + 1;
+        const nextLevelExists = isDelve || isDragonArena || isOgreDen || !!(GameConfig.levels && GameConfig.levels[currentLevel + 1]);
         const kills = enemyManager.getEnemiesKilledThisLevel();
         const allDead = isDelve && enemyManager.getAliveCount && enemyManager.getAliveCount() === 0;
 
@@ -140,14 +244,14 @@ export class PlayingStateController {
             return;
         }
 
-        const transform = player.getComponent(Transform);
-        if (!transform) {
+        const playerTransform = player.getComponent(Transform);
+        if (!playerTransform) {
             g.playingState.playerNearPortal = false;
             return;
         }
 
         const overlap = Utils.rectCollision(
-            transform.left, transform.top, transform.width, transform.height,
+            playerTransform.left, playerTransform.top, playerTransform.width, playerTransform.height,
             g.playingState.portal.x, g.playingState.portal.y, g.playingState.portal.width, g.playingState.portal.height
         );
         g.playingState.playerNearPortal = overlap;
@@ -203,6 +307,7 @@ export class PlayingStateController {
             const opts = isDelve ? { delveFloor: g.playingState.delveFloor } : undefined;
             enemyManager.changeLevel(nextLevel, g.entities, obstacleManager, playerSpawnForLevel, opts);
             g.playingState.portalUseCooldown = 1.5;
+            if (nextLevel !== OGRE_DEN_LEVEL) g.playingState.portalReturnLevel = null;
         };
 
         // Portal interact key is E only: E = next area when available, else E = return to sanctuary
@@ -263,8 +368,8 @@ export class PlayingStateController {
         const player = g.entities.get('player');
         if (player) {
             const combat = player.getComponent(Combat);
-            const weapon = combat && (combat as Combat & { playerAttack?: { weapon?: { isRanged?: boolean; isBow?: boolean } } }).playerAttack ? (combat as Combat & { playerAttack: { weapon: { isRanged?: boolean; isBow?: boolean } } }).playerAttack.weapon : null;
-            const isCrossbow = !!(weapon && weapon.isRanged === true && !weapon.isBow);
+            const weapon = combat && (combat as Combat & { playerAttack?: { weapon?: { isRanged?: boolean; isBow?: boolean; isStaff?: boolean } } }).playerAttack ? (combat as Combat & { playerAttack: { weapon: { isRanged?: boolean; isBow?: boolean; isStaff?: boolean } } }).playerAttack.weapon : null;
+            const isCrossbow = !!(weapon && weapon.isRanged === true && !weapon.isBow && !weapon.isStaff);
             updateCrossbowReload(deltaTime, g.playingState, player, GameConfig as { player: { crossbow?: { reloadTime: number } } }, isCrossbow);
         }
 

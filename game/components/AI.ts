@@ -9,6 +9,7 @@ import { Combat } from './Combat.ts';
 import { Health } from './Health.ts';
 import { StatusEffects } from './StatusEffects.ts';
 import { Stamina } from './Stamina.ts';
+import type { PlayingStateShape } from '../state/PlayingState.js';
 
 export interface PatrolConfig {
   startX: number;
@@ -66,6 +67,8 @@ export class AI implements Component {
     packModifierName: string | null;
     /** When set (e.g. 'dagger' for bandit), this enemy uses that weapon instead of the type default. Used for bandit weapon randomization. */
     weaponIdOverride?: string;
+    /** Cooldown for bandit hop/dodge (seconds). */
+    dodgeHopCooldown: number;
 
     constructor(detectionRange: number, attackRange: number, patrolConfig: PatrolConfig | null = null) {
         this.detectionRange = detectionRange;
@@ -130,6 +133,7 @@ export class AI implements Component {
         // Stamina back-off: goblins and bandits back off when exhausted until 50% recovered
         this.staminaExhausted = false;
         this.packModifierName = null;
+        this.dodgeHopCooldown = 0;
     }
 
     update(deltaTime: number, systems?: SystemsMap): void {
@@ -169,6 +173,8 @@ export class AI implements Component {
                 this.lungeCount = 0;
             }
         }
+
+        if (this.dodgeHopCooldown > 0) this.dodgeHopCooldown = Math.max(0, this.dodgeHopCooldown - deltaTime);
         
         // Update projectile cooldown
         if (this.projectileCooldown > 0) {
@@ -188,7 +194,38 @@ export class AI implements Component {
             transform.x, transform.y,
             playerTransform.x, playerTransform.y
         );
-        const effectiveDetectionRange = this.detectionRange * (statusEffects && statusEffects.packDetectionRangeMultiplier != null ? statusEffects.packDetectionRangeMultiplier : 1);
+        let effectiveDetectionRange = this.detectionRange * (statusEffects && statusEffects.packDetectionRangeMultiplier != null ? statusEffects.packDetectionRangeMultiplier : 1);
+        // Hold the line (survive) quest: enemies always aggro the player regardless of distance
+        const ps = systems ? systems.get<PlayingStateShape>('playingState') : null;
+        if (ps?.activeQuest?.objectiveType === 'survive') {
+            effectiveDetectionRange = 99999;
+        }
+
+        // Bandit hop/dodge: chance to dodge back or to the side when in range and not attacking
+        const isBanditType = this.enemyType === 'bandit' || this.enemyType === 'banditVeteran' || this.enemyType === 'banditElite';
+        if (isBanditType && distToPlayer < effectiveDetectionRange && !combat.isAttacking && !combat.isWindingUp && !combat.isLunging) {
+            const enemyMovement = movement as Movement & { isHoppingBack?: boolean; isAttackDashing?: boolean; startDodgeHop?(dx: number, dy: number, dist: number, speed: number, delay?: number): void };
+            const alreadyHopping = enemyMovement.isHoppingBack === true || enemyMovement.isAttackDashing === true;
+            if (!alreadyHopping && this.dodgeHopCooldown <= 0 && enemyMovement.startDodgeHop) {
+                const typeCfg = GameConfig.enemy.types[this.enemyType as keyof typeof GameConfig.enemy.types] as { dodge?: { enabled?: boolean; chance?: number; cooldown?: number; distance?: number; speed?: number } } | undefined;
+                const dodge = typeCfg?.dodge;
+                if (dodge?.enabled && (dodge.chance ?? 0) > 0 && Math.random() < (dodge.chance ?? 0)) {
+                    const dx = playerTransform.x - transform.x;
+                    const dy = playerTransform.y - transform.y;
+                    const len = Math.sqrt(dx * dx + dy * dy) || 1;
+                    const backX = -dx / len;
+                    const backY = -dy / len;
+                    const perpX = -dy / len;
+                    const perpY = dx / len;
+                    const roll = Math.random();
+                    const hopBack = roll < 0.5;
+                    const dirX = hopBack ? backX : (Math.random() < 0.5 ? perpX : -perpX);
+                    const dirY = hopBack ? backY : (Math.random() < 0.5 ? perpY : -perpY);
+                    enemyMovement.startDodgeHop(dirX, dirY, dodge.distance ?? 55, dodge.speed ?? 200, 0);
+                    this.dodgeHopCooldown = dodge.cooldown ?? 2.5;
+                }
+            }
+        }
 
         // Stamina: mark exhausted when stamina is depleted (goblin, bandit)
         const stamina = this.entity.getComponent(Stamina);
@@ -326,6 +363,7 @@ export class AI implements Component {
                 const projWidth = (projectileConfig as { width?: number }).width ?? 8;
                 const projHeight = (projectileConfig as { height?: number }).height ?? 8;
                 const projColor = (projectileConfig as { color?: string }).color;
+                const projVisualType = (projectileConfig as { visualType?: string }).visualType;
                 projectileManager.createProjectile(
                     transform.x,
                     transform.y,
@@ -340,7 +378,8 @@ export class AI implements Component {
                     0,
                     projWidth,
                     projHeight,
-                    projColor
+                    projColor,
+                    projVisualType
                 );
                 this.projectileCooldown = projectileConfig.cooldown;
                 this.state = 'attack';
@@ -422,8 +461,10 @@ export class AI implements Component {
                 // Weapon dash attack: movement handles dash, don't stop
             } else {
                 movement.stop();
-                // During wind-up: face the player (aim). During slash: keep facing locked so the swipe commits like the player's dagger.
-                if (combat.isWindingUp) {
+                // During wind-up: face the player (aim) — except for charge-release (e.g. ogre slam): lock facing when charge starts so the slam doesn't track.
+                const h = combat.enemyAttackHandler;
+                const isChargeReleaseCharging = h && typeof h.hasChargeRelease === 'function' && h.hasChargeRelease() && combat.isAttacking && !h.isInReleasePhase;
+                if (combat.isWindingUp && !isChargeReleaseCharging) {
                     const dx = playerTransform.x - transform.x;
                     const dy = playerTransform.y - transform.y;
                     if (dx !== 0 || dy !== 0) {

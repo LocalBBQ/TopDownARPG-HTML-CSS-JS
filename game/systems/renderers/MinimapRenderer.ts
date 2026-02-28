@@ -139,8 +139,23 @@ export class MinimapRenderer {
         const obstacleManager = systems && systems.get ? systems.get('obstacles') : null;
         if (obstacleManager) {
             for (const obstacle of obstacleManager.obstacles) {
-                ctx.fillStyle = obstacle.color || '#2d5016';
-                ctx.fillRect(obstacle.x, obstacle.y, obstacle.width, obstacle.height);
+                if (obstacle.type === 'caveEntrance') {
+                    ctx.fillStyle = obstacle.color || 'rgba(60, 50, 35, 0.9)';
+                    ctx.fillRect(obstacle.x, obstacle.y, obstacle.width, obstacle.height);
+                    const cx = obstacle.x + obstacle.width / 2;
+                    const cy = obstacle.y + obstacle.height / 2;
+                    const r = Math.max(8 / scale, (obstacle.width + obstacle.height) / 3);
+                    ctx.fillStyle = 'rgba(200, 140, 60, 0.95)';
+                    ctx.beginPath();
+                    ctx.arc(cx, cy, r, 0, Math.PI * 2);
+                    ctx.fill();
+                    ctx.strokeStyle = 'rgba(255, 220, 120, 1)';
+                    ctx.lineWidth = 2 / scale;
+                    ctx.stroke();
+                } else {
+                    ctx.fillStyle = obstacle.color || '#2d5016';
+                    ctx.fillRect(obstacle.x, obstacle.y, obstacle.width, obstacle.height);
+                }
             }
         }
 

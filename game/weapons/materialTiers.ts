@@ -20,8 +20,32 @@ export const MATERIALS: MaterialDef[] = [
     { id: 'dragon', displayName: 'Dragon', color: '#cc4444' }
 ];
 
-/** Weapon types that get material tier variants (shield is single, no tiers). */
-export const TIERED_WEAPON_KEYS = ['sword', 'greatsword', 'dagger', 'mace', 'crossbow', 'bow'] as const;
+/** Wood types for bow and staff (tiered like shield materials). */
+export const WOOD_MATERIALS: MaterialDef[] = [
+    { id: 'oak', displayName: 'Oak', color: '#8B6914' },
+    { id: 'willow', displayName: 'Willow', color: '#9aab7e' },
+    { id: 'yew', displayName: 'Yew', color: '#4a6b2e' },
+    { id: 'elder', displayName: 'Elder', color: '#2d4a1f' }
+];
+
+/** Base damage per bow wood tier. */
+export const BOW_WOOD_DAMAGE: Record<string, number> = {
+    oak: 10,
+    willow: 14,
+    yew: 18,
+    elder: 22
+};
+
+/** Base damage per staff wood tier. */
+export const STAFF_WOOD_DAMAGE: Record<string, number> = {
+    oak: 14,
+    willow: 18,
+    yew: 22,
+    elder: 26
+};
+
+/** Weapon types that get material tier variants (shield is single, no tiers). Bow and staff use wood tiers; crossbow is single. */
+export const TIERED_WEAPON_KEYS = ['sword', 'greatsword', 'dagger', 'mace'] as const;
 
 /** Offhand types that get material tier variants. */
 export const TIERED_OFFHAND_KEYS = ['defender'] as const;
@@ -61,12 +85,6 @@ export const TIER_DAMAGE_TABLE: Record<string, Record<string, number>> = {
     mace: {
         rusty: 12, bronze: 17, iron: 20, steel: 24, mithril: 27, adamant: 30, rune: 33, dragon: 36
     },
-    crossbow: {
-        rusty: 14, bronze: 19, iron: 22, steel: 26, mithril: 29, adamant: 32, rune: 35, dragon: 38
-    },
-    bow: {
-        rusty: 10, bronze: 13, iron: 15, steel: 18, mithril: 20, adamant: 23, rune: 25, dragon: 28
-    },
     defender: {
         rusty: 5, bronze: 7, iron: 9, steel: 11, mithril: 13, adamant: 15, rune: 17, dragon: 20
     }
@@ -75,6 +93,14 @@ export const TIER_DAMAGE_TABLE: Record<string, Record<string, number>> = {
 export function getTierDamage(weaponKey: string, materialId: string): number | undefined {
     const byWeapon = TIER_DAMAGE_TABLE[weaponKey];
     return byWeapon ? byWeapon[materialId] : undefined;
+}
+
+export function getBowWoodDamage(woodId: string): number | undefined {
+    return BOW_WOOD_DAMAGE[woodId];
+}
+
+export function getStaffWoodDamage(woodId: string): number | undefined {
+    return STAFF_WOOD_DAMAGE[woodId];
 }
 
 export function getMaterialById(id: string): MaterialDef | undefined {

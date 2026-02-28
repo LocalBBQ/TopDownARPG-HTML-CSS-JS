@@ -1,6 +1,6 @@
 /**
  * Armor equip/unequip/swap actions. Mutations on PlayingState.
- * Armor is stored in the same inventorySlots as weapons (12 slots).
+ * Armor is stored in the same inventorySlots as weapons (18 slots).
  */
 import type { PlayingStateShape } from './PlayingState.js';
 import {

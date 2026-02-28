@@ -30,7 +30,7 @@ if (goblinWeapon) {
 
 const goblinConfig = {
   maxHealth: 30,
-  moveSpeed: 25,
+  moveSpeed: 35,
   weaponId: 'goblinDagger',
   attackRange: goblinAttackRange,
   attackDamage: goblinAttackDamage,
@@ -56,7 +56,7 @@ const goblinConfig = {
 // Skeleton: ranged projectile, no melee
 const skeletonConfig = {
   maxHealth: 50,
-  moveSpeed: 20,
+  moveSpeed: 30,
   attackRange: 50,
   attackDamage: 8,
   color: '#cccccc',
@@ -82,7 +82,7 @@ const skeletonConfig = {
 // Lesser demon: claw + lunge
 const lesserDemonConfig = {
   maxHealth: 45,
-  moveSpeed: 32,
+  moveSpeed: 42,
   attackRange: 45,
   attackDamage: 7,
   detectionRange: 220,
@@ -110,7 +110,7 @@ const lesserDemonConfig = {
 // Greater demon: pillar flame
 const greaterDemonConfig = {
   maxHealth: 80,
-  moveSpeed: 30,
+  moveSpeed: 40,
   attackRange: 60,
   attackDamage: 12,
   detectionRange: 300,
@@ -152,7 +152,7 @@ const chieftainAttackRange = heavySmash.aoeInFront
 
 const goblinChieftainConfig = {
   maxHealth: 60,
-  moveSpeed: 50,
+  moveSpeed: 60,
   weaponDropChance: 0.1,
   weaponDropPoolId: 'goblinChieftain',
   weaponId: 'chieftainClub',
@@ -193,12 +193,12 @@ if (banditWeapon) {
 
 const banditConfig = {
   maxHealth: 55,
-  moveSpeed: 82,
+  moveSpeed: 92,
   weaponId: 'mace',
   attackRange: banditAttackRange,
   attackDamage: banditAttackDamage,
   detectionRange: 220,
-  color: '#5c4a3a',
+  color: '#6d4c2e',
   attackCooldown: banditAttackCooldown,
   windUpTime: 0,
   attackCooldownMultiplier: 2.5,
@@ -209,8 +209,16 @@ const banditConfig = {
   knockbackResist: 0,
   knockback: { force: 180, decay: 0.88 },
   lunge: { enabled: false },
-  maxStamina: 50,
-  staminaRegen: 3,
+  /** Hop/dodge back or to the side to avoid attacks. */
+  dodge: {
+    enabled: true,
+    chance: 0.28,
+    cooldown: 2.5,
+    distance: 55,
+    speed: 200
+  },
+  maxStamina: 100,
+  staminaRegen: 6,
   attackStaminaCost: 25,
   goldDrop: 5,
   weaponDropChance: 0.06,
@@ -218,71 +226,12 @@ const banditConfig = {
   whetstoneDropChance: 0.07
 };
 
-// Bandit dagger: stats from Weapons.dagger
-const banditDaggerWeapon = Weapons.dagger as {
-  getComboStageProperties?(n: number): { range: number; damage: number };
-  getDashAttackProperties?(): { damage?: number; knockbackForce?: number };
-  cooldown?: number;
-} | undefined;
-let banditDaggerAttackRange = 40, banditDaggerAttackDamage = 5, banditDaggerAttackCooldown = 0.25, banditDaggerLungeDamage = 8, banditDaggerLungeKnockbackForce = 240;
-if (banditDaggerWeapon) {
-  const first = banditDaggerWeapon.getComboStageProperties?.(1);
-  const dash = banditDaggerWeapon.getDashAttackProperties?.();
-  if (first) {
-    banditDaggerAttackRange = first.range;
-    banditDaggerAttackDamage = first.damage;
-  }
-  if (banditDaggerWeapon.cooldown != null) banditDaggerAttackCooldown = banditDaggerWeapon.cooldown;
-  if (dash) {
-    banditDaggerLungeDamage = dash.damage ?? banditDaggerLungeDamage;
-    if (dash.knockbackForce != null) banditDaggerLungeKnockbackForce = dash.knockbackForce;
-  }
-}
-
-const banditDaggerConfig = {
-  maxHealth: 42,
-  moveSpeed: 88,
-  weaponId: 'dagger',
-  attackRange: banditDaggerAttackRange,
-  attackDamage: banditDaggerAttackDamage,
-  detectionRange: 220,
-  color: '#5c4a3a',
-  attackCooldown: banditDaggerAttackCooldown,
-  windUpTime: 2.0,
-  attackCooldownMultiplier: 2.5,
-  damageMultiplier: 1,
-  stunThreshold: 75,
-  stunBuildupPerHit: 20,
-  knockbackResist: 0,
-  knockback: { force: 150, decay: 0.88 },
-  lunge: {
-    enabled: true,
-    chargeRange: 155,
-    chargeTime: 1.0,
-    lungeSpeed: 250,
-    lungeDistance: 120,
-    lungeDamage: banditDaggerLungeDamage,
-    hitRadiusBonus: 0,
-    knockback: { force: banditDaggerLungeKnockbackForce },
-    hopBackChance: 0.4,
-    hopBackDelay: 0.6,
-    hopBackDistance: 48,
-    hopBackSpeed: 150
-  },
-  packModifier: 'swift',
-  maxStamina: 45,
-  staminaRegen: 3,
-  attackStaminaCost: 10,
-  goldDrop: 3,
-  whetstoneDropChance: 0.06
-};
-
 // Tier-2: Goblin Brute — stronger goblin variant for harder quests
 const goblinBruteConfig = {
   ...goblinConfig,
   maxHealth: 45,
   attackDamage: Math.ceil(goblinAttackDamage * 1.3),
-  moveSpeed: 22,
+  moveSpeed: 32,
   color: '#2d6a2d',
   stunThreshold: 75,
   stunBuildupPerHit: 22,
@@ -295,7 +244,7 @@ const skeletonVeteranConfig = {
   ...skeletonConfig,
   maxHealth: 75,
   attackDamage: 10,
-  moveSpeed: 22,
+  moveSpeed: 32,
   color: '#a0a0a0',
   attackCooldown: 1.35,
   projectile: {
@@ -316,8 +265,8 @@ const banditVeteranConfig = {
   ...banditConfig,
   maxHealth: 78,
   attackDamage: Math.ceil(banditAttackDamage * 1.2),
-  moveSpeed: 86,
-  color: '#4a3a2d',
+  moveSpeed: 106,
+  color: '#5c4033',
   stunThreshold: 105,
   stunBuildupPerHit: 40,
   knockbackResist: 0.12,
@@ -326,25 +275,12 @@ const banditVeteranConfig = {
   whetstoneDropChance: 0.09
 };
 
-// Tier-2: Bandit Dagger Veteran
-const banditDaggerVeteranConfig = {
-  ...banditDaggerConfig,
-  maxHealth: 58,
-  attackDamage: Math.ceil(banditDaggerAttackDamage * 1.25),
-  moveSpeed: 92,
-  stunThreshold: 88,
-  stunBuildupPerHit: 24,
-  goldDrop: 5,
-  weaponDropChance: 0.07,
-  whetstoneDropChance: 0.08
-};
-
 // Tier-2: Lesser Demon Veteran
 const lesserDemonVeteranConfig = {
   ...lesserDemonConfig,
   maxHealth: 62,
   attackDamage: 9,
-  moveSpeed: 35,
+  moveSpeed: 45,
   color: '#994444',
   stunBuildupPerHit: 22,
   knockbackResist: 0.22,
@@ -363,7 +299,7 @@ const greaterDemonVeteranConfig = {
   ...greaterDemonConfig,
   maxHealth: 105,
   attackDamage: 15,
-  moveSpeed: 33,
+  moveSpeed: 43,
   color: '#bb5555',
   stunBuildupPerHit: 26,
   knockbackResist: 0.32,
@@ -381,7 +317,7 @@ const greaterDemonVeteranConfig = {
 const goblinChieftainVeteranConfig = {
   ...goblinChieftainConfig,
   maxHealth: 85,
-  moveSpeed: 54,
+  moveSpeed: 64,
   attackDamage: Math.ceil((heavySmash.damage ?? 16) * 1.2),
   stunThreshold: 85,
   stunBuildupPerHit: 28,
@@ -410,7 +346,7 @@ if (zombieWeapon) {
 
 const zombieConfig = {
   maxHealth: 55,
-  moveSpeed: 72,
+  moveSpeed: 82,
   weaponId: 'zombieClaw',
   attackRange: zombieAttackRange,
   attackDamage: zombieAttackDamage,
@@ -435,7 +371,7 @@ const zombieVeteranConfig = {
   ...zombieConfig,
   maxHealth: 82,
   attackDamage: Math.ceil(zombieAttackDamage * 1.35),
-  moveSpeed: 78,
+  moveSpeed: 88,
   color: '#2d4a2d',
   stunThreshold: 85,
   stunBuildupPerHit: 20,
@@ -475,7 +411,7 @@ if (dragonClawWeapon) {
 
 const fireDragonConfig = {
   maxHealth: 440,
-  moveSpeed: 32,
+  moveSpeed: 42,
   weaponId: 'dragonClaw',
   attackRange: fireDragonAttackRange,
   attackDamage: fireDragonAttackDamage,
@@ -510,14 +446,16 @@ const fireDragonConfig = {
   goldDrop: 32,
   weaponDropChance: 0.18,
   weaponDropPoolId: 'fireDragon',
-  whetstoneDropChance: 0.12
+  whetstoneDropChance: 0.12,
+  /** Extra hitbox points in local space (+x = facing). Enables hitting head/tail when center is out of arc. */
+  hitboxPoints: [{ x: 70, y: 0 }, { x: -60, y: 0 }]
 };
 
 // Tier-2: Fire Dragon Alpha (2★ boss)
 const fireDragonAlphaConfig = {
   ...fireDragonConfig,
   maxHealth: 550,
-  moveSpeed: 36,
+  moveSpeed: 46,
   attackDamage: Math.ceil(fireDragonAttackDamage * 1.2),
   stunThreshold: 185,
   stunBuildupPerHit: 18,
@@ -542,7 +480,7 @@ const goblinEliteConfig = {
   ...goblinBruteConfig,
   maxHealth: 58,
   attackDamage: Math.ceil(goblinAttackDamage * 1.6),
-  moveSpeed: 28,
+  moveSpeed: 38,
   color: '#1d4a1d',
   stunThreshold: 90,
   stunBuildupPerHit: 26,
@@ -554,7 +492,7 @@ const skeletonEliteConfig = {
   ...skeletonVeteranConfig,
   maxHealth: 95,
   attackDamage: 12,
-  moveSpeed: 24,
+  moveSpeed: 34,
   color: '#808080',
   attackCooldown: 1.2,
   projectile: {
@@ -574,7 +512,7 @@ const zombieEliteConfig = {
   ...zombieVeteranConfig,
   maxHealth: 105,
   attackDamage: Math.ceil(zombieAttackDamage * 1.6),
-  moveSpeed: 84,
+  moveSpeed: 94,
   color: '#1d3a1d',
   stunThreshold: 100,
   stunBuildupPerHit: 24,
@@ -588,7 +526,7 @@ const banditEliteConfig = {
   ...banditVeteranConfig,
   maxHealth: 98,
   attackDamage: Math.ceil(banditAttackDamage * 1.35),
-  moveSpeed: 90,
+  moveSpeed: 100,
   stunThreshold: 120,
   stunBuildupPerHit: 45,
   knockbackResist: 0.22,
@@ -597,23 +535,11 @@ const banditEliteConfig = {
   whetstoneDropChance: 0.11
 };
 
-const banditDaggerEliteConfig = {
-  ...banditDaggerVeteranConfig,
-  maxHealth: 72,
-  attackDamage: Math.ceil(banditDaggerAttackDamage * 1.5),
-  moveSpeed: 96,
-  stunThreshold: 100,
-  stunBuildupPerHit: 28,
-  goldDrop: 7,
-  weaponDropChance: 0.09,
-  whetstoneDropChance: 0.10
-};
-
 const lesserDemonEliteConfig = {
   ...lesserDemonVeteranConfig,
   maxHealth: 78,
   attackDamage: 11,
-  moveSpeed: 38,
+  moveSpeed: 48,
   color: '#aa3333',
   stunBuildupPerHit: 26,
   knockbackResist: 0.35,
@@ -631,7 +557,7 @@ const greaterDemonEliteConfig = {
   ...greaterDemonVeteranConfig,
   maxHealth: 130,
   attackDamage: 18,
-  moveSpeed: 36,
+  moveSpeed: 46,
   color: '#cc6666',
   stunBuildupPerHit: 32,
   knockbackResist: 0.45,
@@ -648,7 +574,7 @@ const greaterDemonEliteConfig = {
 const goblinChieftainEliteConfig = {
   ...goblinChieftainVeteranConfig,
   maxHealth: 110,
-  moveSpeed: 58,
+  moveSpeed: 68,
   attackDamage: Math.ceil((heavySmash.damage ?? 16) * 1.45),
   stunThreshold: 100,
   stunBuildupPerHit: 32,
@@ -666,7 +592,7 @@ const goblinChieftainEliteConfig = {
 const fireDragonEliteConfig = {
   ...fireDragonAlphaConfig,
   maxHealth: 680,
-  moveSpeed: 40,
+  moveSpeed: 50,
   attackDamage: Math.ceil(fireDragonAttackDamage * 1.45),
   stunThreshold: 210,
   stunBuildupPerHit: 22,
@@ -686,21 +612,117 @@ const fireDragonEliteConfig = {
   whetstoneDropChance: 0.16
 };
 
-/** Bandit dagger stats (used when a bandit randomly rolls dagger). Not a separate enemy type. */
-export function getBanditDaggerConfigForType(type: string): Record<string, unknown> | null {
-  if (type === 'bandit') return banditDaggerConfig as unknown as Record<string, unknown>;
-  if (type === 'banditVeteran') return banditDaggerVeteranConfig as unknown as Record<string, unknown>;
-  if (type === 'banditElite') return banditDaggerEliteConfig as unknown as Record<string, unknown>;
-  return null;
-}
+// Boss: Village Ogre — charge (lunge), slam (heavySmash), swing (melee from club), throw rocks (projectile)
+const ogreHeavySmash = {
+  ...heavySmash,
+  chargeTime: 1.0,
+  releaseDuration: 0.25,
+  damage: 40,
+  knockbackForce: 320,
+  aoeOffset: 125,
+  aoeRadius: 135
+};
+const ogreAttackRange = (ogreHeavySmash.aoeOffset ?? 195) + (ogreHeavySmash.aoeRadius ?? 150);
 
-/** Bandit sword stats (used when a bandit randomly rolls sword). Same base as mace bandit, weapon overridden to sword. */
-export function getBanditSwordConfigForType(type: string): Record<string, unknown> | null {
-  if (type === 'bandit') return banditConfig as unknown as Record<string, unknown>;
-  if (type === 'banditVeteran') return banditVeteranConfig as unknown as Record<string, unknown>;
-  if (type === 'banditElite') return banditEliteConfig as unknown as Record<string, unknown>;
-  return null;
-}
+const villageOgreConfig = {
+  maxHealth: 320,
+  moveSpeed: 60,
+  weaponId: 'chieftainClub',
+  attackRange: ogreAttackRange,
+  attackDamage: ogreHeavySmash.damage,
+  detectionRange: 400,
+  color: '#4a6b3a',
+  attackCooldown: 1.1,
+  windUpTime: 0.5,
+  stunThreshold: 140,
+  stunBuildupPerHit: 20,
+  knockbackResist: 0.48,
+  knockback: { force: 200, decay: 0.86 },
+  /** Extra hitbox points so the ogre is easier to hit (larger effective body). */
+  hitboxPoints: [{ x: 75, y: 0 }, { x: -75, y: 0 }, { x: 0, y: 55 }, { x: 0, y: -55 }],
+  heavySmash: ogreHeavySmash,
+  lunge: {
+    enabled: true,
+    chargeRange: 280,
+    chargeTime: 0.65,
+    lungeSpeed: 280,
+    lungeDistance: 200,
+    lungeDamage: 22,
+    knockback: { force: 340 }
+  },
+  projectile: {
+    enabled: true,
+    speed: 500,
+    damage: 28,
+    range: 420,
+    cooldown: 4.0,
+    stunBuildup: 24,
+    width: 56,
+    height: 56,
+    color: '#5a5248',
+    visualType: 'rock'
+  },
+  goldDrop: 24,
+  weaponDropChance: 0.14,
+  weaponDropPoolId: 'villageOgre',
+  whetstoneDropChance: 0.10
+};
+
+const villageOgreAlphaConfig = {
+  ...villageOgreConfig,
+  maxHealth: 400,
+  moveSpeed: 60,
+  attackDamage: Math.ceil((ogreHeavySmash.damage ?? 22) * 1.2),
+  stunThreshold: 165,
+  stunBuildupPerHit: 24,
+  knockbackResist: 0.54,
+  heavySmash: {
+    ...ogreHeavySmash,
+    damage: Math.ceil((ogreHeavySmash.damage ?? 22) * 1.2),
+    knockbackForce: 360
+  },
+  lunge: {
+    ...villageOgreConfig.lunge,
+    lungeDamage: 27,
+    knockback: { force: 380 }
+  },
+  projectile: {
+    ...villageOgreConfig.projectile,
+    damage: 22,
+    cooldown: 3.6
+  },
+  goldDrop: 32,
+  weaponDropChance: 0.18,
+  whetstoneDropChance: 0.12
+};
+
+const villageOgreEliteConfig = {
+  ...villageOgreAlphaConfig,
+  maxHealth: 600,
+  moveSpeed: 65,
+  attackDamage: Math.ceil((ogreHeavySmash.damage ?? 40) * 1.75),
+  stunThreshold: 215,
+  stunBuildupPerHit: 32,
+  knockbackResist: 0.66,
+  heavySmash: {
+    ...villageOgreAlphaConfig.heavySmash,
+    damage: Math.ceil((ogreHeavySmash.damage ?? 40) * 1.75),
+    knockbackForce: 440
+  },
+  lunge: {
+    ...villageOgreAlphaConfig.lunge,
+    lungeDamage: 38,
+    knockback: { force: 460 }
+  },
+  projectile: {
+    ...villageOgreAlphaConfig.projectile,
+    damage: 32,
+    cooldown: 2.9
+  },
+  goldDrop: 52,
+  weaponDropChance: 0.26,
+  whetstoneDropChance: 0.16
+};
 
 export const EnemyGoblin = EnemyType.fromConfig(goblinConfig);
 export const EnemySkeleton = EnemyType.fromConfig(skeletonConfig);
@@ -727,3 +749,6 @@ export const EnemyGoblinChieftainElite = EnemyType.fromConfig(goblinChieftainEli
 export const EnemyFireDragonElite = EnemyType.fromConfig(fireDragonEliteConfig);
 export const EnemyTrainingDummy = EnemyType.fromConfig(trainingDummyConfig);
 export const EnemyFireDragon = EnemyType.fromConfig(fireDragonConfig);
+export const EnemyVillageOgre = EnemyType.fromConfig(villageOgreConfig);
+export const EnemyVillageOgreAlpha = EnemyType.fromConfig(villageOgreAlphaConfig);
+export const EnemyVillageOgreElite = EnemyType.fromConfig(villageOgreEliteConfig);

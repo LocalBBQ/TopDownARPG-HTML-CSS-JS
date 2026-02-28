@@ -738,6 +738,14 @@ export class Combat implements Component {
         if (combatRef.attackInputBuffered) {
           const b = combatRef.attackInputBuffered;
           combatRef.attackInputBuffered = null;
+          // Apply buffered direction so the next attack faces the buffered target (direction was locked during the previous attack)
+          if (combatRef.entity && b.targetX != null && b.targetY != null) {
+            const movement = combatRef.entity.getComponent(Movement);
+            const transform = combatRef.entity.getComponent(Transform);
+            if (movement && transform) {
+              movement.facingAngle = Utils.angleTo(transform.x, transform.y, b.targetX, b.targetY);
+            }
+          }
           combatRef.attack(b.targetX, b.targetY, b.chargeDuration, b.options);
         }
       }, durationMs);

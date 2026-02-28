@@ -91,6 +91,16 @@ export class EnemyMovement extends Movement {
     if (statusEffects?.isStunned) {
       this.velocityX = 0;
       this.velocityY = 0;
+      if (this.isLunging) {
+        this.isLunging = false;
+        this.lungeTraveled = 0;
+        const combat = this.entity!.getComponent(Combat);
+        const handler = combat?.enemyAttackHandler as { endLunge?(m: number): void } | null;
+        if (combat && handler?.endLunge) {
+          handler.endLunge(combat.getPackCooldownMultiplier());
+          combat._clearAttackState();
+        }
+      }
       return;
     }
     if (statusEffects?.isAirborne) {
@@ -327,6 +337,22 @@ export class EnemyMovement extends Movement {
       ai.lungeCooldown = ai.lungeCooldownDuration;
       ai.lungeCount = 0;
     }
+  }
+
+  /** Start a short hop/dodge in a direction (e.g. bandit dodge back or to the side). Reuses hop-back state. */
+  startDodgeHop(directionX: number, directionY: number, distance: number, speed: number, delay = 0): void {
+    const transform = this.entity!.getComponent(Transform);
+    if (!transform) return;
+    const len = Math.sqrt(directionX * directionX + directionY * directionY) || 1;
+    const dx = (directionX / len) * distance;
+    const dy = (directionY / len) * distance;
+    this.hopBackTargetX = transform.x + dx;
+    this.hopBackTargetY = transform.y + dy;
+    this.hopBackSpeed = speed;
+    this.hopBackDistance = distance;
+    this.hopBackTraveled = 0;
+    this.hopBackDelayRemaining = delay;
+    this.isHoppingBack = delay <= 0;
   }
 
   startAttackDash(directionX: number, directionY: number, duration: number, speed?: number): boolean {

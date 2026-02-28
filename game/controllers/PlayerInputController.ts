@@ -19,12 +19,17 @@ export interface GameLike {
     chestOpen?: boolean;
     boardOpen?: boolean;
     shopOpen?: boolean;
+    strategyCraftingOpen?: boolean;
     playerInGatherableRange?: boolean;
     gold?: number;
     pointerDownConsumedByUI?: boolean;
     clearPointerDownConsumedByUI?(): void;
     /** When set, dodge (Space) is ignored until this timestamp (used after title/death transition). */
     suppressDodgeUntil?: number;
+    /** Use one potion from inventory and add one heal charge. Returns true if a potion was used. */
+    tryUsePotionFromInventory?(): boolean;
+    /** Swap active weapon set (R key). Call sync after. */
+    trySwapWeaponSet?(): void;
     [key: string]: unknown;
 }
 
@@ -111,7 +116,11 @@ export class PlayerInputController {
             if (statusEffects && statusEffects.isStunned) return;
 
             const healing = player.getComponent(PlayerHealing);
-            if (healing) healing.startDrinking();
+            if (!healing) return;
+            if (healing.charges <= 0 && this.game.tryUsePotionFromInventory) {
+                this.game.tryUsePotionFromInventory();
+            }
+            healing.startDrinking();
         });
     }
 
@@ -216,8 +225,8 @@ export class PlayerInputController {
             this.chargeStartTime = 0;
             this.isChargingAttack = false;
             
-            // Face the cursor direction
-            if (movement && transform) {
+            // Face the cursor only when starting a new attack; lock direction during an ongoing attack so we don't redraw or turn mid-swing
+            if (movement && transform && !(combat && combat.isAttacking)) {
                 movement.facingAngle = Utils.angleTo(
                     transform.x, transform.y,
                     worldPos.x, worldPos.y
@@ -226,12 +235,14 @@ export class PlayerInputController {
             
             // Perform attack: crossbow = left-click when loaded; bow = charge release (hold to charge, release to shoot); else melee
             if (combat && stamina && combat.isPlayer && combat.playerAttack) {
-                const weapon = combat.playerAttack.weapon as { isRanged?: boolean; isBow?: boolean; dashAttack?: unknown; chargeAttack?: { minChargeTime?: number }; getDashAttackProperties?: () => unknown } | null;
+                const weapon = combat.playerAttack.weapon as { isRanged?: boolean; isBow?: boolean; isStaff?: boolean; baseDamage?: number; dashAttack?: unknown; chargeAttack?: { minChargeTime?: number }; getDashAttackProperties?: () => unknown } | null;
                 const isRanged = weapon && weapon.isRanged === true;
                 const isBow = isRanged && weapon!.isBow === true;
-                const isCrossbow = isRanged && !isBow;
+                const isStaff = weapon && weapon.isStaff === true;
+                const isCrossbow = isRanged && !isBow && !isStaff;
                 const crossbowConfig = GameConfig.player.crossbow;
                 const bowConfig = (GameConfig.player as { bow?: { damage: number; speed: number; range: number; staminaCost: number; stunBuildup?: number; chargeLevel1: number; chargeLevel2: number; chargeLevel3: number } }).bow;
+                const staffConfig = (GameConfig.player as { staff?: { speed: number; range: number; aoeRadius: number; cooldown: number; staminaCost: number; stunBuildup: number; orbWidth: number; orbHeight: number; color: string } }).staff;
 
                 if (isCrossbow && crossbowConfig) {
                     // Crossbow: left-click fires when loaded
@@ -267,13 +278,14 @@ export class PlayerInputController {
                     });
                     if (chargeLevel >= 1 && stamina.currentStamina >= bowConfig.staminaCost) {
                         const angle = Utils.angleTo(transform.x, transform.y, worldPos.x, worldPos.y);
+                        const bowDamage = (weapon && typeof weapon.baseDamage === 'number') ? weapon.baseDamage : bowConfig.damage;
                         const effect = getBowShotLevelEffect();
                         effect(chargeLevel, {
                             owner: player,
                             x: transform.x,
                             y: transform.y,
                             aimAngle: angle,
-                            damage: bowConfig.damage,
+                            damage: bowDamage,
                             speed: bowConfig.speed,
                             range: bowConfig.range,
                             stunBuildup: bowConfig.stunBuildup ?? 0,
@@ -285,7 +297,36 @@ export class PlayerInputController {
                     }
                     return;
                 }
-                // Attack input while attacking is buffered and fires when current attack ends
+
+                if (isStaff && staffConfig) {
+                    if (this.game.playerProjectileCooldown <= 0 && stamina.currentStamina >= staffConfig.staminaCost) {
+                        const projectileManager = this.systems.get('projectiles');
+                        if (projectileManager && transform && movement) {
+                            const angle = Utils.angleTo(transform.x, transform.y, worldPos.x, worldPos.y);
+                            const damage = (weapon && typeof weapon.baseDamage === 'number') ? weapon.baseDamage : 18;
+                            projectileManager.createProjectile(
+                                transform.x, transform.y, angle,
+                                staffConfig.speed, damage, staffConfig.range,
+                                player, 'player', staffConfig.stunBuildup,
+                                false, 0,
+                                staffConfig.orbWidth ?? 26, staffConfig.orbHeight ?? 26,
+                                staffConfig.color,
+                                undefined,
+                                staffConfig.aoeRadius, 0
+                            );
+                            stamina.currentStamina -= staffConfig.staminaCost;
+                            this.game.playerProjectileCooldown = staffConfig.cooldown;
+                        }
+                    }
+                    return;
+                }
+
+                // Attack input while attacking is buffered and fires when current attack ends (no direction change and no restart of current animation)
+                if (combat.isAttacking) {
+                    this.processedReleaseForPressId = this.attackPressId;
+                    combat.attack(worldPos.x, worldPos.y, chargeDuration, data.shiftKey && weapon.dashAttack ? { useDashAttack: true } : {});
+                    return;
+                }
                 const useDashAttack = data.shiftKey && weapon.dashAttack;
                 const staminaCost = combat.playerAttack.getNextAttackStaminaCost(
                     useDashAttack ? 0 : chargeDuration,
@@ -389,11 +430,11 @@ export class PlayerInputController {
         const inputSystem = this.systems.get('input');
         const cameraSystem = this.systems.get('camera');
 
-        // Handle projectile shooting (R key) and crossbow fire / perfect reload
+        // Handle R key: weapon set swap, or crossbow reload/perfect, or generic projectile
         this.eventBus.on(EventTypes.INPUT_KEYDOWN, (key) => {
             if (key !== 'r' && key !== 'R') return;
 
-            // Only allow projectile input while actively playing (combat levels or hub)
+            // Only allow input while actively playing (combat levels or hub)
             if (!this.game.screenManager || !(this.game.screenManager.isScreen('playing') || this.game.screenManager.isScreen('hub'))) return;
             if (this.game.chestOpen || this.game.boardOpen || this.game.shopOpen) return;
 
@@ -408,8 +449,8 @@ export class PlayerInputController {
             const stamina = player.getComponent(Stamina);
             const projectileManager = this.systems.get('projectiles');
             const combat = player.getComponent(Combat);
-            const weapon = combat && combat.playerAttack ? (combat.playerAttack.weapon as { isRanged?: boolean; isBow?: boolean } | null) : null;
-            const isCrossbow = weapon && weapon.isRanged === true && !weapon.isBow;
+            const weapon = combat && combat.playerAttack ? (combat.playerAttack.weapon as { isRanged?: boolean; isBow?: boolean; isStaff?: boolean } | null) : null;
+            const isCrossbow = weapon && weapon.isRanged === true && !weapon.isBow && !weapon.isStaff;
             const crossbowConfig = GameConfig.player.crossbow;
 
             // Crossbow: R = begin reload (when empty) or trigger perfect reload when in window
@@ -429,7 +470,13 @@ export class PlayerInputController {
                 return;
             }
 
-            // Generic projectile (when not crossbow)
+            // R = weapon set swap (when not in crossbow reload)
+            if (this.game.trySwapWeaponSet) {
+                this.game.trySwapWeaponSet();
+                return;
+            }
+
+            // Generic projectile (when not crossbow and no swap)
             if (transform && movement && stamina && projectileManager) {
                 const projectileConfig = GameConfig.player.projectile;
                 if (!projectileConfig || !projectileConfig.enabled) return;
@@ -508,6 +555,7 @@ export class PlayerInputController {
 
             // Only allow sprint input while actively playing (combat levels or hub)
             if (!this.game.screenManager || !(this.game.screenManager.isScreen('playing') || this.game.screenManager.isScreen('hub'))) return;
+            if (this.game.strategyCraftingOpen) return;
             if (this.game.chestOpen || this.game.boardOpen || this.game.shopOpen) return;
 
             const player = this.player;
@@ -541,6 +589,7 @@ export class PlayerInputController {
 
             // Only allow sprint input while actively playing (combat levels or hub)
             if (!this.game.screenManager || !(this.game.screenManager.isScreen('playing') || this.game.screenManager.isScreen('hub'))) return;
+            if (this.game.strategyCraftingOpen) return;
             if (this.game.chestOpen || this.game.boardOpen || this.game.shopOpen) return;
 
             const player = this.player;
@@ -580,6 +629,8 @@ export class PlayerInputController {
 
             // Only allow movement input while actively playing (combat levels or hub)
             if (!this.game.screenManager || !(this.game.screenManager.isScreen('playing') || this.game.screenManager.isScreen('hub'))) return;
+            // Block movement while Strategy Crafting pane is open (WASD used for recipe input)
+            if (this.game.strategyCraftingOpen) return;
             // Allow movement while inventory is open; block for chest, board, shop
             if (this.game.chestOpen || this.game.boardOpen || this.game.shopOpen) return;
 
@@ -618,6 +669,8 @@ export class PlayerInputController {
 
             // Only allow movement input while actively playing (combat levels or hub)
             if (!this.game.screenManager || !(this.game.screenManager.isScreen('playing') || this.game.screenManager.isScreen('hub'))) return;
+            // Block movement while Strategy Crafting pane is open (WASD used for recipe input)
+            if (this.game.strategyCraftingOpen) return;
             // Allow movement while inventory is open; block for chest, board, shop
             if (this.game.chestOpen || this.game.boardOpen || this.game.shopOpen) return;
 

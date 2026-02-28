@@ -20,6 +20,17 @@ export interface PlayerConfig {
   defaultOffhand?: string;
   color?: string;
   crossbow?: { reloadTime: number; [key: string]: number };
+  staff?: {
+    speed: number;
+    range: number;
+    aoeRadius: number;
+    cooldown: number;
+    staminaCost: number;
+    stunBuildup: number;
+    orbWidth?: number;
+    orbHeight?: number;
+    color?: string;
+  };
   sprint?: { multiplier: number; staminaCost: number };
   dodge?: { speed: number; duration: number; cooldown: number; staminaCost: number };
   [key: string]: unknown;

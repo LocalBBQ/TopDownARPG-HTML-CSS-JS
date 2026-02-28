@@ -1,8 +1,8 @@
 // Player combat visuals (attack arc, sword, mace, crossbow, shield). Procedural drawing only.
 // Animation (anticipation, easing, follow-through) applies to all melee weapon types:
 // sword, greatsword, mace, and spin attacks — all use getSweepProgress + getAnticipationPullBack.
-import { Utils } from '../utils/Utils.ts';
-import { isBlockable } from '../weapons/weaponBehavior.ts';
+import { Utils } from '../../utils/Utils.ts';
+import { isBlockable } from '../../weapons/weaponBehavior.ts';
 
 export const PlayerCombatRenderer = {
     SWEEP_SPEED: 1,
@@ -992,6 +992,118 @@ export const PlayerCombatRenderer = {
         ctx.beginPath();
         ctx.moveTo(halfLen, -nockY);
         ctx.lineTo(halfLen, nockY);
+        ctx.stroke();
+
+        ctx.restore();
+    },
+
+    /** Draw wizard's staff: wooden tapered shaft, metal bands, ferrule at grip, pronged head cradling a glowing orb. */
+    drawStaff(ctx, screenX, screenY, transform, movement, combat, camera) {
+        if (!movement || !combat || !transform) return;
+        const zoom = camera.zoom;
+        const facingAngle = movement.facingAngle;
+        const sideOffset = (transform.width / 2 + 4) * zoom;
+        const isStaffWeapon = (combat.weapon as { isStaff?: boolean } | null)?.isStaff === true;
+        const staffIgnoreBlockPose = (this.isBlockAttack(combat) || combat.isBlocking) && !isBlockable(combat.offhandWeapon);
+        // Staff always uses the same pose (never block grip) so drawing does not change when blocking or block attacking
+        const useNormalStaffPose = isStaffWeapon || staffIgnoreBlockPose;
+        let gripX: number, gripY: number, staffAngle: number;
+        if (useNormalStaffPose) {
+            gripX = screenX + Math.cos(facingAngle + Math.PI / 2) * sideOffset;
+            gripY = screenY + Math.sin(facingAngle + Math.PI / 2) * sideOffset;
+            staffAngle = facingAngle + Math.PI / 2;
+        } else {
+            const grip = this.getSwordGrip(screenX, screenY, transform, movement, combat, camera);
+            if (!grip) return;
+            gripX = grip.gripX;
+            gripY = grip.gripY;
+            staffAngle = (grip.swordAngle ?? facingAngle) + Math.PI / 2;
+        }
+        const defaultRange = combat.weapon ? combat.weapon.baseRange : 100;
+        const baseLength = (combat.weapon && combat.weapon.weaponLength != null) ? combat.weapon.weaponLength : (combat.attackRange ?? defaultRange) * 0.5;
+        const staffLength = baseLength * zoom * 0.16;
+        const shaftW = Math.max(2.5, 5 * zoom);
+        const orbR = 8 * zoom;
+        const metalFill = '#8b7355';
+        const metalStroke = '#5c4a38';
+        const woodFill = '#5d4a2e';
+        const woodStroke = '#3d301a';
+        const ferruleH = shaftW * 0.9;
+
+        ctx.save();
+        ctx.translate(gripX, gripY);
+        ctx.rotate(staffAngle);
+
+        // Ferrule (metal cap at grip)
+        ctx.fillStyle = metalFill;
+        ctx.strokeStyle = metalStroke;
+        ctx.lineWidth = Math.max(1, 1.2 / zoom);
+        ctx.beginPath();
+        ctx.ellipse(0, 0, shaftW * 0.95, ferruleH * 0.5, 0, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+
+        // Tapered wooden shaft (wider at grip, narrower at top)
+        const topW = shaftW * 0.55;
+        ctx.fillStyle = woodFill;
+        ctx.strokeStyle = woodStroke;
+        ctx.lineWidth = Math.max(1, 1.2 / zoom);
+        ctx.beginPath();
+        ctx.moveTo(shaftW * 0.5, -ferruleH);
+        ctx.lineTo(topW, -staffLength + ferruleH);
+        ctx.lineTo(-topW, -staffLength + ferruleH);
+        ctx.lineTo(-shaftW * 0.5, -ferruleH);
+        ctx.closePath();
+        ctx.fill();
+        ctx.stroke();
+
+        // Decorative metal bands around the shaft
+        const bandW = Math.max(1.5, 2.5 * zoom);
+        for (const frac of [0.35, 0.68]) {
+            const y = -ferruleH - (staffLength - ferruleH * 2) * frac;
+            const w = topW + (shaftW * 0.5 - topW) * (1 - frac);
+            ctx.fillStyle = metalFill;
+            ctx.strokeStyle = metalStroke;
+            ctx.beginPath();
+            ctx.ellipse(0, y, w + bandW * 0.5, bandW, 0, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.stroke();
+        }
+
+        // Pronged head (metal claws cradling the orb)
+        const tipY = -staffLength + ferruleH;
+        const prongH = orbR * 1.35;
+        const prongW = orbR * 0.85;
+        ctx.strokeStyle = metalStroke;
+        ctx.fillStyle = metalFill;
+        ctx.lineWidth = Math.max(1, 1.5 / zoom);
+        ctx.lineCap = 'round';
+        ctx.lineJoin = 'round';
+        for (let i = 0; i < 3; i++) {
+            const a = (i / 3) * Math.PI * 2 - Math.PI / 2;
+            ctx.beginPath();
+            ctx.moveTo(Math.cos(a) * prongW, tipY + Math.sin(a) * prongW);
+            ctx.quadraticCurveTo(
+                -Math.cos(a) * prongW * 1.4, tipY - prongH * 0.5,
+                0, tipY - prongH
+            );
+            ctx.stroke();
+        }
+        ctx.beginPath();
+        ctx.arc(0, tipY, prongW * 0.4, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+
+        // Glowing orb
+        const orbFill = combat.weapon?.color ?? '#88aacc';
+        const m = typeof orbFill === 'string' && orbFill.match(/^#?([0-9a-fA-F]{2})([0-9a-fA-F]{2})([0-9a-fA-F]{2})$/);
+        const orbStroke = m ? `#${Math.max(0, Math.floor(parseInt(m[1], 16) * 0.6)).toString(16).padStart(2, '0')}${Math.max(0, Math.floor(parseInt(m[2], 16) * 0.6)).toString(16).padStart(2, '0')}${Math.max(0, Math.floor(parseInt(m[3], 16) * 0.6)).toString(16).padStart(2, '0')}` : '#4a6080';
+        ctx.fillStyle = orbFill;
+        ctx.strokeStyle = orbStroke;
+        ctx.lineWidth = Math.max(1, 1.5 / zoom);
+        ctx.beginPath();
+        ctx.arc(0, tipY - prongH, orbR, 0, Math.PI * 2);
+        ctx.fill();
         ctx.stroke();
 
         ctx.restore();

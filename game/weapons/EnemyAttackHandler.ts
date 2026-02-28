@@ -1,6 +1,7 @@
 // Single enemy attack handler: weapon + behavior type. Used by registry; EnemyAttack is fallback for unknown types.
 // Behavior types: slashOnly, slashAndLeap, chargeRelease, rangedOnly.
 import type { EnemyWeaponLike } from './EnemyWeaponsRegistry.ts';
+import { StatusEffects } from '../components/StatusEffects.ts';
 
 export type EnemyAttackHandlerBehaviorType = 'slashOnly' | 'slashAndLeap' | 'chargeRelease' | 'rangedOnly';
 
@@ -46,6 +47,7 @@ export class EnemyAttackHandler {
     attackBuffer: number;
     attackBufferDuration: number;
     attackDuration: number;
+    _slashTimeoutId: ReturnType<typeof setTimeout> | null;
 
     constructor(weaponOrAttackDef: EnemyWeaponLike | null, behaviorType: EnemyAttackHandlerBehaviorType | string, options: EnemyAttackHandlerOptions = {}) {
         this.weapon = weaponOrAttackDef;
@@ -87,6 +89,7 @@ export class EnemyAttackHandler {
         this.attackBuffer = 0;
         this.attackBufferDuration = options.attackBufferDuration ?? 0.2;
         this.attackDuration = 0;
+        this._slashTimeoutId = null;
 
         this._readStatsFromWeapon();
     }
@@ -141,7 +144,14 @@ export class EnemyAttackHandler {
         return this.behaviorType !== 'rangedOnly' && !(this.weapon && this.weapon.noMelee);
     }
 
-    update(deltaTime) {
+    update(deltaTime: number, entity?: { getComponent<T>(c: new (...args: unknown[]) => T): T | null }) {
+        if (entity) {
+            const statusEffects = entity.getComponent(StatusEffects);
+            if (statusEffects?.isStunned) {
+                this._cancelAttack();
+                return;
+            }
+        }
         if (this.cooldown > 0) this.cooldown = Math.max(0, this.cooldown - deltaTime);
 
         if (this.behaviorType === 'chargeRelease') {
@@ -171,12 +181,31 @@ export class EnemyAttackHandler {
                     this.hitEnemies.delete('player'); // allow this slash to hit the player once
                     const durationMs = this._currentSlashDurationMs;
                     const self = this;
-                    setTimeout(() => {
+                    if (self._slashTimeoutId != null) clearTimeout(self._slashTimeoutId);
+                    self._slashTimeoutId = setTimeout(() => {
+                        self._slashTimeoutId = null;
                         self._slashAttacking = false;
                         self.attackProcessed = false;
                     }, durationMs);
                 }
             }
+        }
+    }
+
+    /** Cancel any in-progress attack (wind-up, slash, lunge, charge-release). Used when entity is stunned. */
+    _cancelAttack(): void {
+        if (this._slashTimeoutId != null) {
+            clearTimeout(this._slashTimeoutId);
+            this._slashTimeoutId = null;
+        }
+        this.isWindingUp = false;
+        this._slashAttacking = false;
+        this.attackProcessed = false;
+        this.isLunging = false;
+        if (this.behaviorType === 'chargeRelease') {
+            this.attackTimer = 0;
+            this.attackBuffer = this.attackBufferDuration;
+            this.hitEnemies.clear();
         }
     }
 

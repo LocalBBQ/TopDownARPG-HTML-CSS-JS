@@ -14,6 +14,8 @@ export type WeaponConfigInput = Parameters<typeof WeaponBehavior.parseWeaponConf
     isRanged?: boolean;
     /** If true, ranged weapon fires on charge release (hold to charge, release to shoot); distinct from crossbow (reload + click). */
     isBow?: boolean;
+    /** If true, one-handed ranged weapon that fires magic missile (orb, AOE on hit). */
+    isStaff?: boolean;
     visual?: string;
     color?: string;
     material?: string;
@@ -40,6 +42,7 @@ export class Weapon {
     _maxComboStage: number | null;
     isRanged: boolean;
     isBow: boolean;
+    isStaff: boolean;
     visual: string | undefined;
     color: string | undefined;
     material: string | undefined;
@@ -67,6 +70,7 @@ export class Weapon {
         this._maxComboStage = p.maxComboStage;
         this.isRanged = config.isRanged === true;
         this.isBow = config.isBow === true;
+        this.isStaff = config.isStaff === true;
         this.visual = config.visual;
         this.color = config.color;
         this.material = config.material;

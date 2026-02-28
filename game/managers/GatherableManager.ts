@@ -1,11 +1,11 @@
 // Gatherable Manager - handles herbs, ore, chests, shrine blessings placed from scene tiles.
 import { Transform } from '../components/Transform.ts';
 import { Health } from '../components/Health.ts';
-import { PlayerHealing } from '../components/PlayerHealing.ts';
 import { Utils } from '../utils/Utils.ts';
 import type { SystemManager } from '../core/SystemManager.ts';
 import type { CameraShape } from '../types/camera.ts';
 import type { EntityShape } from '../types/entity.ts';
+import { drawHerbIcon, drawMushroomIcon } from '../graphics/herbMushroomIcons.ts';
 
 export type GatherableType = 'herb' | 'mushroom' | 'ore' | 'chest' | 'shrineBlessing';
 
@@ -85,7 +85,6 @@ export class GatherableManager {
     applyReward(type: string, player: EntityShape, _systems: SystemManager | null): void {
         const game = this.gameRef as GameRefLike | null;
         const health = player.getComponent(Health);
-        const playerHealing = player.getComponent(PlayerHealing);
         switch (type) {
             case 'herb':
                 if (game?.addHerbToInventory) game.addHerbToInventory();
@@ -97,15 +96,11 @@ export class GatherableManager {
                 if (game && typeof game.gold === 'number') game.gold += 5;
                 break;
             case 'chest':
-                if (playerHealing) playerHealing.charges = Math.min(playerHealing.maxCharges, playerHealing.charges + 2);
                 if (game && typeof game.gold === 'number') game.gold += 15;
                 break;
             case 'shrineBlessing':
                 if (health) health.heal(Math.floor(health.maxHealth * 0.5));
-                if (playerHealing) playerHealing.charges = Math.min(playerHealing.maxCharges, playerHealing.charges + 1);
                 break;
-            default:
-                if (playerHealing) playerHealing.charges = Math.min(playerHealing.maxCharges, playerHealing.charges + 1);
         }
     }
 
@@ -162,7 +157,6 @@ export class GatherableManager {
         } else {
             for (const item of this.items) {
                 if (item.collected) continue;
-                item.pulsePhase += deltaTime * 2;
                 const overlapping = canInteractWith(item);
                 if (overlapping) this.playerNearGatherable = true;
                 if (!overlapping) continue;
@@ -241,39 +235,66 @@ export class GatherableManager {
         ctx.restore();
     }
 
+    /** Small blue flame drawn above shrine blessing gatherables; not drawn for collected (removed) shrines. */
+    private renderShrineFlame(ctx: CanvasRenderingContext2D, screenX: number, screenY: number, zoom: number, pulsePhase: number): void {
+        const t = Date.now() / 400 + pulsePhase;
+        const flicker = 0.85 + 0.15 * Math.sin(t * 3);
+        const h = Math.max(6, 14 * zoom * flicker);
+        const w = Math.max(3, 8 * zoom * flicker);
+        const flameY = screenY - h * 0.6;
+        ctx.save();
+        ctx.translate(screenX, flameY);
+        ctx.beginPath();
+        ctx.moveTo(0, h / 2);
+        ctx.bezierCurveTo(-w, -h / 3, -w * 0.4, -h / 2, 0, -h / 2);
+        ctx.bezierCurveTo(w * 0.4, -h / 2, w, -h / 3, 0, h / 2);
+        ctx.closePath();
+        const g = ctx.createRadialGradient(0, -h / 4, 0, 0, -h / 4, w * 1.2);
+        g.addColorStop(0, 'rgba(120, 200, 255, 0.95)');
+        g.addColorStop(0.5, 'rgba(80, 150, 220, 0.7)');
+        g.addColorStop(1, 'rgba(50, 100, 180, 0.25)');
+        ctx.fillStyle = g;
+        ctx.fill();
+        ctx.strokeStyle = 'rgba(180, 220, 255, 0.5)';
+        ctx.lineWidth = 1;
+        ctx.stroke();
+        ctx.restore();
+    }
+
     render(ctx: CanvasRenderingContext2D, camera: CameraShape): void {
-        const colors: Record<string, { fill: string; glow: string }> = {
-            herb: { fill: '#4a7c4a', glow: 'rgba(100, 180, 100, 0.5)' },
-            mushroom: { fill: '#6b4a3a', glow: 'rgba(160, 100, 80, 0.45)' },
-            ore: { fill: '#6b5b4f', glow: 'rgba(180, 140, 90, 0.45)' },
-            chest: { fill: '#8b6914', glow: 'rgba(220, 180, 80, 0.5)' },
-            shrineBlessing: { fill: '#7b9ed4', glow: 'rgba(150, 180, 255, 0.5)' }
+        const colors: Record<string, { fill: string }> = {
+            herb: { fill: '#4a7c4a' },
+            mushroom: { fill: '#6b4a3a' },
+            ore: { fill: '#6b5b4f' },
+            chest: { fill: '#8b6914' },
+            shrineBlessing: { fill: '#7b9ed4' }
         };
         for (const item of this.items) {
             const screenX = camera.toScreenX(item.x + item.width / 2);
             const screenY = camera.toScreenY(item.y + item.height / 2);
             if (screenX < -60 || screenX > ctx.canvas.width + 60 ||
                 screenY < -60 || screenY > ctx.canvas.height + 60) continue;
-            const pulse = 1 + Math.sin(item.pulsePhase) * 0.12;
             const sizeScale = 0.5;
-            const w = ((item.width * camera.zoom * pulse) / 2) * sizeScale;
-            const h = ((item.height * camera.zoom * pulse) / 2) * sizeScale;
+            const w = ((item.width * camera.zoom) / 2) * sizeScale;
+            const h = ((item.height * camera.zoom) / 2) * sizeScale;
             const style = colors[item.type] || colors.herb;
             ctx.save();
-            ctx.beginPath();
-            const grd = ctx.createRadialGradient(screenX, screenY, 0, screenX, screenY, Math.max(w, h) * 2);
-            grd.addColorStop(0, style.glow);
-            grd.addColorStop(1, 'transparent');
-            ctx.fillStyle = grd;
-            ctx.ellipse(screenX, screenY, Math.max(w, h) * 2, Math.max(w, h) * 2, 0, 0, Math.PI * 2);
-            ctx.fill();
-            ctx.fillStyle = style.fill;
-            ctx.beginPath();
-            ctx.ellipse(screenX, screenY, w, h, 0, 0, Math.PI * 2);
-            ctx.fill();
-            ctx.strokeStyle = 'rgba(255,255,255,0.4)';
-            ctx.lineWidth = 1;
-            ctx.stroke();
+            if (item.type === 'herb') {
+                drawHerbIcon(ctx, screenX, screenY, Math.max(w, h));
+            } else if (item.type === 'mushroom') {
+                drawMushroomIcon(ctx, screenX, screenY, Math.max(w, h));
+            } else {
+                ctx.fillStyle = style.fill;
+                ctx.beginPath();
+                ctx.ellipse(screenX, screenY, w, h, 0, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.strokeStyle = 'rgba(255,255,255,0.4)';
+                ctx.lineWidth = 1;
+                ctx.stroke();
+                if (item.type === 'shrineBlessing') {
+                    this.renderShrineFlame(ctx, screenX, screenY, camera.zoom, item.pulsePhase);
+                }
+            }
             ctx.restore();
         }
     }

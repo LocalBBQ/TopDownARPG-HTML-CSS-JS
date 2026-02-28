@@ -24,7 +24,10 @@ import {
     EnemyGoblinChieftainElite,
     EnemyFireDragonElite,
     EnemyTrainingDummy,
-    EnemyFireDragon
+    EnemyFireDragon,
+    EnemyVillageOgre,
+    EnemyVillageOgreAlpha,
+    EnemyVillageOgreElite
 } from '../config/enemyConfigs.ts';
 import { GameConfig } from '../config/GameConfig.ts';
 import { EnemyWeapons } from '../weapons/EnemyWeaponsRegistry.ts';
@@ -61,7 +64,10 @@ const weaponAndBehavior: Record<string, WeaponAndBehaviorEntry> = {
   trainingDummy: { weaponId: 'goblinDagger', behaviorId: 'slashOnly' },
   fireDragon: { weaponId: 'dragonClaw', behaviorId: 'slashAndLeap' },
   fireDragonAlpha: { weaponId: 'dragonClaw', behaviorId: 'slashAndLeap' },
-  fireDragonElite: { weaponId: 'dragonClaw', behaviorId: 'slashAndLeap' }
+  fireDragonElite: { weaponId: 'dragonClaw', behaviorId: 'slashAndLeap' },
+  villageOgre: { weaponId: 'chieftainClub', behaviorId: 'chargeRelease' },
+  villageOgreAlpha: { weaponId: 'chieftainClub', behaviorId: 'chargeRelease' },
+  villageOgreElite: { weaponId: 'chieftainClub', behaviorId: 'chargeRelease' }
 };
 
 export const Enemies: Record<string, EnemyTypeDefinition | undefined> & {
@@ -94,6 +100,9 @@ export const Enemies: Record<string, EnemyTypeDefinition | undefined> & {
   fireDragonElite: EnemyFireDragonElite,
   trainingDummy: EnemyTrainingDummy,
   fireDragon: EnemyFireDragon,
+  villageOgre: EnemyVillageOgre,
+  villageOgreAlpha: EnemyVillageOgreAlpha,
+  villageOgreElite: EnemyVillageOgreElite,
   weaponAndBehavior,
 
   getConfig(type: string): Record<string, unknown> | null {
@@ -107,6 +116,7 @@ export const Enemies: Record<string, EnemyTypeDefinition | undefined> & {
     const weaponId = overrides?.weaponId ?? map?.weaponId ?? (config as { weaponId?: string } | null)?.weaponId;
     const behaviorId = overrides?.behaviorId ?? map?.behaviorId ?? (config as { behaviorId?: string } | null)?.behaviorId ?? 'slashOnly';
     const weapon = EnemyWeapons.resolveWeapon(weaponId);
+    const configHeavySmash = (config as { heavySmash?: { aoeOffset?: number; aoeRadius?: number } } | null)?.heavySmash;
     const options = {
       isPlayer: false,
       behaviorType: behaviorId,
@@ -114,7 +124,8 @@ export const Enemies: Record<string, EnemyTypeDefinition | undefined> & {
       cooldownMultiplier: (config as { attackCooldownMultiplier?: number } | null)?.attackCooldownMultiplier ?? 1,
       damageMultiplier: (config as { damageMultiplier?: number } | null)?.damageMultiplier ?? 1,
       attackDurationMultiplier: (config as { attackDurationMultiplier?: number } | null)?.attackDurationMultiplier ?? 1,
-      comboWindow: (config as { comboWindow?: number } | null)?.comboWindow
+      comboWindow: (config as { comboWindow?: number } | null)?.comboWindow,
+      heavySmash: configHeavySmash && (configHeavySmash.aoeOffset != null || configHeavySmash.aoeRadius != null) ? configHeavySmash : undefined
     };
     return new WeaponAttackHandler(weapon, options);
   }

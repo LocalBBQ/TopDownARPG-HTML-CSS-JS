@@ -109,4 +109,57 @@ export class PortalRenderer {
             }
         }
     }
+
+    /** Draw only the interaction prompt (no portal graphic) at a world rect, e.g. for cave entrance. */
+    renderPromptAtRect(context: RenderContext, data: { worldRect: { x: number; y: number; width: number; height: number }; promptLines: string[]; channelProgress?: number }): void {
+        const { ctx, canvas, camera } = context;
+        const { worldRect, promptLines, channelProgress = 0 } = data;
+        const screenX = camera.toScreenX(worldRect.x);
+        const screenY = camera.toScreenY(worldRect.y);
+        const w = worldRect.width * camera.zoom;
+        const h = worldRect.height * camera.zoom;
+        const cx = screenX + w / 2;
+        const cy = screenY + h / 2;
+        if (cx < -100 || cx > canvas.width + 100 || cy < -100 || cy > canvas.height + 100) return;
+        const padding = 12;
+        const lineHeight = 24;
+        const lines = promptLines.length > 0 ? promptLines : ['E Enter'];
+        ctx.font = 'bold 18px Arial';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        const textMetrics = lines.map((t: string) => ctx.measureText(t));
+        const bgWidth = Math.max(...textMetrics.map((m: TextMetrics) => m.width)) + padding * 2;
+        const bgHeight = lines.length * lineHeight + padding;
+        const promptY = cy - h / 2 - 20 - (lines.length * lineHeight) / 2;
+        const bgX = cx - bgWidth / 2;
+        const bgY = promptY - padding;
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+        ctx.fillRect(bgX, bgY, bgWidth, bgHeight);
+        ctx.strokeStyle = 'rgba(90, 80, 70, 0.9)';
+        ctx.lineWidth = 2;
+        ctx.strokeRect(bgX, bgY, bgWidth, bgHeight);
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.8)';
+        lines.forEach((text: string, i: number) => {
+            const y = promptY + i * lineHeight;
+            ctx.fillText(text, cx + 1, y + 1);
+        });
+        ctx.fillStyle = '#e8dcc8';
+        lines.forEach((text: string, i: number) => {
+            const y = promptY + i * lineHeight;
+            ctx.fillText(text, cx, y);
+        });
+        if (channelProgress > 0) {
+            const barWidth = 120;
+            const barHeight = 8;
+            const barX = cx - barWidth / 2;
+            const barY = promptY + lines.length * lineHeight + padding + 6;
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
+            ctx.fillRect(barX, barY, barWidth, barHeight);
+            ctx.strokeStyle = 'rgba(90, 80, 70, 0.9)';
+            ctx.lineWidth = 1;
+            ctx.strokeRect(barX, barY, barWidth, barHeight);
+            ctx.fillStyle = 'rgba(140, 120, 100, 0.95)';
+            ctx.fillRect(barX, barY, barWidth * Math.min(1, channelProgress), barHeight);
+        }
+    }
 }

@@ -79,6 +79,12 @@ export class ObjectFactory {
       brazier: { minSize: 35, maxSize: 50, defaultSpritePath: null, color: '#4a3020' },
       /** Massive ancient tree trunk (Elder Woods); scene tiles use explicit large width/height. */
       elderTrunk: { minSize: 200, maxSize: 400, defaultSpritePath: 'assets/sprites/environment/Trees.png', color: '#1e3d0f' },
+      /** Cave/den entrance: interactable, passable. Use customProps targetLevel (and optional returnLevel) from scene tile. */
+      caveEntrance: { minSize: 80, maxSize: 120, defaultSpritePath: null, color: '#3a3528' },
+      /** Cave/den exit: inside cave, interactable, passable. Channel E to return to previous level (portalReturnLevel). */
+      caveExit: { minSize: 80, maxSize: 120, defaultSpritePath: null, color: '#3a3528', passable: true },
+      /** Breakable hive on trees; passable (no collision). When destroyed drops honey pickup. */
+      beehive: { minSize: 20, maxSize: 28, defaultSpritePath: null, color: '#8b6914', breakable: true, hp: 3 },
     };
   }
 

@@ -1,10 +1,11 @@
 // Screen Manager - handles game state and screen rendering
+import { listSaveSlots } from './SaveManager.js';
 import { GameConfig } from '../config/GameConfig.ts';
 import { getQuestDescription } from '../config/questConfig.ts';
 import { STATIC_QUESTS } from '../config/staticQuests.ts';
 import type { Quest } from '../types/quest.ts';
 
-export type ScreenName = 'title' | 'hub' | 'playing' | 'death' | 'pause' | 'settings' | 'settings-controls' | 'help';
+export type ScreenName = 'title' | 'classSelect' | 'saveSelect' | 'hub' | 'playing' | 'death' | 'pause' | 'settings' | 'settings-controls' | 'help';
 
 export interface SettingsLike {
   musicEnabled?: boolean;
@@ -19,7 +20,7 @@ export interface SettingsLike {
   showEnemyHealthBars?: boolean;
 }
 
-const MENU_SCREENS: ScreenName[] = ['title', 'death', 'pause', 'settings', 'settings-controls', 'help'];
+const MENU_SCREENS: ScreenName[] = ['title', 'classSelect', 'saveSelect', 'death', 'pause', 'settings', 'settings-controls', 'help'];
 
 export class ScreenManager {
     canvas: HTMLCanvasElement;
@@ -36,6 +37,9 @@ export class ScreenManager {
         this.onEnterMenuScreen = onEnterMenuScreen;
     }
 
+    /** When the user has mousedown on a menu button (for press animation). Cleared on mouseup/leave. */
+    private _pressedButton: { screen: ScreenName; button: string } | null = null;
+
     setScreen(screen: ScreenName): void {
         this.currentScreen = screen;
         if (MENU_SCREENS.includes(screen) && this.onEnterMenuScreen) {
@@ -43,8 +47,94 @@ export class ScreenManager {
         }
     }
 
+    setPressedButton(p: { screen: ScreenName; button: string } | null): void {
+        this._pressedButton = p;
+    }
+
+    isButtonPressed(screen: ScreenName, button: string): boolean {
+        return this._pressedButton?.screen === screen && this._pressedButton?.button === button;
+    }
+
+    /** Returns which menu button is at (x,y) for the current screen (for press feedback). settings required for 'settings' screen. */
+    getPressedButtonAt(x: number, y: number, settings?: SettingsLike): { screen: ScreenName; button: string } | null {
+        const s = this.currentScreen;
+        if (s === 'title') {
+            const b = this.getTitleButtonAt(x, y);
+            return b ? { screen: 'title', button: b } : null;
+        }
+        if (s === 'classSelect') {
+            const b = this.getClassSelectButtonAt(x, y);
+            return b ? { screen: 'classSelect', button: b } : null;
+        }
+        if (s === 'saveSelect') {
+            const b = this.getSaveSelectButtonAt(x, y);
+            return b ? { screen: 'saveSelect', button: b } : null;
+        }
+        if (s === 'death') {
+            const hit = this.checkButtonClick(x, y, 'death');
+            return hit ? { screen: 'death', button: 'return' } : null;
+        }
+        if (s === 'pause') {
+            const b = this.getPauseButtonAt(x, y);
+            return b ? { screen: 'pause', button: b } : null;
+        }
+        if (s === 'settings') {
+            const b = this.getSettingsItemAt(x, y, settings ?? {});
+            return b ? { screen: 'settings', button: b } : null;
+        }
+        if (s === 'settings-controls') {
+            const b = this.getControlsItemAt(x, y);
+            return b ? { screen: 'settings-controls', button: b } : null;
+        }
+        if (s === 'help') {
+            const b = this.getHelpBackButtonAt(x, y);
+            return b ? { screen: 'help', button: 'back' } : null;
+        }
+        return null;
+    }
+
     isScreen(screen: ScreenName): boolean {
         return this.currentScreen === screen;
+    }
+
+    /** Draw a menu button with optional press offset/depth (2px down, darker fill when pressed). */
+    private drawMenuButton(centerX: number, centerY: number, width: number, height: number, label: string, pressed: boolean, options?: { dim?: boolean; fontSize?: number }): void {
+        const dy = pressed ? 2 : 0;
+        const y = centerY + dy;
+        const h = pressed ? height - 2 : height;
+        this.ctx.fillStyle = pressed ? '#120d08' : '#1a1008';
+        this.ctx.fillRect(centerX - width / 2, y - h / 2, width, h);
+        this.ctx.strokeStyle = pressed ? '#3a2820' : '#4a3020';
+        this.ctx.lineWidth = 2;
+        this.ctx.strokeRect(centerX - width / 2, y - h / 2, width, h);
+        if (!pressed) {
+            this.ctx.strokeStyle = '#c9a227';
+            this.ctx.lineWidth = 1;
+            this.ctx.strokeRect(centerX - width / 2 + 2, y - h / 2 + 2, width - 4, h - 4);
+        }
+        this.ctx.fillStyle = options?.dim ? '#a08060' : '#e8dcc8';
+        this.ctx.font = `600 ${options?.fontSize ?? 15}px Cinzel, Georgia, serif`;
+        this.ctx.fillText(label, centerX, y);
+    }
+
+    /** Draw a small rect button (e.g. Select, Load, Back) with press depth. */
+    private drawSmallButton(centerX: number, centerY: number, width: number, height: number, label: string, pressed: boolean): void {
+        const dy = pressed ? 2 : 0;
+        const y = centerY + dy;
+        const h = pressed ? height - 2 : height;
+        this.ctx.fillStyle = pressed ? '#120d08' : '#1a1008';
+        this.ctx.fillRect(centerX - width / 2, y - h / 2, width, h);
+        this.ctx.strokeStyle = pressed ? '#3a2820' : '#4a3020';
+        this.ctx.lineWidth = 2;
+        this.ctx.strokeRect(centerX - width / 2, y - h / 2, width, h);
+        if (!pressed) {
+            this.ctx.strokeStyle = '#c9a227';
+            this.ctx.lineWidth = 1;
+            this.ctx.strokeRect(centerX - width / 2 + 2, y - h / 2 + 2, width - 4, h - 4);
+        }
+        this.ctx.fillStyle = '#e8dcc8';
+        this.ctx.font = '600 14px Cinzel, Georgia, serif';
+        this.ctx.fillText(label, centerX, y);
     }
 
     getLevelSelectBounds(): { cx: number; rowW: number; rowH: number; startY: number; rows: { level: number; y: number; name: string }[] } {
@@ -354,26 +444,398 @@ export class ScreenManager {
         // Subtitle / hint
         this.ctx.fillStyle = '#a08060';
         this.ctx.font = '500 15px Cinzel, Georgia, serif';
-        this.ctx.fillText('Press SPACE or click Enter to begin', width / 2, height / 2);
+        this.ctx.fillText('Choose an option below', width / 2, height / 2 - 10);
 
-        // Single Enter button
-        const buttonX = width / 2;
-        const buttonY = height / 2 + 60;
-        const buttonWidth = 160;
-        const buttonHeight = 48;
+        const buttonWidth = 180;
+        const buttonHeight = 44;
+        const gap = 20;
+        const totalW = buttonWidth * 2 + gap;
+        const leftX = width / 2 - totalW / 2 + buttonWidth / 2 + gap / 2;
+        const rightX = width / 2 + totalW / 2 - buttonWidth / 2 - gap / 2;
+        const buttonY = height / 2 + 50;
 
-        this.ctx.fillStyle = '#1a1008';
-        this.ctx.fillRect(buttonX - buttonWidth / 2, buttonY - buttonHeight / 2, buttonWidth, buttonHeight);
-        this.ctx.strokeStyle = '#4a3020';
-        this.ctx.lineWidth = 2;
-        this.ctx.strokeRect(buttonX - buttonWidth / 2, buttonY - buttonHeight / 2, buttonWidth, buttonHeight);
-        this.ctx.strokeStyle = '#c9a227';
-        this.ctx.lineWidth = 1;
-        this.ctx.strokeRect(buttonX - buttonWidth / 2 + 2, buttonY - buttonHeight / 2 + 2, buttonWidth - 4, buttonHeight - 4);
+        this.drawMenuButton(leftX, buttonY, buttonWidth, buttonHeight, 'New Game', this.isButtonPressed('title', 'newGame'));
+        this.drawMenuButton(rightX, buttonY, buttonWidth, buttonHeight, 'Load Game', this.isButtonPressed('title', 'loadGame'));
+    }
 
-        this.ctx.fillStyle = '#e8dcc8';
-        this.ctx.font = '600 15px Cinzel, Georgia, serif';
-        this.ctx.fillText('Enter', buttonX, buttonY);
+    getTitleButtonAt(x: number, y: number): 'newGame' | 'loadGame' | null {
+        const width = this.canvas.width;
+        const height = this.canvas.height;
+        const buttonWidth = 180;
+        const buttonHeight = 44;
+        const gap = 20;
+        const totalW = buttonWidth * 2 + gap;
+        const leftX = width / 2 - totalW / 2 + buttonWidth / 2 + gap / 2;
+        const rightX = width / 2 + totalW / 2 - buttonWidth / 2 - gap / 2;
+        const buttonY = height / 2 + 50;
+        const hw = buttonWidth / 2;
+        const hh = buttonHeight / 2;
+        if (x >= leftX - hw && x <= leftX + hw && y >= buttonY - hh && y <= buttonY + hh) return 'newGame';
+        if (x >= rightX - hw && x <= rightX + hw && y >= buttonY - hh && y <= buttonY + hh) return 'loadGame';
+        return null;
+    }
+
+    /** Layout for class select: three panels, each with portrait, description, and button. */
+    private static readonly CLASS_SELECT_PANEL_WIDTH = 200;
+    private static readonly CLASS_SELECT_PORTRAIT_SIZE = 96;
+    private static readonly CLASS_SELECT_BUTTON_WIDTH = 160;
+    private static readonly CLASS_SELECT_BUTTON_HEIGHT = 40;
+
+    getClassSelectBounds(): {
+        titleY: number;
+        panelTop: number;
+        panelCenterX: { warrior: number; mage: number; rogue: number };
+        portraitTop: number;
+        nameY: number;
+        descY: number;
+        buttonY: number;
+        buttonWidth: number;
+        buttonHeight: number;
+        backButtonY: number;
+        backButtonWidth: number;
+        backButtonHeight: number;
+    } {
+        const width = this.canvas.width;
+        const height = this.canvas.height;
+        const cx = width / 2;
+        const gap = 24;
+        const totalPanelWidth = ScreenManager.CLASS_SELECT_PANEL_WIDTH * 3 + gap * 2;
+        const left = cx - totalPanelWidth / 2 + ScreenManager.CLASS_SELECT_PANEL_WIDTH / 2 + gap / 2;
+        const panelCenterX = {
+            warrior: left,
+            mage: cx,
+            rogue: width - left
+        };
+        return {
+            titleY: height * 0.14,
+            panelTop: height * 0.22,
+            panelCenterX,
+            portraitTop: height * 0.22 + 16,
+            nameY: height * 0.22 + 16 + ScreenManager.CLASS_SELECT_PORTRAIT_SIZE + 14,
+            descY: height * 0.22 + 16 + ScreenManager.CLASS_SELECT_PORTRAIT_SIZE + 14 + 24 + 20,
+            buttonY: height * 0.22 + 16 + ScreenManager.CLASS_SELECT_PORTRAIT_SIZE + 14 + 24 + 52 + 14,
+            buttonWidth: ScreenManager.CLASS_SELECT_BUTTON_WIDTH,
+            buttonHeight: ScreenManager.CLASS_SELECT_BUTTON_HEIGHT,
+            backButtonY: height - 52,
+            backButtonWidth: 120,
+            backButtonHeight: 38
+        };
+    }
+
+    /** Top-down class portrait: same body shapes as PlayerEntityRenderer, scaled to fit circle. */
+    private drawClassPortraitWarrior(centerX: number, centerY: number, size: number): void {
+        const s = size / 2;
+        const ctx = this.ctx;
+        ctx.fillStyle = '#1a1410';
+        ctx.beginPath();
+        ctx.arc(centerX, centerY, s - 2, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = '#4a3020';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+        const w = (s - 2) * 1.9;
+        const lw = Math.max(1, 2);
+        ctx.save();
+        ctx.translate(centerX, centerY);
+        ctx.rotate(Math.PI / 2); // face south (down)
+        // Knight top-down: pauldrons + helmet (matches PlayerEntityRenderer)
+        const steel = '#8b8b9a';
+        const steelDark = '#5a5a68';
+        const steelDarker = '#4a4a58';
+        const helmetRx = w * 0.42;
+        const helmetRy = w * 0.38;
+        const paulOffsetY = helmetRy * 0.72;
+        const paulRx = w * 0.22;
+        const paulRy = w * 0.28;
+        ctx.fillStyle = steel;
+        ctx.strokeStyle = steelDarker;
+        ctx.lineWidth = lw;
+        ctx.beginPath();
+        ctx.ellipse(0, paulOffsetY, paulRx, paulRy, 0, 0, Math.PI * 2);
+        ctx.ellipse(0, -paulOffsetY, paulRx, paulRy, 0, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+        ctx.fillStyle = steelDark;
+        ctx.strokeStyle = steelDarker;
+        ctx.beginPath();
+        ctx.ellipse(0, 0, helmetRx, helmetRy, 0, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+        ctx.strokeStyle = 'rgba(0, 0, 0, 0.85)';
+        ctx.lineWidth = Math.max(1.5, lw * 1.2);
+        ctx.beginPath();
+        ctx.moveTo(helmetRx * 0.35, 0);
+        ctx.lineTo(helmetRx * 0.95, 0);
+        ctx.stroke();
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.12)';
+        ctx.lineWidth = lw * 0.5;
+        ctx.beginPath();
+        ctx.moveTo(-helmetRx * 0.5, 0);
+        ctx.lineTo(helmetRx * 0.5, 0);
+        ctx.stroke();
+        ctx.restore();
+    }
+
+    /** Top-down class portrait: same body shapes as PlayerEntityRenderer. */
+    private drawClassPortraitMage(centerX: number, centerY: number, size: number): void {
+        const s = size / 2;
+        const ctx = this.ctx;
+        ctx.fillStyle = '#1a1410';
+        ctx.beginPath();
+        ctx.arc(centerX, centerY, s - 2, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = '#4a3020';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+        const w = (s - 2) * 1.9;
+        const lw = Math.max(1, 2);
+        ctx.save();
+        ctx.translate(centerX, centerY);
+        ctx.rotate(Math.PI / 2); // face south (down)
+        // Wizard top-down: sleeves, bald head (under hood), hood, hat tip
+        const hoodRx = w * 0.42;
+        const hoodRy = w * 0.38;
+        const sleeveOffsetY = hoodRy * 0.72;
+        const sleeveRx = w * 0.22;
+        const sleeveRy = w * 0.28;
+        const robeFill = '#3d2d4d';
+        const robeStroke = '#2a2035';
+        const hoodFill = '#352540';
+        const hoodStroke = '#2a2035';
+        const headFill = '#8b7355';
+        const headStroke = '#6a5a48';
+        ctx.fillStyle = robeFill;
+        ctx.strokeStyle = robeStroke;
+        ctx.lineWidth = lw;
+        ctx.beginPath();
+        ctx.ellipse(0, sleeveOffsetY, sleeveRx, sleeveRy, 0, 0, Math.PI * 2);
+        ctx.ellipse(0, -sleeveOffsetY, sleeveRx, sleeveRy, 0, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+        // Bald head (small, mostly covered by hood)
+        ctx.fillStyle = headFill;
+        ctx.strokeStyle = headStroke;
+        ctx.beginPath();
+        ctx.ellipse(0, 0, hoodRx * 0.5, hoodRy * 0.55, 0, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+        // Hood covering the head
+        ctx.fillStyle = hoodFill;
+        ctx.strokeStyle = hoodStroke;
+        ctx.beginPath();
+        ctx.ellipse(0, 0, hoodRx, hoodRy, 0, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+        ctx.restore();
+    }
+
+    /** Top-down class portrait: same body shapes as PlayerEntityRenderer. */
+    private drawClassPortraitRogue(centerX: number, centerY: number, size: number): void {
+        const s = size / 2;
+        const ctx = this.ctx;
+        ctx.fillStyle = '#1a1410';
+        ctx.beginPath();
+        ctx.arc(centerX, centerY, s - 2, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = '#4a3020';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+        const w = (s - 2) * 1.9;
+        const lw = Math.max(1, 2);
+        ctx.save();
+        ctx.translate(centerX, centerY);
+        ctx.rotate(Math.PI / 2); // face south (down)
+        // Rogue top-down: shoulders + hood, hood tip (matches PlayerEntityRenderer)
+        const hoodRx = w * 0.44;
+        const hoodRy = w * 0.40;
+        const shoulderOffsetY = hoodRy * 0.68;
+        const shoulderRx = w * 0.18;
+        const shoulderRy = w * 0.24;
+        const brownFill = '#5a4a3a';
+        const brownStroke = '#3d3228';
+        ctx.fillStyle = brownFill;
+        ctx.strokeStyle = brownStroke;
+        ctx.lineWidth = lw;
+        ctx.beginPath();
+        ctx.ellipse(0, shoulderOffsetY, shoulderRx, shoulderRy, 0, 0, Math.PI * 2);
+        ctx.ellipse(0, -shoulderOffsetY, shoulderRx, shoulderRy, 0, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+        ctx.fillStyle = brownFill;
+        ctx.strokeStyle = brownStroke;
+        ctx.beginPath();
+        ctx.ellipse(0, 0, hoodRx, hoodRy, 0, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+        ctx.restore();
+    }
+
+    renderClassSelectScreen() {
+        const width = this.canvas.width;
+        const height = this.canvas.height;
+        const cx = width / 2;
+        const b = this.getClassSelectBounds();
+
+        this.ctx.fillStyle = 'rgba(10, 8, 6, 0.92)';
+        this.ctx.fillRect(0, 0, width, height);
+
+        this.ctx.textAlign = 'center';
+        this.ctx.textBaseline = 'middle';
+
+        // Title
+        this.ctx.fillStyle = '#c9a227';
+        this.ctx.font = '700 38px Cinzel, Georgia, serif';
+        this.ctx.fillText('Choose Your Class', cx, b.titleY);
+
+        const classes: { key: 'warrior' | 'mage' | 'rogue'; name: string; description: string[] }[] = [
+            { key: 'warrior', name: 'Warrior', description: ['Heavy armor and blade.', 'Front-line fighter, high defense.'] },
+            { key: 'mage', name: 'Mage', description: ['Staff and arcane arts.', 'Ranged power, crowd control.'] },
+            { key: 'rogue', name: 'Rogue', description: ['Dagger and bow.', 'Speed, crits, and mobility.'] }
+        ];
+
+        const portraitCenterY = b.portraitTop + ScreenManager.CLASS_SELECT_PORTRAIT_SIZE / 2;
+        const halfPanel = ScreenManager.CLASS_SELECT_PANEL_WIDTH / 2;
+
+        for (const c of classes) {
+            const px = b.panelCenterX[c.key];
+            // Panel background
+            const panelH = 14 + ScreenManager.CLASS_SELECT_PORTRAIT_SIZE + 14 + 24 + 52 + 14 + b.buttonHeight + 14;
+            this.ctx.fillStyle = 'rgba(26, 20, 12, 0.85)';
+            this.ctx.strokeStyle = '#4a3020';
+            this.ctx.lineWidth = 2;
+            this.ctx.fillRect(px - halfPanel, b.panelTop, ScreenManager.CLASS_SELECT_PANEL_WIDTH, panelH);
+            this.ctx.strokeRect(px - halfPanel, b.panelTop, ScreenManager.CLASS_SELECT_PANEL_WIDTH, panelH);
+            // Portrait
+            this.ctx.save();
+            this.ctx.translate(px, portraitCenterY);
+            if (c.key === 'warrior') this.drawClassPortraitWarrior(0, 0, ScreenManager.CLASS_SELECT_PORTRAIT_SIZE);
+            else if (c.key === 'mage') this.drawClassPortraitMage(0, 0, ScreenManager.CLASS_SELECT_PORTRAIT_SIZE);
+            else this.drawClassPortraitRogue(0, 0, ScreenManager.CLASS_SELECT_PORTRAIT_SIZE);
+            this.ctx.restore();
+            // Class name
+            this.ctx.fillStyle = '#e8dcc8';
+            this.ctx.font = '600 20px Cinzel, Georgia, serif';
+            this.ctx.fillText(c.name, px, b.nameY);
+            // Description lines
+            this.ctx.fillStyle = '#a08060';
+            this.ctx.font = '500 13px Cinzel, Georgia, serif';
+            c.description.forEach((line, i) => {
+                this.ctx.fillText(line, px, b.descY + i * 18);
+            });
+            // Select button
+            const btnW = b.buttonWidth;
+            const btnH = b.buttonHeight;
+            this.drawSmallButton(px, b.buttonY, btnW, btnH, 'Select', this.isButtonPressed('classSelect', c.key));
+        }
+
+        this.ctx.fillStyle = '#706050';
+        this.ctx.font = '500 12px Cinzel, Georgia, serif';
+        this.ctx.fillText('Select a class to begin your journey', cx, height - 72);
+
+        // Back button
+        const backY = b.backButtonY;
+        const backW = b.backButtonWidth;
+        const backH = b.backButtonHeight;
+        this.drawSmallButton(cx, backY, backW, backH, 'Back', this.isButtonPressed('classSelect', 'back'));
+    }
+
+    getClassSelectButtonAt(x: number, y: number): 'back' | 'warrior' | 'mage' | 'rogue' | null {
+        const b = this.getClassSelectBounds();
+        const cx = this.canvas.width / 2;
+        const backHw = b.backButtonWidth / 2;
+        const backHh = b.backButtonHeight / 2;
+        if (x >= cx - backHw && x <= cx + backHw && y >= b.backButtonY - backHh && y <= b.backButtonY + backHh) return 'back';
+        const hw = b.buttonWidth / 2;
+        const hh = b.buttonHeight / 2;
+        if (x >= b.panelCenterX.warrior - hw && x <= b.panelCenterX.warrior + hw && y >= b.buttonY - hh && y <= b.buttonY + hh) return 'warrior';
+        if (x >= b.panelCenterX.mage - hw && x <= b.panelCenterX.mage + hw && y >= b.buttonY - hh && y <= b.buttonY + hh) return 'mage';
+        if (x >= b.panelCenterX.rogue - hw && x <= b.panelCenterX.rogue + hw && y >= b.buttonY - hh && y <= b.buttonY + hh) return 'rogue';
+        return null;
+    }
+
+    renderSaveSelectScreen() {
+        const width = this.canvas.width;
+        const height = this.canvas.height;
+        const cx = width / 2;
+
+        this.ctx.fillStyle = 'rgba(10, 8, 6, 0.92)';
+        this.ctx.fillRect(0, 0, width, height);
+
+        this.ctx.textAlign = 'center';
+        this.ctx.textBaseline = 'middle';
+
+        this.ctx.fillStyle = '#c9a227';
+        this.ctx.font = '700 38px Cinzel, Georgia, serif';
+        this.ctx.fillText('Load Game', cx, height * 0.12);
+
+        this.ctx.fillStyle = '#a08060';
+        this.ctx.font = '500 14px Cinzel, Georgia, serif';
+        this.ctx.fillText('Choose a save slot to continue', cx, height * 0.18);
+
+        const slots = listSaveSlots();
+        const rowHeight = 56;
+        const startY = height * 0.26;
+        const slotWidth = Math.min(420, width - 80);
+        const labelLeft = cx - slotWidth / 2;
+        const loadBtnWidth = 80;
+        const loadBtnHeight = 36;
+
+        slots.forEach((slot, i) => {
+            const y = startY + i * rowHeight;
+            this.ctx.fillStyle = 'rgba(26, 20, 12, 0.85)';
+            this.ctx.strokeStyle = '#4a3020';
+            this.ctx.lineWidth = 2;
+            this.ctx.fillRect(labelLeft, y - rowHeight / 2 + 4, slotWidth, rowHeight - 8);
+            this.ctx.strokeRect(labelLeft, y - rowHeight / 2 + 4, slotWidth, rowHeight - 8);
+
+            this.ctx.textAlign = 'left';
+            this.ctx.fillStyle = '#e8dcc8';
+            this.ctx.font = '600 16px Cinzel, Georgia, serif';
+            this.ctx.fillText(`Slot ${slot.id}`, labelLeft + 16, y);
+            this.ctx.fillStyle = slot.isEmpty ? '#706050' : '#a08060';
+            this.ctx.font = '500 14px Cinzel, Georgia, serif';
+            this.ctx.fillText(slot.label, labelLeft + 72, y);
+            this.ctx.textAlign = 'center';
+
+            if (!slot.isEmpty) {
+                const loadX = labelLeft + slotWidth - loadBtnWidth / 2 - 16;
+                this.drawSmallButton(loadX, y, loadBtnWidth, loadBtnHeight, 'Load', this.isButtonPressed('saveSelect', slot.id));
+            }
+        });
+
+        this.ctx.textAlign = 'center';
+        const backY = height - 52;
+        const backW = 120;
+        const backH = 38;
+        this.drawSmallButton(cx, backY, backW, backH, 'Back', this.isButtonPressed('saveSelect', 'back'));
+    }
+
+    getSaveSelectButtonAt(x: number, y: number): 'back' | string | null {
+        const width = this.canvas.width;
+        const height = this.canvas.height;
+        const cx = width / 2;
+        const slots = listSaveSlots();
+        const rowHeight = 56;
+        const startY = height * 0.26;
+        const slotWidth = Math.min(420, width - 80);
+        const labelLeft = cx - slotWidth / 2;
+        const loadBtnWidth = 80;
+        const loadBtnHeight = 36;
+
+        const backY = height - 52;
+        const backW = 120;
+        const backH = 38;
+        if (x >= cx - backW / 2 && x <= cx + backW / 2 && y >= backY - backH / 2 && y <= backY + backH / 2) return 'back';
+
+        for (let i = 0; i < slots.length; i++) {
+            if (slots[i].isEmpty) continue;
+            const rowY = startY + i * rowHeight;
+            const loadX = labelLeft + slotWidth - loadBtnWidth / 2 - 16;
+            if (x >= loadX - loadBtnWidth / 2 && x <= loadX + loadBtnWidth / 2 && y >= rowY - loadBtnHeight / 2 && y <= rowY + loadBtnHeight / 2) {
+                return slots[i].id;
+            }
+        }
+        return null;
     }
 
     renderPauseScreen() {
@@ -393,72 +855,41 @@ export class ScreenManager {
         this.ctx.font = '700 38px Cinzel, Georgia, serif';
         this.ctx.fillText('Paused', cx, height / 2 - 120);
 
-        // Resume / Settings / Help / Quit buttons
+        // Resume / Save / Settings / Help / Quit buttons
         const buttonWidth = 200;
         const buttonHeight = 44;
-        const resumeY = height / 2 - 95;
-        const settingsY = height / 2 - 45;
-        const helpY = height / 2 + 5;
-        const quitY = height / 2 + 55;
+        const resumeY = height / 2 - 115;
+        const saveY = height / 2 - 65;
+        const settingsY = height / 2 - 15;
+        const helpY = height / 2 + 35;
+        const quitY = height / 2 + 85;
 
-        // Resume button
-        this.ctx.fillStyle = '#1a1008';
-        this.ctx.fillRect(cx - buttonWidth / 2, resumeY - buttonHeight / 2, buttonWidth, buttonHeight);
-        this.ctx.strokeStyle = '#4a3020';
-        this.ctx.lineWidth = 2;
-        this.ctx.strokeRect(cx - buttonWidth / 2, resumeY - buttonHeight / 2, buttonWidth, buttonHeight);
-        this.ctx.fillStyle = '#e8dcc8';
-        this.ctx.font = '600 15px Cinzel, Georgia, serif';
-        this.ctx.fillText('Resume', cx, resumeY);
-
-        // Settings button
-        this.ctx.fillStyle = '#1a1008';
-        this.ctx.fillRect(cx - buttonWidth / 2, settingsY - buttonHeight / 2, buttonWidth, buttonHeight);
-        this.ctx.strokeStyle = '#4a3020';
-        this.ctx.lineWidth = 2;
-        this.ctx.strokeRect(cx - buttonWidth / 2, settingsY - buttonHeight / 2, buttonWidth, buttonHeight);
-        this.ctx.fillStyle = '#e8dcc8';
-        this.ctx.font = '600 15px Cinzel, Georgia, serif';
-        this.ctx.fillText('Settings', cx, settingsY);
-
-        // Help button
-        this.ctx.fillStyle = '#1a1008';
-        this.ctx.fillRect(cx - buttonWidth / 2, helpY - buttonHeight / 2, buttonWidth, buttonHeight);
-        this.ctx.strokeStyle = '#4a3020';
-        this.ctx.lineWidth = 2;
-        this.ctx.strokeRect(cx - buttonWidth / 2, helpY - buttonHeight / 2, buttonWidth, buttonHeight);
-        this.ctx.fillStyle = '#e8dcc8';
-        this.ctx.font = '600 15px Cinzel, Georgia, serif';
-        this.ctx.fillText('Help — Pack modifiers', cx, helpY);
-
-        // Quit button
-        this.ctx.fillStyle = '#1a1008';
-        this.ctx.fillRect(cx - buttonWidth / 2, quitY - buttonHeight / 2, buttonWidth, buttonHeight);
-        this.ctx.strokeStyle = '#4a3020';
-        this.ctx.lineWidth = 2;
-        this.ctx.strokeRect(cx - buttonWidth / 2, quitY - buttonHeight / 2, buttonWidth, buttonHeight);
-        this.ctx.fillStyle = '#a08060';
-        this.ctx.font = '600 14px Cinzel, Georgia, serif';
-        this.ctx.fillText('Quit to main menu', cx, quitY);
+        this.drawMenuButton(cx, resumeY, buttonWidth, buttonHeight, 'Resume', this.isButtonPressed('pause', 'resume'));
+        this.drawMenuButton(cx, saveY, buttonWidth, buttonHeight, 'Save game', this.isButtonPressed('pause', 'save'));
+        this.drawMenuButton(cx, settingsY, buttonWidth, buttonHeight, 'Settings', this.isButtonPressed('pause', 'settings'));
+        this.drawMenuButton(cx, helpY, buttonWidth, buttonHeight, 'Help — Pack modifiers', this.isButtonPressed('pause', 'help'));
+        this.drawMenuButton(cx, quitY, buttonWidth, buttonHeight, 'Quit to main menu', this.isButtonPressed('pause', 'quit'), { dim: true });
 
         this.ctx.fillStyle = '#a08060';
         this.ctx.font = '500 13px Cinzel, Georgia, serif';
         this.ctx.fillText('Press ESC to resume', cx, height / 2 + 200);
     }
 
-    getPauseButtonAt(x, y) {
+    getPauseButtonAt(x: number, y: number): string | null {
         const width = this.canvas.width;
         const height = this.canvas.height;
         const buttonWidth = 200;
         const buttonHeight = 44;
         const cx = width / 2;
-        const resumeY = height / 2 - 95;
-        const settingsY = height / 2 - 45;
-        const helpY = height / 2 + 5;
-        const quitY = height / 2 + 55;
+        const resumeY = height / 2 - 115;
+        const saveY = height / 2 - 65;
+        const settingsY = height / 2 - 15;
+        const helpY = height / 2 + 35;
+        const quitY = height / 2 + 85;
         const left = cx - buttonWidth / 2;
         const right = cx + buttonWidth / 2;
         if (x >= left && x <= right && y >= resumeY - buttonHeight / 2 && y <= resumeY + buttonHeight / 2) return 'resume';
+        if (x >= left && x <= right && y >= saveY - buttonHeight / 2 && y <= saveY + buttonHeight / 2) return 'save';
         if (x >= left && x <= right && y >= settingsY - buttonHeight / 2 && y <= settingsY + buttonHeight / 2) return 'settings';
         if (x >= left && x <= right && y >= helpY - buttonHeight / 2 && y <= helpY + buttonHeight / 2) return 'help';
         if (x >= left && x <= right && y >= quitY - buttonHeight / 2 && y <= quitY + buttonHeight / 2) return 'quit';
@@ -617,17 +1048,10 @@ export class ScreenManager {
         const backY = height - 56;
         const buttonWidth = 120;
         const buttonHeight = 40;
-        this.ctx.fillStyle = '#1a1008';
-        this.ctx.fillRect(cx - buttonWidth / 2, backY - buttonHeight / 2, buttonWidth, buttonHeight);
-        this.ctx.strokeStyle = '#4a3020';
-        this.ctx.lineWidth = 2;
-        this.ctx.strokeRect(cx - buttonWidth / 2, backY - buttonHeight / 2, buttonWidth, buttonHeight);
-        this.ctx.fillStyle = '#e8dcc8';
-        this.ctx.font = '600 16px Cinzel, Georgia, serif';
-        this.ctx.fillText('Back', cx, backY);
+        this.drawSmallButton(cx, backY, buttonWidth, buttonHeight, 'Back', this.isButtonPressed('help', 'back'));
     }
 
-    getHelpBackButtonAt(x, y) {
+    getHelpBackButtonAt(x: number, y: number): boolean {
         const width = this.canvas.width;
         const height = this.canvas.height;
         const cx = width / 2;
@@ -793,19 +1217,7 @@ export class ScreenManager {
         const buttonY = height / 2 + 70;
         const buttonWidth = 160;
         const buttonHeight = 48;
-
-        this.ctx.fillStyle = '#1a1008';
-        this.ctx.fillRect(buttonX - buttonWidth / 2, buttonY - buttonHeight / 2, buttonWidth, buttonHeight);
-        this.ctx.strokeStyle = '#4a3020';
-        this.ctx.lineWidth = 2;
-        this.ctx.strokeRect(buttonX - buttonWidth / 2, buttonY - buttonHeight / 2, buttonWidth, buttonHeight);
-        this.ctx.strokeStyle = '#c9a227';
-        this.ctx.lineWidth = 1;
-        this.ctx.strokeRect(buttonX - buttonWidth / 2 + 2, buttonY - buttonHeight / 2 + 2, buttonWidth - 4, buttonHeight - 4);
-
-        this.ctx.fillStyle = '#e8dcc8';
-        this.ctx.font = '600 15px Cinzel, Georgia, serif';
-        this.ctx.fillText('Return to Sanctuary', buttonX, buttonY);
+        this.drawMenuButton(buttonX, buttonY, buttonWidth, buttonHeight, 'Return to Sanctuary', this.isButtonPressed('death', 'return'));
     }
 
     checkButtonClick(x: number, y: number, screen: ScreenName): boolean {
@@ -1460,6 +1872,10 @@ export class ScreenManager {
         this.ctx.setTransform(1, 0, 0, 1, 0, 0);
         if (this.currentScreen === 'title') {
             this.renderTitleScreen();
+        } else if (this.currentScreen === 'classSelect') {
+            this.renderClassSelectScreen();
+        } else if (this.currentScreen === 'saveSelect') {
+            this.renderSaveSelectScreen();
         } else if (this.currentScreen === 'death') {
             this.renderDeathScreen();
         } else if (this.currentScreen === 'pause') {

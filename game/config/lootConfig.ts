@@ -51,14 +51,19 @@ export const LOOT_POOLS: Record<string, LootPoolDef> = {
     secondEnchantChance: 0.3
   },
   greaterDemon: {
-    weaponKeys: ['sword_steel', 'sword_mithril', 'greatsword_iron', 'greatsword_steel', 'mace_steel', 'crossbow_iron', 'defender_iron'],
+    weaponKeys: ['sword_steel', 'sword_mithril', 'greatsword_iron', 'greatsword_steel', 'mace_steel', 'crossbow', 'bow_willow', 'staff_willow', 'defender_iron'],
     enchantChance: 0.55,
     secondEnchantChance: 0.35
   },
   fireDragon: {
-    weaponKeys: ['sword_steel', 'sword_mithril', 'greatsword_steel', 'greatsword_mithril', 'mace_steel', 'crossbow_iron', 'defender_iron'],
+    weaponKeys: ['sword_steel', 'sword_mithril', 'greatsword_steel', 'greatsword_mithril', 'mace_steel', 'crossbow', 'bow_yew', 'staff_yew', 'defender_iron'],
     enchantChance: 0.6,
     secondEnchantChance: 0.4
+  },
+  villageOgre: {
+    weaponKeys: ['mace_steel', 'mace_iron', 'greatsword_rusty', 'greatsword_bronze', 'greatsword_iron', 'defender_bronze', 'defender_iron'],
+    enchantChance: 0.5,
+    secondEnchantChance: 0.35
   },
   default: {
     weaponKeys: (() => {

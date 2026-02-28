@@ -3,6 +3,7 @@
  * board, chest, cooldowns, crossbow, inventory, etc.
  */
 import type { Quest } from '../types/quest.ts';
+import { getDefaultUnlockedRecipeIds } from '../config/strategyCraftingConfig.js';
 
 export interface PortalState {
   x: number;
@@ -52,8 +53,14 @@ export type HerbConsumable = { type: 'herb'; count: number };
 /** Stackable mushroom (gathered in world). */
 export type MushroomConsumable = { type: 'mushroom'; count: number };
 
+/** Stackable honey (consumable). */
+export type HoneyConsumable = { type: 'honey'; count: number };
+
+/** Stackable potion (consumable). */
+export type PotionConsumable = { type: 'potion'; count: number };
+
 /** One inventory bag slot: weapon instance, consumable, or empty. */
-export type InventorySlot = WeaponInstance | WhetstoneConsumable | HerbConsumable | MushroomConsumable | null;
+export type InventorySlot = WeaponInstance | WhetstoneConsumable | HerbConsumable | MushroomConsumable | HoneyConsumable | PotionConsumable | null;
 
 /** Armor equipment slot id (head, chest, hands, feet). */
 export type ArmorSlotId = 'head' | 'chest' | 'hands' | 'feet';
@@ -83,8 +90,16 @@ export function isMushroomSlot(slot: InventorySlot): slot is MushroomConsumable 
   return slot != null && 'type' in slot && (slot as MushroomConsumable).type === 'mushroom';
 }
 
-/** Player inventory: 12 slots holding weapons and/or armor. */
-export const INVENTORY_SLOT_COUNT = 12;
+export function isHoneySlot(slot: InventorySlot): slot is HoneyConsumable {
+  return slot != null && 'type' in slot && (slot as HoneyConsumable).type === 'honey';
+}
+
+export function isPotionSlot(slot: InventorySlot): slot is PotionConsumable {
+  return slot != null && 'type' in slot && (slot as PotionConsumable).type === 'potion';
+}
+
+/** Player inventory: 18 slots (3×6 grid) holding weapons and/or armor. */
+export const INVENTORY_SLOT_COUNT = 18;
 
 /** Chest: 24 slots for weapons (and/or armor). */
 export const CHEST_SLOT_COUNT = 24;
@@ -194,6 +209,142 @@ export interface PlayingStateShape {
   /** When transitioning from level to sanctuary: health/stamina to restore on the new player entity. */
   savedSanctuaryHealth?: number;
   savedSanctuaryStamina?: number;
+  /** When entering level 12 from a cave entrance, set to return level (e.g. 1); portal then returns here instead of hub. */
+  portalReturnLevel: number | null;
+  /** True when player overlaps a caveEntrance obstacle (level 1 etc). */
+  playerNearCaveEntrance: boolean;
+  /** World rect of the cave entrance the player is overlapping (for prompt position). */
+  caveEntranceRect: { x: number; y: number; width: number; height: number } | null;
+  /** 0..1 channel progress for entering cave; 0 when not channeling. */
+  caveEntranceChannelProgress: number;
+  /** True when player overlaps a caveExit obstacle (inside cave, exit back to previous level). */
+  playerNearCaveExit: boolean;
+  /** World rect of the cave exit the player is overlapping (for prompt position). */
+  caveExitRect: { x: number; y: number; width: number; height: number } | null;
+  /** 0..1 channel progress for exiting cave; 0 when not channeling. */
+  caveExitChannelProgress: number;
+  /** Strategy Crafting: true while V is held. */
+  strategyCraftingOpen: boolean;
+  /** Recipe ids the player has collected (unlocked). */
+  unlockedStrategyRecipeIds: string[];
+  /** Selected recipe id in the Strategy Crafting pane. */
+  selectedStrategyRecipeId: string | null;
+  /** Player class chosen at new game (affects starting loadouts). */
+  playerClass?: PlayerClass;
+  /** Which weapon set is active (0 or 1). Swapped with R. */
+  activeWeaponSet?: 0 | 1;
+  /** Second weapon set. */
+  equippedMainhandKey2?: string;
+  equippedOffhandKey2?: string;
+  equippedMainhandDurability2?: number;
+  equippedOffhandDurability2?: number;
+  /** Draggable UI panel offsets (dx, dy) from default position. Persisted so layout respects user drag. */
+  uiPanelOffsets?: {
+    inventory?: { dx: number; dy: number };
+    shop?: { dx: number; dy: number };
+    reroll?: { dx: number; dy: number };
+  };
+}
+
+export type PlayerClass = 'warrior' | 'mage' | 'rogue';
+
+/** Default loadouts per class: Warrior = sword; Mage = staff; Rogue = dagger + bow in set 2. */
+export function getDefaultLoadoutsForClass(playerClass: PlayerClass): { set1: { mainhand: string; offhand: string }; set2: { mainhand: string; offhand: string } } {
+  if (playerClass === 'warrior') {
+    return { set1: { mainhand: 'sword_rusty', offhand: 'none' }, set2: { mainhand: 'none', offhand: 'none' } };
+  }
+  if (playerClass === 'mage') {
+    return { set1: { mainhand: 'staff_oak', offhand: 'none' }, set2: { mainhand: 'none', offhand: 'none' } };
+  }
+  return { set1: { mainhand: 'dagger_rusty', offhand: 'none' }, set2: { mainhand: 'bow_oak', offhand: 'none' } }; // rogue
+}
+
+export interface ActiveWeaponSetSnapshot {
+  mainhandKey: string;
+  offhandKey: string;
+  mainhandDurability: number;
+  offhandDurability: number;
+  mainhandPrefixId?: string;
+  mainhandSuffixId?: string;
+  offhandPrefixId?: string;
+  offhandSuffixId?: string;
+}
+
+export function getActiveWeaponSet(ps: PlayingStateShape): ActiveWeaponSetSnapshot {
+  if (ps.activeWeaponSet === 1) {
+    return {
+      mainhandKey: ps.equippedMainhandKey2 ?? 'none',
+      offhandKey: ps.equippedOffhandKey2 ?? 'none',
+      mainhandDurability: ps.equippedMainhandDurability2 ?? MAX_WEAPON_DURABILITY,
+      offhandDurability: ps.equippedOffhandDurability2 ?? MAX_WEAPON_DURABILITY,
+      mainhandPrefixId: (ps as Record<string, unknown>).equippedMainhandPrefixId2 as string | undefined,
+      mainhandSuffixId: (ps as Record<string, unknown>).equippedMainhandSuffixId2 as string | undefined,
+      offhandPrefixId: (ps as Record<string, unknown>).equippedOffhandPrefixId2 as string | undefined,
+      offhandSuffixId: (ps as Record<string, unknown>).equippedOffhandSuffixId2 as string | undefined
+    };
+  }
+  return {
+    mainhandKey: ps.equippedMainhandKey,
+    offhandKey: ps.equippedOffhandKey,
+    mainhandDurability: ps.equippedMainhandDurability,
+    offhandDurability: ps.equippedOffhandDurability,
+    mainhandPrefixId: ps.equippedMainhandPrefixId,
+    mainhandSuffixId: ps.equippedMainhandSuffixId,
+    offhandPrefixId: ps.equippedOffhandPrefixId,
+    offhandSuffixId: ps.equippedOffhandSuffixId
+  };
+}
+
+export function getInactiveWeaponSet(ps: PlayingStateShape): ActiveWeaponSetSnapshot {
+  if (ps.activeWeaponSet === 1) {
+    return {
+      mainhandKey: ps.equippedMainhandKey,
+      offhandKey: ps.equippedOffhandKey,
+      mainhandDurability: ps.equippedMainhandDurability,
+      offhandDurability: ps.equippedOffhandDurability,
+      mainhandPrefixId: ps.equippedMainhandPrefixId,
+      mainhandSuffixId: ps.equippedMainhandSuffixId,
+      offhandPrefixId: ps.equippedOffhandPrefixId,
+      offhandSuffixId: ps.equippedOffhandSuffixId
+    };
+  }
+  return {
+    mainhandKey: ps.equippedMainhandKey2 ?? 'none',
+    offhandKey: ps.equippedOffhandKey2 ?? 'none',
+    mainhandDurability: ps.equippedMainhandDurability2 ?? MAX_WEAPON_DURABILITY,
+    offhandDurability: ps.equippedOffhandDurability2 ?? MAX_WEAPON_DURABILITY,
+    mainhandPrefixId: (ps as Record<string, unknown>).equippedMainhandPrefixId2 as string | undefined,
+    mainhandSuffixId: (ps as Record<string, unknown>).equippedMainhandSuffixId2 as string | undefined,
+    offhandPrefixId: (ps as Record<string, unknown>).equippedOffhandPrefixId2 as string | undefined,
+    offhandSuffixId: (ps as Record<string, unknown>).equippedOffhandSuffixId2 as string | undefined
+  };
+}
+
+export function setActiveWeaponSet(ps: PlayingStateShape, updates: Partial<ActiveWeaponSetSnapshot>): void {
+  const target = ps as Record<string, unknown>;
+  if (ps.activeWeaponSet === 1) {
+    if (updates.mainhandKey !== undefined) target.equippedMainhandKey2 = updates.mainhandKey;
+    if (updates.offhandKey !== undefined) target.equippedOffhandKey2 = updates.offhandKey;
+    if (updates.mainhandDurability !== undefined) target.equippedMainhandDurability2 = updates.mainhandDurability;
+    if (updates.offhandDurability !== undefined) target.equippedOffhandDurability2 = updates.offhandDurability;
+    if (updates.mainhandPrefixId !== undefined) target.equippedMainhandPrefixId2 = updates.mainhandPrefixId;
+    if (updates.mainhandSuffixId !== undefined) target.equippedMainhandSuffixId2 = updates.mainhandSuffixId;
+    if (updates.offhandPrefixId !== undefined) target.equippedOffhandPrefixId2 = updates.offhandPrefixId;
+    if (updates.offhandSuffixId !== undefined) target.equippedOffhandSuffixId2 = updates.offhandSuffixId;
+  } else {
+    if (updates.mainhandKey !== undefined) ps.equippedMainhandKey = updates.mainhandKey;
+    if (updates.offhandKey !== undefined) ps.equippedOffhandKey = updates.offhandKey;
+    if (updates.mainhandDurability !== undefined) ps.equippedMainhandDurability = updates.mainhandDurability;
+    if (updates.offhandDurability !== undefined) ps.equippedOffhandDurability = updates.offhandDurability;
+    if (updates.mainhandPrefixId !== undefined) ps.equippedMainhandPrefixId = updates.mainhandPrefixId;
+    if (updates.mainhandSuffixId !== undefined) ps.equippedMainhandSuffixId = updates.mainhandSuffixId;
+    if (updates.offhandPrefixId !== undefined) ps.equippedOffhandPrefixId = updates.offhandPrefixId;
+    if (updates.offhandSuffixId !== undefined) ps.equippedOffhandSuffixId = updates.offhandSuffixId;
+  }
+}
+
+export function swapActiveWeaponSet(ps: PlayingStateShape): void {
+  (ps as Record<string, unknown>).activeWeaponSet = ps.activeWeaponSet === 1 ? 0 : 1;
 }
 
 /** Initial chest weapon keys (one of each base at Rusty tier; shield at Wooden tier). */
@@ -217,72 +368,98 @@ export function resolveDefaultWeapons(defaultWeapon: string, defaultOffhand?: st
   return { mainhand: defaultWeapon, offhand: defaultOffhand ?? 'none' };
 }
 
-const defaultPlayingState = (defaultMainhand: string, defaultOffhand: string, chestSlots: (WeaponInstance | null)[]): PlayingStateShape => ({
-  portal: null,
-  portalUseCooldown: 0,
-  playerNearPortal: false,
-  portalChannelProgress: 0,
-  portalChannelAction: null,
-  board: null,
-  boardOpen: false,
-  boardUseCooldown: 0,
-  playerNearBoard: false,
-  playerNearQuestPortal: false,
-  questPortalUseCooldown: 0,
-  questPortalChannelProgress: 0,
-  chest: null,
-  chestOpen: false,
-  chestUseCooldown: 0,
-  playerNearChest: false,
-  rerollStation: null,
-  rerollStationOpen: false,
-  rerollStationUseCooldown: 0,
-  playerNearRerollStation: false,
-  rerollSlotItem: null,
-  shop: null,
-  shopOpen: false,
-  shopUseCooldown: 0,
-  shopScrollOffset: 0,
-  playerNearShop: false,
-  crossbowReloadProgress: 1,
-  crossbowReloadInProgress: false,
-  crossbowPerfectReloadNext: false,
-  playerProjectileCooldown: 0,
-  inventoryOpen: false,
-  killsThisLife: 0,
-  gold: 10000,
-  lastHitEnemyId: null,
-  playerInGatherableRange: false,
-  equippedMainhandKey: defaultMainhand,
-  equippedOffhandKey: defaultOffhand,
-  equippedMainhandDurability: MAX_WEAPON_DURABILITY,
-  equippedOffhandDurability: MAX_WEAPON_DURABILITY,
-  inventorySlots: Array(INVENTORY_SLOT_COUNT).fill(null) as InventorySlot[],
-  chestSlots: chestSlots.map((i) => i ? { key: i.key, durability: i.durability, prefixId: i.prefixId, suffixId: i.suffixId } : null),
-  equippedArmorHeadKey: 'none',
-  equippedArmorChestKey: 'none',
-  equippedArmorHandsKey: 'none',
-  equippedArmorFeetKey: 'none',
-  equippedArmorHeadDurability: MAX_ARMOR_DURABILITY,
-  equippedArmorChestDurability: MAX_ARMOR_DURABILITY,
-  equippedArmorHandsDurability: MAX_ARMOR_DURABILITY,
-  equippedArmorFeetDurability: MAX_ARMOR_DURABILITY,
-  hubSelectedLevel: 1,
-  hubSelectedQuestIndex: 0,
-  questList: [],
-  activeQuest: null,
-  questGoldMultiplier: 1,
-  delveFloor: 0,
-  lastEnemyKillX: null,
-  lastEnemyKillY: null,
-  questCompleteFlairRemaining: 0,
-  questCompleteFlairTriggered: false,
-  completedQuestIds: [],
-  unlockedLevelIds: [1],
-  boardTab: 'mainQuest',
-  hubSelectedMainQuestIndex: 0,
-  screenBeforePause: null
-});
+const defaultPlayingState = (
+  defaultMainhand: string,
+  defaultOffhand: string,
+  chestSlots: (WeaponInstance | null)[],
+  playerClass?: PlayerClass
+): PlayingStateShape => {
+  const loadouts = playerClass != null ? getDefaultLoadoutsForClass(playerClass) : null;
+  const set1 = loadouts ? loadouts.set1 : { mainhand: defaultMainhand, offhand: defaultOffhand };
+  const set2 = loadouts ? loadouts.set2 : { mainhand: 'none', offhand: 'none' };
+  return {
+    portal: null,
+    portalUseCooldown: 0,
+    playerNearPortal: false,
+    portalChannelProgress: 0,
+    portalChannelAction: null,
+    board: null,
+    boardOpen: false,
+    boardUseCooldown: 0,
+    playerNearBoard: false,
+    playerNearQuestPortal: false,
+    questPortalUseCooldown: 0,
+    questPortalChannelProgress: 0,
+    chest: null,
+    chestOpen: false,
+    chestUseCooldown: 0,
+    playerNearChest: false,
+    rerollStation: null,
+    rerollStationOpen: false,
+    rerollStationUseCooldown: 0,
+    playerNearRerollStation: false,
+    rerollSlotItem: null,
+    shop: null,
+    shopOpen: false,
+    shopUseCooldown: 0,
+    shopScrollOffset: 0,
+    playerNearShop: false,
+    crossbowReloadProgress: 1,
+    crossbowReloadInProgress: false,
+    crossbowPerfectReloadNext: false,
+    playerProjectileCooldown: 0,
+    inventoryOpen: false,
+    killsThisLife: 0,
+    gold: 10000,
+    lastHitEnemyId: null,
+    playerInGatherableRange: false,
+    equippedMainhandKey: set1.mainhand,
+    equippedOffhandKey: set1.offhand,
+    equippedMainhandDurability: MAX_WEAPON_DURABILITY,
+    equippedOffhandDurability: MAX_WEAPON_DURABILITY,
+    activeWeaponSet: 0,
+    equippedMainhandKey2: set2.mainhand,
+    equippedOffhandKey2: set2.offhand,
+    equippedMainhandDurability2: MAX_WEAPON_DURABILITY,
+    equippedOffhandDurability2: MAX_WEAPON_DURABILITY,
+    playerClass: playerClass ?? undefined,
+    inventorySlots: Array(INVENTORY_SLOT_COUNT).fill(null) as InventorySlot[],
+    chestSlots: chestSlots.map((i) => i ? { key: i.key, durability: i.durability, prefixId: i.prefixId, suffixId: i.suffixId } : null),
+    equippedArmorHeadKey: 'none',
+    equippedArmorChestKey: 'none',
+    equippedArmorHandsKey: 'none',
+    equippedArmorFeetKey: 'none',
+    equippedArmorHeadDurability: MAX_ARMOR_DURABILITY,
+    equippedArmorChestDurability: MAX_ARMOR_DURABILITY,
+    equippedArmorHandsDurability: MAX_ARMOR_DURABILITY,
+    equippedArmorFeetDurability: MAX_ARMOR_DURABILITY,
+    hubSelectedLevel: 1,
+    hubSelectedQuestIndex: 0,
+    questList: [],
+    activeQuest: null,
+    questGoldMultiplier: 1,
+    delveFloor: 0,
+    lastEnemyKillX: null,
+    lastEnemyKillY: null,
+    questCompleteFlairRemaining: 0,
+    questCompleteFlairTriggered: false,
+    completedQuestIds: [],
+    unlockedLevelIds: [1],
+    boardTab: 'mainQuest',
+    hubSelectedMainQuestIndex: 0,
+    screenBeforePause: null,
+    portalReturnLevel: null,
+    playerNearCaveEntrance: false,
+    caveEntranceRect: null,
+    caveEntranceChannelProgress: 0,
+    playerNearCaveExit: false,
+    caveExitRect: null,
+    caveExitChannelProgress: 0,
+    strategyCraftingOpen: false,
+    unlockedStrategyRecipeIds: getDefaultUnlockedRecipeIds(),
+    selectedStrategyRecipeId: null
+  };
+};
 
 export class PlayingState implements PlayingStateShape {
   portal: PortalState | null = null;
@@ -355,14 +532,30 @@ export class PlayingState implements PlayingStateShape {
   shopExpandedWeapons?: Record<string, boolean>;
   shopExpandedArmor?: Record<string, boolean>;
   shopExpandedCategories?: Record<string, boolean>;
+  portalReturnLevel: number | null = null;
+  playerNearCaveEntrance = false;
+  caveEntranceRect: { x: number; y: number; width: number; height: number } | null = null;
+  caveEntranceChannelProgress = 0;
+  playerNearCaveExit = false;
+  caveExitRect: { x: number; y: number; width: number; height: number } | null = null;
+  caveExitChannelProgress = 0;
+  strategyCraftingOpen = false;
+  unlockedStrategyRecipeIds: string[] = getDefaultUnlockedRecipeIds();
+  selectedStrategyRecipeId: string | null = null;
+  playerClass?: PlayerClass;
+  activeWeaponSet: 0 | 1 = 0;
+  equippedMainhandKey2 = 'none';
+  equippedOffhandKey2 = 'none';
+  equippedMainhandDurability2 = MAX_WEAPON_DURABILITY;
+  equippedOffhandDurability2 = MAX_WEAPON_DURABILITY;
 
   constructor(defaultMainhand: string, defaultOffhand: string = 'none') {
     this.equippedMainhandKey = defaultMainhand;
     this.equippedOffhandKey = defaultOffhand;
   }
 
-  reset(_defaultWeapon?: string): void {
-    Object.assign(this, defaultPlayingState('none', 'none', getInitialChestWeapons()));
+  reset(defaultMainhand: string = 'none', defaultOffhand: string = 'none', playerClass?: PlayerClass): void {
+    Object.assign(this, defaultPlayingState(defaultMainhand, defaultOffhand, getInitialChestWeapons(), playerClass));
     this.chestSlots = getInitialChestWeapons();
   }
 }

@@ -33,6 +33,12 @@ export class Projectile {
   airborneDuration: number;
   /** Enemy ids already hit (for pierce: don't hit same enemy twice). */
   hitEntityIds: Set<string>;
+  /** Optional: 'rock' to draw using obstacle rock style (e.g. ogre throw). */
+  visualType?: string;
+  /** If > 0, on first hit projectile explodes and deals damage to entities within this radius. */
+  aoeRadius: number;
+  /** Damage applied by AOE explosion; if 0 or unset, uses this.damage. */
+  aoeDamage: number;
 
   constructor(
     x: number,
@@ -48,7 +54,10 @@ export class Projectile {
     airborneDuration = 0,
     width = 8,
     height = 8,
-    color?: string
+    color?: string,
+    visualType?: string,
+    aoeRadius = 0,
+    aoeDamage = 0
   ) {
     this.x = x;
     this.y = y;
@@ -67,6 +76,9 @@ export class Projectile {
     this.pierce = pierce;
     this.airborneDuration = airborneDuration;
     this.hitEntityIds = new Set();
+    this.visualType = visualType;
+    this.aoeRadius = aoeRadius;
+    this.aoeDamage = aoeDamage > 0 ? aoeDamage : damage;
   }
 
   update(deltaTime: number): void {

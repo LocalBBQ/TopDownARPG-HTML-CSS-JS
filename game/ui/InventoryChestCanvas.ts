@@ -4,7 +4,7 @@
  */
 import type { TooltipHover } from '../types/tooltip.js';
 import type { ArmorSlotId, InventorySlot, PlayingStateShape, WeaponInstance } from '../state/PlayingState.js';
-import { getSlotKey, INVENTORY_SLOT_COUNT, MAX_WEAPON_DURABILITY, MAX_ARMOR_DURABILITY, CHEST_SLOT_COUNT, isWeaponInstance as isWeaponSlotItem, isWhetstoneSlot, isHerbSlot, isMushroomSlot } from '../state/PlayingState.js';
+import { getSlotKey, getActiveWeaponSet, getInactiveWeaponSet, INVENTORY_SLOT_COUNT, MAX_WEAPON_DURABILITY, MAX_ARMOR_DURABILITY, CHEST_SLOT_COUNT, isWeaponInstance as isWeaponSlotItem, isWhetstoneSlot, isHerbSlot, isMushroomSlot, isHoneySlot, isPotionSlot } from '../state/PlayingState.js';
 import { getArmor, getPlayerArmorReduction, getShopArmorBySlot, SHOP_ARMOR_SLOT_ORDER, SHOP_ARMOR_SLOT_LABELS } from '../armor/armorConfigs.js';
 import { canEquipArmorInSlot } from '../state/ArmorActions.js';
 import { Weapons } from '../weapons/WeaponsRegistry.js';
@@ -17,20 +17,43 @@ import {
 } from '../config/shopConfig.js';
 import { getEnchantmentById, applyEnchantEffectsToWeapon } from '../config/enchantmentConfig.js';
 import { WHETSTONE_REPAIR_PERCENT } from '../config/lootConfig.js';
+import { drawHerbIcon, drawMushroomIcon, drawHoneyIcon, drawPotionIcon } from '../graphics/herbMushroomIcons.js';
 
 function isWeaponInstance(w: unknown): w is Weapon {
     return !!w && typeof (w as Weapon).baseDamage === 'number';
 }
 
-/** Display damage from equipped weapons: mainhand baseDamage + Defender offhand baseDamage if present. */
+/** Display damage from active weapon set: mainhand + Defender offhand, including prefix/suffix modifiers. */
 function getDisplayDamage(ps: PlayingStateShape): number | null {
+    const active = getActiveWeaponSet(ps);
     let total = 0;
-    const mh = ps.equippedMainhandKey && ps.equippedMainhandKey !== 'none' ? Weapons[ps.equippedMainhandKey] : null;
-    if (mh && isWeaponInstance(mh)) total += (mh as Weapon).baseDamage ?? 0;
-    const oh = ps.equippedOffhandKey && ps.equippedOffhandKey !== 'none' ? Weapons[ps.equippedOffhandKey] : null;
-    if (oh && isWeaponInstance(oh)) {
-        const w = oh as Weapon;
-        if (w.name?.includes('Defender') && typeof w.baseDamage === 'number') total += w.baseDamage;
+    const mhKey = active.mainhandKey && active.mainhandKey !== 'none' ? active.mainhandKey : null;
+    if (mhKey) {
+        const w = Weapons[mhKey];
+        if (w && isWeaponInstance(w)) {
+            const base = {
+                baseDamage: (w as Weapon).baseDamage ?? 0,
+                baseRange: (w as Weapon).baseRange ?? 0,
+                cooldown: typeof (w as Weapon & { cooldown?: number }).cooldown === 'number' ? (w as Weapon & { cooldown?: number }).cooldown : 0.1,
+                baseStunBuildup: (w as Weapon & { baseStunBuildup?: number }).baseStunBuildup ?? 25
+            };
+            const effective = applyEnchantEffectsToWeapon(base, active.mainhandPrefixId, active.mainhandSuffixId) as { baseDamage?: number };
+            total += typeof effective.baseDamage === 'number' ? effective.baseDamage : 0;
+        }
+    }
+    const ohKey = active.offhandKey && active.offhandKey !== 'none' ? active.offhandKey : null;
+    if (ohKey) {
+        const w = Weapons[ohKey];
+        if (w && isWeaponInstance(w) && (w as Weapon).name?.includes('Defender')) {
+            const base = {
+                baseDamage: (w as Weapon).baseDamage ?? 0,
+                baseRange: (w as Weapon).baseRange ?? 0,
+                cooldown: typeof (w as Weapon & { cooldown?: number }).cooldown === 'number' ? (w as Weapon & { cooldown?: number }).cooldown : 0.1,
+                baseStunBuildup: (w as Weapon & { baseStunBuildup?: number }).baseStunBuildup ?? 25
+            };
+            const effective = applyEnchantEffectsToWeapon(base, active.offhandPrefixId, active.offhandSuffixId) as { baseDamage?: number };
+            total += typeof effective.baseDamage === 'number' ? effective.baseDamage : 0;
+        }
     }
     return total > 0 ? total : null;
 }
@@ -42,15 +65,17 @@ const WEAPON_SYMBOLS: Record<string, string> = {
     dagger: '†',
     greatsword: '⋔',
     crossbow: '⊗',
+    bow: '⌓',
+    staff: '⎈',
     mace: '◆',
-    none: '—'
+    none: ''
 };
 
 export const CHEST_WEAPON_ORDER: string[] = [
-    'sword_rusty', 'shield_wooden', 'defender_rusty', 'dagger_rusty', 'greatsword_rusty', 'crossbow_rusty', 'mace_rusty'
+    'sword_rusty', 'shield_wooden', 'defender_rusty', 'dagger_rusty', 'greatsword_rusty', 'crossbow', 'bow_oak', 'staff_oak', 'mace_rusty'
 ];
 
-const INVENTORY_COLS = 4;
+const INVENTORY_COLS = 6;
 const INVENTORY_ROWS = 3;
 const INVENTORY_GRID_SLOTS = INVENTORY_COLS * INVENTORY_ROWS;
 
@@ -62,14 +87,14 @@ function getBaseWeaponKey(key: string): string {
 }
 
 export function getWeaponSymbol(key: string): string {
-    if (!key) return '—';
+    if (!key) return '';
     const base = getBaseWeaponKey(key);
     return WEAPON_SYMBOLS[base] ?? '?';
 }
 
 const BASE_DISPLAY_NAMES: Record<string, string> = {
     sword: 'Sword', shield: 'Shield', defender: 'Defender',
-    greatsword: 'Greatsword', mace: 'Mace', dagger: 'Dagger', crossbow: 'Crossbow', none: '—'
+    greatsword: 'Greatsword', mace: 'Mace', dagger: 'Dagger', crossbow: 'Crossbow', bow: 'Bow', staff: 'Staff', none: ''
 };
 
 /** Material display name from variant key suffix (e.g. sword_rusty -> Rusty). */
@@ -85,7 +110,7 @@ export function getWeaponDisplayName(
     key: string,
     instance?: { prefixId?: string; suffixId?: string } | null
 ): string {
-    if (!key) return '—';
+    if (!key) return '';
     const baseName = BASE_DISPLAY_NAMES[key] !== undefined
         ? BASE_DISPLAY_NAMES[key]
         : (() => {
@@ -268,6 +293,25 @@ export function drawWeaponIcon(ctx: CanvasRenderingContext2D, cx: number, cy: nu
         ctx.roundRect(-shieldW / 2, -shieldH / 2, shieldW, shieldH, 4);
         ctx.fill();
         ctx.stroke();
+    } else if (base === 'staff') {
+        const shaftLen = s * 0.72;
+        const shaftW = Math.max(2, s * 0.08);
+        ctx.strokeStyle = '#3d301a';
+        ctx.fillStyle = '#5d4a2e';
+        ctx.lineWidth = shaftW;
+        ctx.lineCap = 'round';
+        ctx.beginPath();
+        ctx.moveTo(0, shaftLen / 2);
+        ctx.lineTo(0, -shaftLen / 2);
+        ctx.stroke();
+        const orbR = s * 0.18;
+        ctx.fillStyle = colors.fill;
+        ctx.strokeStyle = colors.stroke;
+        ctx.lineWidth = lw;
+        ctx.beginPath();
+        ctx.arc(0, -shaftLen / 2, orbR, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
     } else {
         ctx.fillStyle = '#e0c8a0';
         ctx.font = `600 ${Math.round(size)}px Cinzel, Georgia, serif`;
@@ -292,6 +336,8 @@ export interface DragState {
     sourceArmorSlot?: ArmorSlotId;
     /** True when dragging a whetstone from inventory (use-on-weapon drop). */
     isWhetstone?: boolean;
+    /** When dragging herb, mushroom, or honey from inventory (reorder only). */
+    dragConsumableType?: 'herb' | 'mushroom' | 'honey' | 'potion';
 }
 
 export function createDragState(): DragState {
@@ -307,26 +353,39 @@ export function createDragState(): DragState {
 }
 
 export function ensureInventoryInitialized(ps: PlayingStateShape): void {
-    if (!ps.inventorySlots || ps.inventorySlots.length !== INVENTORY_SLOT_COUNT) {
+    if (!ps.inventorySlots) {
         ps.inventorySlots = Array(INVENTORY_SLOT_COUNT).fill(null) as InventorySlot[];
+    } else if (ps.inventorySlots.length < INVENTORY_SLOT_COUNT) {
+        ps.inventorySlots = [...ps.inventorySlots, ...Array(INVENTORY_SLOT_COUNT - ps.inventorySlots.length).fill(null)] as InventorySlot[];
+    } else if (ps.inventorySlots.length > INVENTORY_SLOT_COUNT) {
+        ps.inventorySlots = ps.inventorySlots.slice(0, INVENTORY_SLOT_COUNT);
     }
 }
 
 // --- Inventory panel layout (right side, responsive auto layout) ---
 const PANEL_WIDTH_RATIO = 0.40;
-const PANEL_MIN_WIDTH = 260;
-const PANEL_MAX_WIDTH = 420;
-const HEADER_H = 68;
-const SLOT_SIZE = 44;
-const SLOT_GAP = 8;
-const EQUIP_SLOT_SIZE = 58; // Weapons and armor equipment slots (same size)
-const EQUIP_LABEL_SPACE = 32; // Space below each equipment slot for label (and durability) to avoid overlap
+const PANEL_MIN_WIDTH = 280;
+const PANEL_MAX_WIDTH = 440;
+/** Header height for inventory panel (title bar); used for drag handle. */
+export const HEADER_H = 80;
+const SLOT_SIZE = 48;
+const SLOT_GAP = 6;
+const EQUIP_SLOT_SIZE = 64; // Weapons and armor equipment slots (same size)
+const LOADOUT_SLOT_SIZE = 44; // Smaller "other set" slots that sit behind main/off hand
+const LOADOUT_OFFSET = 14; // How much loadout slots peek from behind the main slots
+const EQUIP_LABEL_SPACE = 36; // Space below each equipment slot for label (and durability) to avoid overlap
+/** Horizontal gap between main hand, armor column (head/chest/hands/feet), and off hand */
+const EQUIP_SECTION_GAP = 18;
+const SECTION_GAP = 20; // Vertical gap between stats block, equipment, and inventory
 
 export interface InventoryLayout {
     panel: { x: number; y: number; w: number; h: number };
     slots: { x: number; y: number; w: number; h: number; index: number }[];
     equipmentMainhand: { x: number; y: number; w: number; h: number };
     equipmentOffhand: { x: number; y: number; w: number; h: number };
+    /** Loadout slots (inactive set) drawn behind main/off hand; cycle when swapping with R */
+    loadoutMainhand: { x: number; y: number; w: number; h: number };
+    loadoutOffhand: { x: number; y: number; w: number; h: number };
     equipmentArmor: { head: { x: number; y: number; w: number; h: number }; chest: { x: number; y: number; w: number; h: number }; hands: { x: number; y: number; w: number; h: number }; feet: { x: number; y: number; w: number; h: number } };
     closeButton: { x: number; y: number; w: number; h: number };
     /** When includeChestGrid is true, chest slots are placed inside the panel below the inventory grid. */
@@ -337,13 +396,18 @@ const CHEST_COLS_IN_PANEL = 4;
 const CHEST_ROWS_IN_PANEL = 3;
 const CHEST_SLOTS_IN_PANEL = CHEST_COLS_IN_PANEL * CHEST_ROWS_IN_PANEL;
 
-export function getInventoryLayout(canvas: HTMLCanvasElement, options?: { includeChestGrid?: boolean }): InventoryLayout {
+export function getInventoryLayout(canvas: HTMLCanvasElement, options?: { includeChestGrid?: boolean; panelOffset?: { dx: number; dy: number } }): InventoryLayout {
     const W = canvas.width;
     const H = canvas.height;
     const panelW = Math.min(PANEL_MAX_WIDTH, Math.max(PANEL_MIN_WIDTH, W * PANEL_WIDTH_RATIO));
-    const panelX = W - panelW;
-    const panelY = 0;
+    let panelX = W - panelW;
+    let panelY = 0;
     const panelH = H;
+    const po = options?.panelOffset;
+    if (po) {
+        panelX += po.dx;
+        panelY += po.dy;
+    }
     const padding = Math.max(12, Math.min(20, W * 0.02));
     const contentX = panelX + padding;
     const contentW = panelW - padding * 2;
@@ -352,11 +416,11 @@ export function getInventoryLayout(canvas: HTMLCanvasElement, options?: { includ
     const headerH = HEADER_H;
     const closeW = 64;
     const closeH = 32;
-    const closeButton = { x: panelX + panelW - padding - closeW, y: panelY + 12, w: closeW, h: closeH };
+    const closeButton = { x: panelX + panelW - padding - closeW, y: panelY + (headerH - closeH) / 2, w: closeW, h: closeH };
 
     // Equipment section: armor stacked vertically (head, chest, hands, feet) with main hand left, off hand right
-    const equipSectionTop = panelY + headerH + 14;
-    const equipLabelH = 24;
+    const equipSectionTop = panelY + headerH + SECTION_GAP;
+    const equipLabelH = 26;
     const equipY = equipSectionTop + equipLabelH;
     const armorSlotStep = EQUIP_SLOT_SIZE + EQUIP_LABEL_SPACE + SLOT_GAP;
     const armorColumnHeight = 3 * armorSlotStep + EQUIP_SLOT_SIZE + EQUIP_LABEL_SPACE;
@@ -368,11 +432,13 @@ export function getInventoryLayout(canvas: HTMLCanvasElement, options?: { includ
         feet: { x: armorStartX, y: equipY + 3 * armorSlotStep, w: EQUIP_SLOT_SIZE, h: EQUIP_SLOT_SIZE },
     };
     const weaponSlotY = equipY + armorColumnHeight / 2 - EQUIP_SLOT_SIZE / 2;
-    const equipmentMainhand = { x: armorStartX - SLOT_GAP - EQUIP_SLOT_SIZE, y: weaponSlotY, w: EQUIP_SLOT_SIZE, h: EQUIP_SLOT_SIZE };
-    const equipmentOffhand = { x: armorStartX + EQUIP_SLOT_SIZE + SLOT_GAP, y: weaponSlotY, w: EQUIP_SLOT_SIZE, h: EQUIP_SLOT_SIZE };
+    const equipmentMainhand = { x: armorStartX - EQUIP_SECTION_GAP - EQUIP_SLOT_SIZE, y: weaponSlotY, w: EQUIP_SLOT_SIZE, h: EQUIP_SLOT_SIZE };
+    const equipmentOffhand = { x: armorStartX + EQUIP_SLOT_SIZE + EQUIP_SECTION_GAP, y: weaponSlotY, w: EQUIP_SLOT_SIZE, h: EQUIP_SLOT_SIZE };
+    const loadoutMainhand = { x: equipmentMainhand.x - LOADOUT_SLOT_SIZE + LOADOUT_OFFSET, y: weaponSlotY + LOADOUT_OFFSET, w: LOADOUT_SLOT_SIZE, h: LOADOUT_SLOT_SIZE };
+    const loadoutOffhand = { x: equipmentOffhand.x + EQUIP_SLOT_SIZE - LOADOUT_OFFSET - LOADOUT_SLOT_SIZE, y: weaponSlotY + LOADOUT_OFFSET, w: LOADOUT_SLOT_SIZE, h: LOADOUT_SLOT_SIZE };
 
-    // Inventory grid below armor equipment (12 slots), centered in pane (spacing from equipment)
-    const gridTop = equipY + armorColumnHeight + 48;
+    // Inventory grid below armor equipment (3×6 slots), centered in pane (spacing from equipment)
+    const gridTop = equipY + armorColumnHeight + SECTION_GAP;
     const slots: { x: number; y: number; w: number; h: number; index: number }[] = [];
     const totalGapW = (INVENTORY_COLS - 1) * SLOT_GAP;
     const totalGapH = (INVENTORY_ROWS - 1) * SLOT_GAP;
@@ -396,6 +462,8 @@ export function getInventoryLayout(canvas: HTMLCanvasElement, options?: { includ
         slots,
         equipmentMainhand,
         equipmentOffhand,
+        loadoutMainhand,
+        loadoutOffhand,
         equipmentArmor,
         closeButton
     };
@@ -429,7 +497,7 @@ export function getInventoryLayout(canvas: HTMLCanvasElement, options?: { includ
 }
 
 export type InventoryHit =
-    | { type: 'inventory-slot'; index: number; weaponKey: string | null; durability?: number; prefixId?: string; suffixId?: string; itemType?: 'weapon' | 'armor' | 'whetstone' | 'herb' | 'mushroom' }
+    | { type: 'inventory-slot'; index: number; weaponKey: string | null; durability?: number; prefixId?: string; suffixId?: string; itemType?: 'weapon' | 'armor' | 'whetstone' | 'herb' | 'mushroom' | 'honey' | 'potion' }
     | { type: 'equipment'; slot: 'mainhand' | 'offhand' }
     | { type: 'chest-slot'; index: number; key: string }
     | { type: 'armor-equipment'; slot: ArmorSlotId }
@@ -461,7 +529,7 @@ export function hitTestInventory(
         if (inRect(x, y, s)) {
             const slot = ps.inventorySlots?.[s.index] ?? null;
             const key = getSlotKey(slot);
-            const itemType = isWhetstoneSlot(slot) ? 'whetstone' : isHerbSlot(slot) ? 'herb' : isMushroomSlot(slot) ? 'mushroom' : key ? (getArmor(key) ? 'armor' : 'weapon') : undefined;
+            const itemType = isWhetstoneSlot(slot) ? 'whetstone' : isHerbSlot(slot) ? 'herb' : isMushroomSlot(slot) ? 'mushroom' : isHoneySlot(slot) ? 'honey' : isPotionSlot(slot) ? 'potion' : key ? (getArmor(key) ? 'armor' : 'weapon') : undefined;
             return { type: 'inventory-slot', index: s.index, weaponKey: key, durability: slot && 'durability' in slot ? slot.durability : undefined, prefixId: slot && 'prefixId' in slot ? slot.prefixId : undefined, suffixId: slot && 'suffixId' in slot ? slot.suffixId : undefined, itemType };
         }
     }
@@ -481,7 +549,7 @@ export function hitTestInventory(
 const CHEST_SLOT_SIZE = 56;
 const CHEST_COLS = 4;
 const CHEST_MAX_SLOTS = CHEST_SLOT_COUNT;
-const CHEST_GAP = 10;
+const CHEST_GAP = 0;
 
 export interface ChestSlotRect {
     x: number;
@@ -552,7 +620,8 @@ export function hitTestChest(x: number, y: number, layout: ChestLayout, chestSlo
 const SHOP_ROW_HEIGHT = 32;
 const SHOP_DROPDOWN_HEADER_HEIGHT = 36;
 const SHOP_PANEL_WIDTH = 1120;
-const SHOP_HEADER_HEIGHT = 72;
+/** Shop panel header height (drag handle area). */
+export const SHOP_HEADER_HEIGHT = 72;
 const SHOP_BACK_AREA_HEIGHT = 56;
 
 export interface ShopItemRow {
@@ -653,7 +722,7 @@ export interface ShopLayout {
 }
 
 /** Gold per point of durability restored at the shop. */
-export const REPAIR_GOLD_PER_DURABILITY = 1;
+export const REPAIR_GOLD_PER_DURABILITY = 5;
 
 const SHOP_VISIBLE_PANEL_HEIGHT = 1080;
 
@@ -672,9 +741,14 @@ export function getShopLayout(
     const H = canvas.height;
     const overlay = { x: 0, y: 0, w: W, h: H };
     const panelW = SHOP_PANEL_WIDTH;
-    const panelX = (W - panelW) / 2;
+    let panelX = (W - panelW) / 2;
     const panelH = Math.min(SHOP_VISIBLE_PANEL_HEIGHT, H - 80);
-    const panelY = (H - panelH) / 2;
+    let panelY = (H - panelH) / 2;
+    const po = playingState?.uiPanelOffsets?.shop;
+    if (po) {
+        panelX += po.dx;
+        panelY += po.dy;
+    }
     const panel = { x: panelX, y: panelY, w: panelW, h: panelH };
 
     const byType = getShopByWeaponType();
@@ -685,13 +759,14 @@ export function getShopLayout(
         const rowW = panelW - 32;
         const rowH = SHOP_ROW_HEIGHT - 2;
         const toRepair: Omit<ShopRepairRow, 'x' | 'y' | 'w' | 'h'>[] = [];
-        const mainKey = playingState.equippedMainhandKey;
-        const mainDur = playingState.equippedMainhandDurability ?? MAX_WEAPON_DURABILITY;
+        const activeSet = getActiveWeaponSet(playingState);
+        const mainKey = activeSet.mainhandKey;
+        const mainDur = activeSet.mainhandDurability ?? MAX_WEAPON_DURABILITY;
         if (mainKey && mainKey !== 'none' && mainDur < MAX_WEAPON_DURABILITY) {
             toRepair.push({ source: 'mainhand', weaponKey: mainKey, currentDurability: mainDur, cost: (MAX_WEAPON_DURABILITY - mainDur) * REPAIR_GOLD_PER_DURABILITY });
         }
-        const offKey = playingState.equippedOffhandKey;
-        const offDur = playingState.equippedOffhandDurability ?? MAX_WEAPON_DURABILITY;
+        const offKey = activeSet.offhandKey;
+        const offDur = activeSet.offhandDurability ?? MAX_WEAPON_DURABILITY;
         if (offKey && offKey !== 'none' && offDur < MAX_WEAPON_DURABILITY) {
             toRepair.push({ source: 'offhand', weaponKey: offKey, currentDurability: offDur, cost: (MAX_WEAPON_DURABILITY - offDur) * REPAIR_GOLD_PER_DURABILITY });
         }
@@ -1061,7 +1136,8 @@ export function renderArmorTooltip(
     const durabilitySectionH = showDurabilityBar
         ? TOOLTIP_DURABILITY_BAR_PAD + TOOLTIP_DURABILITY_LABEL_HEIGHT + 4 + TOOLTIP_DURABILITY_BAR_HEIGHT + TOOLTIP_DURABILITY_BAR_PAD
         : 0;
-    const contentH = 28 + rows.length * TOOLTIP_LINE_HEIGHT;
+    const tooltipHeaderH = 24 + TOOLTIP_GAP + TOOLTIP_LINE_HEIGHT / 2;
+    const contentH = tooltipHeaderH + rows.length * TOOLTIP_LINE_HEIGHT;
     const boxH = contentH + durabilitySectionH;
 
     let x = hover.x + gap;
@@ -1077,20 +1153,22 @@ export function renderArmorTooltip(
     ctx.lineWidth = 2;
     ctx.fillRect(x, y, boxW, boxH);
     ctx.strokeRect(x, y, boxW, boxH);
+    ctx.fillStyle = 'rgba(201, 162, 39, 0.85)';
+    ctx.fillRect(x, y, TOOLTIP_ACCENT_LEFT, boxH);
     ctx.fillStyle = '#c9a227';
-    ctx.font = '700 13px Cinzel, Georgia, serif';
+    ctx.font = '700 14px Cinzel, Georgia, serif';
     ctx.textAlign = 'left';
     ctx.textBaseline = 'middle';
-    ctx.fillText(name, x + TOOLTIP_PADDING, y + 14);
+    ctx.fillText(name, x + TOOLTIP_PADDING + TOOLTIP_ACCENT_LEFT, y + 16);
     ctx.fillStyle = 'rgba(61, 40, 23, 0.6)';
-    ctx.fillRect(x + TOOLTIP_PADDING, y + 20, boxW - TOOLTIP_PADDING * 2, 1);
-    let rowY = y + 20 + TOOLTIP_GAP + TOOLTIP_LINE_HEIGHT / 2;
+    ctx.fillRect(x + TOOLTIP_PADDING + TOOLTIP_ACCENT_LEFT, y + 24, boxW - TOOLTIP_PADDING * 2 - TOOLTIP_ACCENT_LEFT, 1);
+    let rowY = y + tooltipHeaderH + TOOLTIP_LINE_HEIGHT / 2;
     for (const r of rows) {
         ctx.fillStyle = '#8a7048';
-        ctx.font = '500 11px Cinzel, Georgia, serif';
-        ctx.fillText(r.label, x + TOOLTIP_PADDING, rowY);
+        ctx.font = '500 12px Cinzel, Georgia, serif';
+        ctx.fillText(r.label, x + TOOLTIP_PADDING + TOOLTIP_ACCENT_LEFT, rowY);
         ctx.fillStyle = '#e8dcc8';
-        ctx.font = '600 11px Cinzel, Georgia, serif';
+        ctx.font = '600 12px Cinzel, Georgia, serif';
         ctx.textAlign = 'right';
         ctx.fillText(r.value, x + boxW - TOOLTIP_PADDING, rowY);
         ctx.textAlign = 'left';
@@ -1098,10 +1176,10 @@ export function renderArmorTooltip(
     }
     if (showDurabilityBar && durabilityPercent !== null) {
         const sectionTop = y + contentH + TOOLTIP_DURABILITY_BAR_PAD;
-        const barW = boxW - TOOLTIP_PADDING * 2;
-        const barX = x + TOOLTIP_PADDING;
+        const barW = boxW - TOOLTIP_PADDING * 2 - TOOLTIP_ACCENT_LEFT;
+        const barX = x + TOOLTIP_PADDING + TOOLTIP_ACCENT_LEFT;
         ctx.fillStyle = '#8a7048';
-        ctx.font = '500 10px Cinzel, Georgia, serif';
+        ctx.font = '500 11px Cinzel, Georgia, serif';
         ctx.textAlign = 'left';
         ctx.textBaseline = 'middle';
         ctx.fillText('Durability', barX, sectionTop + TOOLTIP_DURABILITY_LABEL_HEIGHT / 2);
@@ -1188,6 +1266,28 @@ export function renderMushroomTooltip(
     renderGatherTooltip(ctx, canvas, title, line1, hover);
 }
 
+export function renderHoneyTooltip(
+    ctx: CanvasRenderingContext2D,
+    canvas: HTMLCanvasElement,
+    hover: { x: number; y: number; count: number } | null
+): void {
+    if (!hover) return;
+    const title = hover.count > 1 ? `Honey ×${hover.count}` : 'Honey';
+    const line1 = 'Collected from beehives on trees. Used in alchemy or consumed for a small heal.';
+    renderGatherTooltip(ctx, canvas, title, line1, hover);
+}
+
+export function renderPotionTooltip(
+    ctx: CanvasRenderingContext2D,
+    canvas: HTMLCanvasElement,
+    hover: { x: number; y: number; count: number } | null
+): void {
+    if (!hover) return;
+    const title = hover.count > 1 ? `Potion ×${hover.count}` : 'Potion';
+    const line1 = 'Crafted from Herb + Mushroom. Press Q to use (adds 1 heal charge).';
+    renderGatherTooltip(ctx, canvas, title, line1, hover);
+}
+
 function renderGatherTooltip(
     ctx: CanvasRenderingContext2D,
     canvas: HTMLCanvasElement,
@@ -1228,14 +1328,15 @@ function renderGatherTooltip(
     ctx.restore();
 }
 
-const TOOLTIP_PADDING = 10;
-const TOOLTIP_GAP = 8;
-const TOOLTIP_LINE_HEIGHT = 16;
-const TOOLTIP_MIN_WIDTH = 160;
-const TOOLTIP_MAX_WIDTH = 240;
+const TOOLTIP_PADDING = 14;
+const TOOLTIP_GAP = 10;
+const TOOLTIP_LINE_HEIGHT = 18;
+const TOOLTIP_MIN_WIDTH = 172;
+const TOOLTIP_MAX_WIDTH = 260;
 const TOOLTIP_DURABILITY_BAR_HEIGHT = 6;
-const TOOLTIP_DURABILITY_BAR_PAD = 8;
+const TOOLTIP_DURABILITY_BAR_PAD = 10;
 const TOOLTIP_DURABILITY_LABEL_HEIGHT = 12;
+const TOOLTIP_ACCENT_LEFT = 3; // Gold accent stripe on left edge
 
 export function renderWeaponTooltip(
     ctx: CanvasRenderingContext2D,
@@ -1261,17 +1362,21 @@ export function renderWeaponTooltip(
     let durabilityPercent: number | null = null;
     if (hover.durability != null) {
         durabilityPercent = (100 * hover.durability) / MAX_WEAPON_DURABILITY;
-    } else if (playingState && playingState.equippedMainhandDurability != null && hover.weaponKey === playingState.equippedMainhandKey) {
-        durabilityPercent = (100 * playingState.equippedMainhandDurability) / MAX_WEAPON_DURABILITY;
-    } else if (playingState && playingState.equippedOffhandDurability != null && hover.weaponKey === playingState.equippedOffhandKey) {
-        durabilityPercent = (100 * playingState.equippedOffhandDurability) / MAX_WEAPON_DURABILITY;
+    } else if (playingState) {
+        const active = getActiveWeaponSet(playingState);
+        if (hover.weaponKey === active.mainhandKey && active.mainhandDurability != null) {
+            durabilityPercent = (100 * active.mainhandDurability) / MAX_WEAPON_DURABILITY;
+        } else if (hover.weaponKey === active.offhandKey && active.offhandDurability != null) {
+            durabilityPercent = (100 * active.offhandDurability) / MAX_WEAPON_DURABILITY;
+        }
     }
     const showDurabilityBar = true;
     if (durabilityPercent === null) durabilityPercent = 100;
     const durabilitySectionH = showDurabilityBar
         ? TOOLTIP_DURABILITY_BAR_PAD + TOOLTIP_DURABILITY_LABEL_HEIGHT + 4 + TOOLTIP_DURABILITY_BAR_HEIGHT + TOOLTIP_DURABILITY_BAR_PAD
         : 0;
-    const contentH = 28 + rows.length * TOOLTIP_LINE_HEIGHT;
+    const tooltipHeaderH = 24 + TOOLTIP_GAP + TOOLTIP_LINE_HEIGHT / 2;
+    const contentH = tooltipHeaderH + rows.length * TOOLTIP_LINE_HEIGHT;
     const boxH = contentH + durabilitySectionH;
 
     let x = hover.x + gap;
@@ -1288,20 +1393,22 @@ export function renderWeaponTooltip(
     ctx.lineWidth = 2;
     ctx.fillRect(x, y, boxW, boxH);
     ctx.strokeRect(x, y, boxW, boxH);
+    ctx.fillStyle = 'rgba(201, 162, 39, 0.85)';
+    ctx.fillRect(x, y, TOOLTIP_ACCENT_LEFT, boxH);
     ctx.fillStyle = '#c9a227';
-    ctx.font = '700 13px Cinzel, Georgia, serif';
+    ctx.font = '700 14px Cinzel, Georgia, serif';
     ctx.textAlign = 'left';
     ctx.textBaseline = 'middle';
-    ctx.fillText(name, x + TOOLTIP_PADDING, y + 14);
+    ctx.fillText(name, x + TOOLTIP_PADDING + TOOLTIP_ACCENT_LEFT, y + 16);
     ctx.fillStyle = 'rgba(61, 40, 23, 0.6)';
-    ctx.fillRect(x + TOOLTIP_PADDING, y + 20, boxW - TOOLTIP_PADDING * 2, 1);
-    let rowY = y + 20 + TOOLTIP_GAP + TOOLTIP_LINE_HEIGHT / 2;
+    ctx.fillRect(x + TOOLTIP_PADDING + TOOLTIP_ACCENT_LEFT, y + 24, boxW - TOOLTIP_PADDING * 2 - TOOLTIP_ACCENT_LEFT, 1);
+    let rowY = y + tooltipHeaderH + TOOLTIP_LINE_HEIGHT / 2;
     for (const r of rows) {
         ctx.fillStyle = '#8a7048';
-        ctx.font = '500 11px Cinzel, Georgia, serif';
-        ctx.fillText(r.label, x + TOOLTIP_PADDING, rowY);
+        ctx.font = '500 12px Cinzel, Georgia, serif';
+        ctx.fillText(r.label, x + TOOLTIP_PADDING + TOOLTIP_ACCENT_LEFT, rowY);
         ctx.fillStyle = '#e8dcc8';
-        ctx.font = '600 11px Cinzel, Georgia, serif';
+        ctx.font = '600 12px Cinzel, Georgia, serif';
         ctx.textAlign = 'right';
         ctx.fillText(r.value, x + boxW - TOOLTIP_PADDING, rowY);
         ctx.textAlign = 'left';
@@ -1309,10 +1416,10 @@ export function renderWeaponTooltip(
     }
     if (showDurabilityBar && durabilityPercent !== null) {
         const sectionTop = y + contentH + TOOLTIP_DURABILITY_BAR_PAD;
-        const barW = boxW - TOOLTIP_PADDING * 2;
-        const barX = x + TOOLTIP_PADDING;
+        const barW = boxW - TOOLTIP_PADDING * 2 - TOOLTIP_ACCENT_LEFT;
+        const barX = x + TOOLTIP_PADDING + TOOLTIP_ACCENT_LEFT;
         ctx.fillStyle = '#8a7048';
-        ctx.font = '500 10px Cinzel, Georgia, serif';
+        ctx.font = '500 11px Cinzel, Georgia, serif';
         ctx.textAlign = 'left';
         ctx.textBaseline = 'middle';
         ctx.fillText('Durability', barX, sectionTop + TOOLTIP_DURABILITY_LABEL_HEIGHT / 2);
@@ -1331,7 +1438,7 @@ export function renderWeaponTooltip(
     ctx.restore();
 }
 
-const SLOT_RADIUS = 6;
+const SLOT_RADIUS = 0;
 
 function roundRect(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number): void {
     ctx.beginPath();
@@ -1356,13 +1463,16 @@ function drawShopParentHeader(ctx: CanvasRenderingContext2D, header: ShopParentH
     ctx.fillText(header.title, header.x + 32, header.y + header.h / 2);
 }
 
-function drawSlot(ctx: CanvasRenderingContext2D, r: { x: number; y: number; w: number; h: number }, options: { filled?: boolean; symbol?: string; weaponKey?: string; label?: string; highlight?: boolean; emptyLabel?: string; broken?: boolean }) {
-    ctx.fillStyle = options.filled ? 'rgba(18, 12, 8, 0.88)' : 'rgba(20, 16, 8, 0.6)';
-    if (options.highlight) ctx.fillStyle = 'rgba(201, 162, 39, 0.2)';
+function drawSlot(ctx: CanvasRenderingContext2D, r: { x: number; y: number; w: number; h: number }, options: { filled?: boolean; symbol?: string; weaponKey?: string; label?: string; highlight?: boolean; emptyLabel?: string; broken?: boolean; itemIcon?: 'herb' | 'mushroom' | 'honey' | 'potion'; stackCount?: number; dimmed?: boolean }) {
+    const dimmed = options.dimmed === true;
+    ctx.fillStyle = dimmed
+        ? (options.filled ? 'rgba(12, 10, 6, 0.75)' : 'rgba(14, 12, 8, 0.5)')
+        : (options.filled ? 'rgba(18, 12, 8, 0.88)' : 'rgba(20, 16, 8, 0.6)');
+    if (options.highlight && !dimmed) ctx.fillStyle = 'rgba(201, 162, 39, 0.2)';
     roundRect(ctx, r.x, r.y, r.w, r.h, SLOT_RADIUS);
     ctx.fill();
-    ctx.strokeStyle = options.highlight ? 'rgba(201, 162, 39, 0.9)' : 'rgba(61, 40, 23, 0.6)';
-    ctx.lineWidth = options.highlight ? 2 : 1;
+    ctx.strokeStyle = dimmed ? 'rgba(45, 32, 18, 0.5)' : (options.highlight ? 'rgba(201, 162, 39, 0.9)' : 'rgba(61, 40, 23, 0.6)');
+    ctx.lineWidth = options.highlight && !dimmed ? 2 : 1;
     roundRect(ctx, r.x, r.y, r.w, r.h, SLOT_RADIUS);
     ctx.stroke();
     ctx.textAlign = 'center';
@@ -1370,8 +1480,17 @@ function drawSlot(ctx: CanvasRenderingContext2D, r: { x: number; y: number; w: n
     const cx = r.x + r.w / 2;
     const cy = r.y + r.h / 2;
     const iconSize = Math.min(r.w, r.h) / 2 - 4;
+    if (dimmed) ctx.globalAlpha = 0.75;
     if (options.weaponKey) {
         drawWeaponIcon(ctx, cx, cy, iconSize, options.weaponKey);
+    } else if (options.itemIcon === 'herb') {
+        drawHerbIcon(ctx, cx, cy, iconSize);
+    } else if (options.itemIcon === 'mushroom') {
+        drawMushroomIcon(ctx, cx, cy, iconSize);
+    } else if (options.itemIcon === 'honey') {
+        drawHoneyIcon(ctx, cx, cy, iconSize);
+    } else if (options.itemIcon === 'potion') {
+        drawPotionIcon(ctx, cx, cy, iconSize);
     } else {
         const fontSize = r.w >= 56 ? 24 : 20;
         if (options.symbol) {
@@ -1402,8 +1521,20 @@ function drawSlot(ctx: CanvasRenderingContext2D, r: { x: number; y: number; w: n
         ctx.lineTo(x1, y1 + size);
         ctx.stroke();
     }
+    if (options.stackCount != null && options.stackCount > 1) {
+        const pad = 2;
+        const fontSize = Math.max(9, Math.min(11, Math.floor(r.w * 0.28)));
+        ctx.font = `600 ${fontSize}px Cinzel, Georgia, serif`;
+        ctx.fillStyle = '#e8dcc8';
+        ctx.textAlign = 'right';
+        ctx.textBaseline = 'bottom';
+        ctx.fillText(`×${options.stackCount}`, r.x + r.w - pad, r.y + r.h - pad);
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+    }
     const labelY = r.y + r.h + 18;
-    if (options.label) {
+    if (dimmed) ctx.globalAlpha = 1;
+    if (options.label && !dimmed) {
         ctx.fillStyle = '#8a7048';
         ctx.font = '500 12px Cinzel, Georgia, serif';
         ctx.fillText(options.label, r.x + r.w / 2, labelY);
@@ -1419,8 +1550,11 @@ export function renderInventory(
     options?: { includeChestInPanel?: boolean }
 ): void {
     ensureInventoryInitialized(ps);
-    const layout = getInventoryLayout(canvas, options?.includeChestInPanel ? { includeChestGrid: true } : undefined);
-    const { panel, slots, equipmentMainhand, equipmentOffhand, equipmentArmor, closeButton, chestSlots } = layout;
+    const layout = getInventoryLayout(canvas, {
+        includeChestGrid: options?.includeChestInPanel,
+        panelOffset: ps.uiPanelOffsets?.inventory
+    });
+    const { panel, slots, equipmentMainhand, equipmentOffhand, loadoutMainhand, loadoutOffhand, equipmentArmor, closeButton, chestSlots } = layout;
 
     ctx.save();
     ctx.setTransform(1, 0, 0, 1, 0, 0);
@@ -1442,28 +1576,49 @@ export function renderInventory(
     ctx.fillStyle = 'rgba(55, 38, 25, 0.5)';
     ctx.fillRect(panel.x, panel.y + HEADER_H - 1, panel.w, 1);
 
+    const headerPad = 24;
+    const statsBlockTop = panel.y + 44;
+    const statsBlockH = 52;
+    const statsBlockPad = 12;
+
     // Title
     ctx.fillStyle = '#c9a227';
-    ctx.font = '700 22px Cinzel, Georgia, serif';
+    ctx.font = '700 24px Cinzel, Georgia, serif';
     ctx.textAlign = 'left';
     ctx.textBaseline = 'middle';
-    ctx.fillText('Character', panel.x + 24, panel.y + 22);
+    ctx.fillText('Character', panel.x + headerPad, panel.y + 28);
 
-    // Damage and Armor readout (position values with measureText to avoid overlap)
+    // Stats block (Damage, Armor, Gold) – rounded rect for clear hierarchy
+    const statsBlockX = panel.x + headerPad;
+    const statsBlockW = panel.w - headerPad * 2;
+    roundRect(ctx, statsBlockX, statsBlockTop, statsBlockW, statsBlockH, 8);
+    ctx.fillStyle = 'rgba(20, 14, 10, 0.85)';
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(61, 40, 23, 0.5)';
+    ctx.lineWidth = 1;
+    roundRect(ctx, statsBlockX, statsBlockTop, statsBlockW, statsBlockH, 8);
+    ctx.stroke();
+
     const damageVal = getDisplayDamage(ps);
     const armorPct = Math.round(getPlayerArmorReduction(ps) * 100);
-    const labelX = panel.x + 24;
-    ctx.font = '600 14px Cinzel, Georgia, serif';
+    const statY = statsBlockTop + statsBlockH / 2;
+    ctx.font = '600 15px Cinzel, Georgia, serif';
     ctx.fillStyle = '#8a7048';
-    ctx.fillText('Damage:', labelX, panel.y + 42);
+    ctx.fillText('Damage:', statsBlockX + statsBlockPad, statY);
     const damageLabelW = ctx.measureText('Damage: ').width;
     ctx.fillStyle = '#e8dcc8';
-    ctx.fillText(damageVal != null ? String(damageVal) : '—', labelX + damageLabelW, panel.y + 42);
+    ctx.fillText(damageVal != null ? String(damageVal) : '—', statsBlockX + statsBlockPad + damageLabelW, statY);
+    const armorX = statsBlockX + statsBlockPad + 95;
     ctx.fillStyle = '#8a7048';
-    ctx.fillText('Armor:', labelX, panel.y + 58);
-    const armorLabelW = ctx.measureText('Armor: ').width;
+    ctx.fillText('Armor:', armorX, statY);
+    const armorLabelW2 = ctx.measureText('Armor: ').width;
     ctx.fillStyle = '#e8dcc8';
-    ctx.fillText(armorPct + '%', labelX + armorLabelW, panel.y + 58);
+    ctx.fillText(armorPct + '%', armorX + armorLabelW2, statY);
+    const goldText = 'Gold: ' + (ps.gold ?? 0);
+    ctx.fillStyle = '#c9a227';
+    ctx.textAlign = 'right';
+    ctx.fillText(goldText, statsBlockX + statsBlockW - statsBlockPad, statY);
+    ctx.textAlign = 'left';
 
     // Close button (rounded)
     ctx.fillStyle = 'rgba(26, 18, 12, 0.92)';
@@ -1478,38 +1633,52 @@ export function renderInventory(
     ctx.textAlign = 'center';
     ctx.fillText('Close', closeButton.x + closeButton.w / 2, closeButton.y + closeButton.h / 2);
 
-    // Equipment section label (above armor column)
+    // Section divider and equipment label
+    ctx.fillStyle = 'rgba(61, 40, 23, 0.4)';
+    ctx.fillRect(panel.x + headerPad, equipmentArmor.head.y - 28, panel.w - headerPad * 2, 1);
     ctx.fillStyle = '#a08050';
-    ctx.font = '600 13px Cinzel, Georgia, serif';
-    ctx.textAlign = 'left';
-    ctx.fillText('EQUIPMENT', panel.x + 24, equipmentArmor.head.y - 24);
-
-    // Gold amount
-    const goldText = 'Gold: ' + (ps.gold ?? 0);
-    ctx.fillStyle = '#c9a227';
     ctx.font = '600 14px Cinzel, Georgia, serif';
-    ctx.fillText(goldText, panel.x + 24, equipmentArmor.head.y - 8);
+    ctx.textAlign = 'left';
+    ctx.fillText('EQUIPMENT', panel.x + headerPad, equipmentArmor.head.y - 10);
 
-    // Main hand & Off hand as grid slots (symbol, label)
-    const mainKey = ps.equippedMainhandKey && ps.equippedMainhandKey !== 'none' ? ps.equippedMainhandKey : null;
-    const offKey = ps.equippedOffhandKey && ps.equippedOffhandKey !== 'none' ? ps.equippedOffhandKey : null;
+    // Loadout slots (inactive set) drawn behind main/off hand — cycle when swapping with R
+    const inactive = getInactiveWeaponSet(ps);
+    const loadoutMainKey = inactive.mainhandKey && inactive.mainhandKey !== 'none' ? inactive.mainhandKey : null;
+    const loadoutOffKey = inactive.offhandKey && inactive.offhandKey !== 'none' ? inactive.offhandKey : null;
+    drawSlot(ctx, loadoutMainhand, {
+        filled: !!loadoutMainKey,
+        weaponKey: loadoutMainKey ?? undefined,
+        dimmed: true,
+        broken: !!(loadoutMainKey && inactive.mainhandDurability === 0)
+    });
+    drawSlot(ctx, loadoutOffhand, {
+        filled: !!loadoutOffKey,
+        weaponKey: loadoutOffKey ?? undefined,
+        dimmed: true,
+        broken: !!(loadoutOffKey && inactive.offhandDurability === 0)
+    });
+
+    // Main hand & Off hand as grid slots (symbol, label) — active set on top
+    const active = getActiveWeaponSet(ps);
+    const mainKey = active.mainhandKey && active.mainhandKey !== 'none' ? active.mainhandKey : null;
+    const offKey = active.offhandKey && active.offhandKey !== 'none' ? active.offhandKey : null;
     const dragValidMain = dragState.isDragging && dragState.weaponKey && canEquipWeaponInSlot(dragState.weaponKey, 'mainhand');
     const dragValidOff = dragState.isDragging && dragState.weaponKey && canEquipWeaponInSlot(dragState.weaponKey, 'offhand');
     drawSlot(ctx, equipmentMainhand, {
         filled: true,
         weaponKey: mainKey ?? undefined,
-        emptyLabel: mainKey ? undefined : '—',
+        emptyLabel: mainKey ? undefined : undefined,
         label: 'Main hand',
         highlight: !!mainKey || !!dragValidMain,
-        broken: !!(mainKey && mainKey !== 'none' && ps.equippedMainhandDurability === 0)
+        broken: !!(mainKey && mainKey !== 'none' && active.mainhandDurability === 0)
     });
     drawSlot(ctx, equipmentOffhand, {
         filled: true,
         weaponKey: offKey ?? undefined,
-        emptyLabel: offKey ? undefined : '—',
+        emptyLabel: offKey ? undefined : undefined,
         label: 'Off hand',
         highlight: !!offKey || !!dragValidOff,
-        broken: !!(offKey && offKey !== 'none' && ps.equippedOffhandDurability === 0)
+        broken: !!(offKey && offKey !== 'none' && active.offhandDurability === 0)
     });
 
     // Armor equipment slots (head, chest, hands, feet)
@@ -1527,7 +1696,7 @@ export function renderInventory(
         drawSlot(ctx, r, {
             filled: !!hasArmor,
             symbol: hasArmor ? '◆' : undefined,
-            emptyLabel: hasArmor ? undefined : '—',
+            emptyLabel: hasArmor ? undefined : undefined,
             label: armorLabels[slot],
             highlight: !!hasArmor || !!dragValid,
             broken: !!(hasArmor && durability === 0)
@@ -1557,13 +1726,18 @@ export function renderInventory(
         const isWhetstone = isWhetstoneSlot(slot);
         const isHerb = isHerbSlot(slot);
         const isMushroom = isMushroomSlot(slot);
-        const isConsumable = isWhetstone || isHerb || isMushroom;
+        const isHoney = isHoneySlot(slot);
+        const isPotion = isPotionSlot(slot);
+        const isConsumable = isWhetstone || isHerb || isMushroom || isHoney || isPotion;
+        const stackCount = isConsumable && slot && 'count' in slot ? slot.count : undefined;
         drawSlot(ctx, s, {
             filled: !!key || isConsumable,
             weaponKey: isWeapon ? key ?? undefined : undefined,
-            symbol: isArmor ? '◆' : isWhetstone ? '◉' : isHerb ? '✿' : isMushroom ? '♠' : undefined,
-            emptyLabel: !key && !isConsumable ? '—' : undefined,
-            label: isWhetstone ? (slot.count > 1 ? `Whetstone ×${slot.count}` : 'Whetstone') : isHerb ? (slot.count > 1 ? `Herb ×${slot.count}` : 'Herb') : isMushroom ? (slot.count > 1 ? `Mushroom ×${slot.count}` : 'Mushroom') : undefined,
+            symbol: isArmor ? '◆' : isWhetstone ? '◉' : undefined,
+            itemIcon: isHerb ? 'herb' : isMushroom ? 'mushroom' : isHoney ? 'honey' : isPotion ? 'potion' : undefined,
+            emptyLabel: !key && !isConsumable ? undefined : undefined,
+            stackCount: stackCount != null && stackCount > 1 ? stackCount : undefined,
+            label: isWhetstone ? (slot.count > 1 ? `Whetstone ×${slot.count}` : 'Whetstone') : isHerb ? (slot.count > 1 ? `Herb ×${slot.count}` : 'Herb') : isMushroom ? (slot.count > 1 ? `Mushroom ×${slot.count}` : 'Mushroom') : isHoney ? (slot.count > 1 ? `Honey ×${slot.count}` : 'Honey') : isPotion ? (slot.count > 1 ? `Potion ×${slot.count}` : 'Potion') : undefined,
             broken: !!(key && isWeaponSlotItem(slot) && slot.durability === 0)
         });
         if (isArmor && key && slot && 'durability' in slot) {
@@ -1585,11 +1759,11 @@ export function renderInventory(
         for (const s of chestSlots) {
             const instance = s.index < chestList.length ? chestList[s.index] : undefined;
             const key = instance?.key;
-            const isEquipped = key && (ps.equippedMainhandKey === key || ps.equippedOffhandKey === key);
+            const isEquipped = key && (ps.equippedMainhandKey === key || ps.equippedOffhandKey === key || ps.equippedMainhandKey2 === key || ps.equippedOffhandKey2 === key);
             drawSlot(ctx, s, {
                 filled: !!key,
                 weaponKey: key ?? undefined,
-                emptyLabel: key ? undefined : '—',
+                emptyLabel: key ? undefined : undefined,
                 highlight: !!isEquipped,
                 broken: !!(key && instance && instance.durability === 0)
             });
@@ -1601,6 +1775,8 @@ export function renderInventory(
     renderWhetstoneTooltip(ctx, canvas, tooltipHover?.type === 'whetstone' ? tooltipHover : null);
     renderHerbTooltip(ctx, canvas, tooltipHover?.type === 'herb' ? tooltipHover : null);
     renderMushroomTooltip(ctx, canvas, tooltipHover?.type === 'mushroom' ? tooltipHover : null);
+    renderHoneyTooltip(ctx, canvas, tooltipHover?.type === 'honey' ? tooltipHover : null);
+    renderPotionTooltip(ctx, canvas, tooltipHover?.type === 'potion' ? tooltipHover : null);
     ctx.restore();
 }
 
@@ -1631,11 +1807,11 @@ export function renderChest(
     for (const s of layout.weaponSlots) {
         const instance = s.index < chestSlots.length ? chestSlots[s.index] : undefined;
         const key = instance?.key;
-        const isEquipped = key && (ps.equippedMainhandKey === key || ps.equippedOffhandKey === key);
+        const isEquipped = key && (ps.equippedMainhandKey === key || ps.equippedOffhandKey === key || ps.equippedMainhandKey2 === key || ps.equippedOffhandKey2 === key);
         drawSlot(ctx, s, {
             filled: !!key,
             weaponKey: key ?? undefined,
-            emptyLabel: key ? undefined : '—',
+            emptyLabel: key ? undefined : undefined,
             highlight: !!isEquipped,
             broken: !!(key && instance && instance.durability === 0)
         });
@@ -1695,6 +1871,28 @@ export function renderDragGhost(
         roundRect(ctx, gx, gy, ghostSize, ghostSize, 8);
         ctx.stroke();
         drawWhetstoneIcon(ctx, dragState.pointerX, dragState.pointerY, ghostSize / 2 - 4);
+        ctx.restore();
+        return;
+    }
+    if (dragState.dragConsumableType === 'herb' || dragState.dragConsumableType === 'mushroom' || dragState.dragConsumableType === 'honey' || dragState.dragConsumableType === 'potion') {
+        const ghostSize = 44;
+        const gx = dragState.pointerX - ghostSize / 2;
+        const gy = dragState.pointerY - ghostSize / 2;
+        ctx.save();
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
+        ctx.globalAlpha = 0.95;
+        ctx.fillStyle = 'rgba(22, 16, 10, 0.97)';
+        roundRect(ctx, gx, gy, ghostSize, ghostSize, 8);
+        ctx.fill();
+        ctx.strokeStyle = 'rgba(201, 162, 39, 0.95)';
+        ctx.lineWidth = 2;
+        roundRect(ctx, gx, gy, ghostSize, ghostSize, 8);
+        ctx.stroke();
+        const iconSize = ghostSize / 2 - 4;
+        if (dragState.dragConsumableType === 'herb') drawHerbIcon(ctx, dragState.pointerX, dragState.pointerY, iconSize);
+        else if (dragState.dragConsumableType === 'mushroom') drawMushroomIcon(ctx, dragState.pointerX, dragState.pointerY, iconSize);
+        else if (dragState.dragConsumableType === 'potion') drawPotionIcon(ctx, dragState.pointerX, dragState.pointerY, iconSize);
+        else drawHoneyIcon(ctx, dragState.pointerX, dragState.pointerY, iconSize);
         ctx.restore();
         return;
     }

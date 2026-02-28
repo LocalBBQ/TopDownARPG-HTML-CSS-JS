@@ -9,6 +9,7 @@ import { GameConfig } from '../config/GameConfig.ts';
 import type { GameConfigShape } from '../types/config.js';
 import { WorldGenerator } from '../world/WorldGenerator.ts';
 import { Combat } from '../components/Combat.ts';
+import type { SerializedLevelMap, SerializedObstacle } from '../state/PlayingState.js';
 import { Transform } from '../components/Transform.ts';
 import { Movement } from '../components/Movement.ts';
 
@@ -46,6 +47,10 @@ export class ObstacleManager {
 
     getGatherableManager(): unknown {
         return this.systems?.get?.('gatherables') ?? null;
+    }
+
+    getPickupManager(): { spawnHoney(x: number, y: number): unknown } | null {
+        return (this.systems?.get?.('pickups') as { spawnHoney(x: number, y: number): unknown } | undefined) ?? null;
     }
 
     addObstacle(x: number, y: number, width: number, height: number, type: string, spritePath: string | null = null, customProps: Record<string, unknown> | null = null): Obstacle {
@@ -139,6 +144,7 @@ export class ObstacleManager {
         const allowSwampPools = options && options.allowSwampPools;
         for (const obstacle of this.obstacles) {
             if (obstacle.type === 'mushroom') continue;
+            if (obstacle.passable) continue;
             if (allowSwampPools && obstacle.type === 'swampPool') continue;
             if (obstacle.breakable && (obstacle.hp == null || obstacle.hp <= 0)) continue;
             const rect = this._getObstacleCollisionRect(obstacle);
@@ -182,6 +188,14 @@ export class ObstacleManager {
                     const x = obstacle.x + (obstacle.width - herbSize) / 2;
                     const y = obstacle.y + (obstacle.height - herbSize) / 2;
                     gm.add(x, y, herbSize, herbSize, 'herb');
+                }
+            }
+            if (obstacle.type === 'beehive') {
+                const pm = this.getPickupManager();
+                if (pm && typeof pm.spawnHoney === 'function') {
+                    const cx = obstacle.x + obstacle.width / 2;
+                    const cy = obstacle.y + obstacle.height / 2;
+                    pm.spawnHoney(cx, cy);
                 }
             }
             const i = this.obstacles.indexOf(obstacle);
@@ -250,6 +264,36 @@ export class ObstacleManager {
         }
     }
 
+    /**
+     * Damage or destroy obstacles in a circle (e.g. ogre slam).
+     * When destroyNonBreakable is true, any obstacle in the circle is removed (breakables take damage first, then remove when hp <= 0).
+     */
+    damageObstaclesInCircle(
+        centerX: number,
+        centerY: number,
+        radius: number,
+        damage: number,
+        options?: { destroyNonBreakable?: boolean }
+    ): void {
+        const destroyAny = options?.destroyNonBreakable === true;
+        const toRemove: Obstacle[] = [];
+        for (const obstacle of this.obstacles) {
+            const cx = obstacle.x + obstacle.width / 2;
+            const cy = obstacle.y + obstacle.height / 2;
+            if (Utils.distance(centerX, centerY, cx, cy) > radius) continue;
+            if (obstacle.breakable && obstacle.hp != null) {
+                this.damageObstacle(obstacle, damage);
+                if (obstacle.hp <= 0) toRemove.push(obstacle);
+            } else if (destroyAny) {
+                toRemove.push(obstacle);
+            }
+        }
+        for (const obstacle of toRemove) {
+            const i = this.obstacles.indexOf(obstacle);
+            if (i >= 0) this.obstacles.splice(i, 1);
+        }
+    }
+
     /** Returns 0.5 if the given entity rect overlaps a swamp pool, else 1. Used for player swamp slow. */
     getSwampPoolSpeedMultiplier(centerX, centerY, width, height) {
         const left = centerX - width / 2;
@@ -264,7 +308,7 @@ export class ObstacleManager {
 
     wouldOverlap(x, y, width, height) {
         for (const obstacle of this.obstacles) {
-            if (obstacle.type === 'mushroom') continue;
+            if (obstacle.type === 'mushroom' || obstacle.passable) continue;
             if (Utils.rectCollision(
                 x, y, width, height,
                 obstacle.x, obstacle.y, obstacle.width, obstacle.height
@@ -399,6 +443,12 @@ export class ObstacleManager {
     /** Design-space size for scene tile defs (obstacle coords are in 0..DESIGN_TILE_SIZE). */
     static readonly DESIGN_TILE_SIZE = 800;
 
+    /** Chance (0–1) to spawn a mushroom near each rock or tree when placing scene tiles. */
+    static readonly MUSHROOM_BY_ROCK_OR_TREE_CHANCE = 0.35;
+
+    /** Chance (0–1) to spawn a beehive (collectible for honey) on a tree when placing scene tiles. */
+    static readonly BEEHIVE_BY_TREE_CHANCE = 0.12;
+
     /**
      * Place a single scene tile at the given world origin. Obstacle positions in the tile are relative to (originX, originY).
      * Tile defs use design space (800); positions/sizes are scaled to tileSize at placement.
@@ -422,12 +472,37 @@ export class ObstacleManager {
                 const r = this.rotateObstacleInTile(sx, sy, sw, sh, tileSize, rotation);
                 const config = this.factory.getConfig(obs.type);
                 const spritePath = obs.spritePath != null ? obs.spritePath : (config && config.defaultSpritePath) || null;
-                const customProps = (config && config.color) ? { color: config.color } : null;
+                const reservedKeys = ['x', 'y', 'width', 'height', 'type', 'spritePath'];
+                const customProps: Record<string, unknown> = (config && config.color) ? { color: config.color } : {};
+                for (const key of Object.keys(obs)) {
+                    if (!reservedKeys.includes(key) && (obs as Record<string, unknown>)[key] !== undefined) {
+                        customProps[key] = (obs as Record<string, unknown>)[key];
+                    }
+                }
                 this.addObstacle(
                     originX + r.x, originY + r.y,
                     r.width, r.height,
-                    obs.type, spritePath, customProps
+                    obs.type, spritePath, Object.keys(customProps).length ? customProps : null
                 );
+                if ((obs.type === 'rock' || obs.type === 'tree') && Math.random() < ObstacleManager.MUSHROOM_BY_ROCK_OR_TREE_CHANCE) {
+                    const gm = this.getGatherableManager();
+                    if (gm && typeof gm.add === 'function') {
+                        const margin = Math.min(r.width, r.height) * 0.4;
+                        const offsetX = (Math.random() - 0.5) * 2 * margin;
+                        const offsetY = (Math.random() - 0.5) * 2 * margin;
+                        const mushSize = 32 * scale;
+                        const gx = originX + r.x + r.width / 2 - mushSize / 2 + offsetX;
+                        const gy = originY + r.y + r.height / 2 - mushSize / 2 + offsetY;
+                        gm.add(gx, gy, mushSize, mushSize, 'mushroom');
+                    }
+                }
+                if (obs.type === 'tree' && Math.random() < ObstacleManager.BEEHIVE_BY_TREE_CHANCE) {
+                    const hiveSize = 24 * scale;
+                    const offsetX = (Math.random() - 0.5) * Math.min(r.width, r.height) * 0.3;
+                    const hiveX = originX + r.x + r.width / 2 - hiveSize / 2 + offsetX;
+                    const hiveY = originY + r.y + r.height * 0.12;
+                    this.addObstacle(hiveX, hiveY, hiveSize, hiveSize, 'beehive', null, { passable: true });
+                }
             }
         }
         if (tile.perimeterFence) {
@@ -637,6 +712,52 @@ export class ObstacleManager {
 
     getLastPlacedTiles() {
         return this.lastPlacedTiles || [];
+    }
+
+    /** Serialize current obstacles for restoring the map later (e.g. when returning from ogre den). */
+    serializeWorld(): SerializedObstacle[] {
+        return this.obstacles.map((obs) => {
+            const s: SerializedObstacle = {
+                x: obs.x,
+                y: obs.y,
+                width: obs.width,
+                height: obs.height,
+                type: obs.type
+            };
+            if (obs.spritePath != null) s.spritePath = obs.spritePath;
+            if (obs.spriteFrameIndex != null) s.spriteFrameIndex = obs.spriteFrameIndex;
+            if (obs.breakable != null) s.breakable = obs.breakable;
+            if (obs.hp != null) s.hp = obs.hp;
+            if (obs.maxHp != null) s.maxHp = obs.maxHp;
+            if (obs.passable != null) s.passable = obs.passable;
+            if (obs.targetLevel != null) s.targetLevel = obs.targetLevel;
+            if (obs.returnLevel != null) s.returnLevel = obs.returnLevel;
+            return s;
+        });
+    }
+
+    /** Restore obstacles from a serialized level map (clears current world first). */
+    restoreWorld(serialized: SerializedLevelMap): void {
+        this.clearWorld();
+        for (const s of serialized.obstacles) {
+            const customProps: Record<string, unknown> = {};
+            if (s.spriteFrameIndex != null) customProps.spriteFrameIndex = s.spriteFrameIndex;
+            if (s.breakable != null) customProps.breakable = s.breakable;
+            if (s.hp != null) customProps.hp = s.hp;
+            if (s.maxHp != null) customProps.maxHp = s.maxHp;
+            if (s.passable != null) customProps.passable = s.passable;
+            if (s.targetLevel != null) customProps.targetLevel = s.targetLevel;
+            if (s.returnLevel != null) customProps.returnLevel = s.returnLevel;
+            this.addObstacle(
+                s.x,
+                s.y,
+                s.width,
+                s.height,
+                s.type,
+                s.spritePath ?? null,
+                Object.keys(customProps).length > 0 ? customProps : null
+            );
+        }
     }
 
     generateWorld(worldWidth: number, worldHeight: number, config: Record<string, unknown>, exclusionZone: { x: number; y: number; radius?: number } | null = null): void {

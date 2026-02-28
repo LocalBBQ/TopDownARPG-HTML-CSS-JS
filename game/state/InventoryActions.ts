@@ -9,14 +9,20 @@ import {
   type WhetstoneConsumable,
   type HerbConsumable,
   type MushroomConsumable,
+  type HoneyConsumable,
+  type PotionConsumable,
   getSlotKey,
+  getActiveWeaponSet,
+  setActiveWeaponSet,
   INVENTORY_SLOT_COUNT,
   MAX_WEAPON_DURABILITY,
   CHEST_SLOT_COUNT,
   isWeaponInstance,
   isWhetstoneSlot,
   isHerbSlot,
-  isMushroomSlot
+  isMushroomSlot,
+  isHoneySlot,
+  isPotionSlot
 } from './PlayingState.js';
 import { Weapons } from '../weapons/WeaponsRegistry.js';
 import { canEquipWeaponInSlot, getEquipSlotForWeapon } from '../weapons/weaponSlot.js';
@@ -63,25 +69,32 @@ export function equipFromInventory(
   if (item.durability <= 0) return;
   if (!canEquipWeaponInSlot(item.key, slot)) return;
   const weapon = getWeapon(item.key);
+  const active = getActiveWeaponSet(ps);
   if (slot === 'mainhand') {
-    if (weapon?.twoHanded && ps.equippedOffhandKey && ps.equippedOffhandKey !== 'none') {
+    if (weapon?.twoHanded && active.offhandKey && active.offhandKey !== 'none') {
       unequipToInventory(ps, 'offhand', undefined, undefined, syncCombat);
     }
-    ps.equippedMainhandKey = item.key;
-    ps.equippedMainhandDurability = item.durability;
-    ps.equippedMainhandPrefixId = item.prefixId;
-    ps.equippedMainhandSuffixId = item.suffixId;
+    setActiveWeaponSet(ps, {
+      mainhandKey: item.key,
+      mainhandDurability: item.durability,
+      mainhandPrefixId: item.prefixId,
+      mainhandSuffixId: item.suffixId
+    });
     if (weapon?.twoHanded) {
-      ps.equippedOffhandKey = 'none';
-      ps.equippedOffhandDurability = MAX_WEAPON_DURABILITY;
-      ps.equippedOffhandPrefixId = undefined;
-      ps.equippedOffhandSuffixId = undefined;
+      setActiveWeaponSet(ps, {
+        offhandKey: 'none',
+        offhandDurability: MAX_WEAPON_DURABILITY,
+        offhandPrefixId: undefined,
+        offhandSuffixId: undefined
+      });
     }
   } else {
-    ps.equippedOffhandKey = item.key;
-    ps.equippedOffhandDurability = item.durability;
-    ps.equippedOffhandPrefixId = item.prefixId;
-    ps.equippedOffhandSuffixId = item.suffixId;
+    setActiveWeaponSet(ps, {
+      offhandKey: item.key,
+      offhandDurability: item.durability,
+      offhandPrefixId: item.prefixId,
+      offhandSuffixId: item.suffixId
+    });
   }
   ps.inventorySlots[slotIndex] = null;
   syncCombat?.(ps);
@@ -94,15 +107,16 @@ export function unequipToInventory(
   durabilityOverride?: number,
   syncCombat?: SyncCombat
 ): void {
-  const key = equipSlot === 'mainhand' ? ps.equippedMainhandKey : ps.equippedOffhandKey;
+  const active = getActiveWeaponSet(ps);
+  const key = equipSlot === 'mainhand' ? active.mainhandKey : active.offhandKey;
   const durability =
     durabilityOverride !== undefined
       ? durabilityOverride
       : equipSlot === 'mainhand'
-        ? ps.equippedMainhandDurability
-        : ps.equippedOffhandDurability;
-  const prefixId = equipSlot === 'mainhand' ? ps.equippedMainhandPrefixId : ps.equippedOffhandPrefixId;
-  const suffixId = equipSlot === 'mainhand' ? ps.equippedMainhandSuffixId : ps.equippedOffhandSuffixId;
+        ? active.mainhandDurability
+        : active.offhandDurability;
+  const prefixId = equipSlot === 'mainhand' ? active.mainhandPrefixId : active.offhandPrefixId;
+  const suffixId = equipSlot === 'mainhand' ? active.mainhandSuffixId : active.offhandSuffixId;
   if (!key || key === 'none') return;
   if (!ps.inventorySlots || ps.inventorySlots.length !== INVENTORY_SLOT_COUNT) return;
 
@@ -113,15 +127,19 @@ export function unequipToInventory(
   }
   ps.inventorySlots[index] = { key, durability, prefixId, suffixId } as WeaponInstance;
   if (equipSlot === 'mainhand') {
-    ps.equippedMainhandKey = 'none';
-    ps.equippedMainhandDurability = MAX_WEAPON_DURABILITY;
-    ps.equippedMainhandPrefixId = undefined;
-    ps.equippedMainhandSuffixId = undefined;
+    setActiveWeaponSet(ps, {
+      mainhandKey: 'none',
+      mainhandDurability: MAX_WEAPON_DURABILITY,
+      mainhandPrefixId: undefined,
+      mainhandSuffixId: undefined
+    });
   } else {
-    ps.equippedOffhandKey = 'none';
-    ps.equippedOffhandDurability = MAX_WEAPON_DURABILITY;
-    ps.equippedOffhandPrefixId = undefined;
-    ps.equippedOffhandSuffixId = undefined;
+    setActiveWeaponSet(ps, {
+      offhandKey: 'none',
+      offhandDurability: MAX_WEAPON_DURABILITY,
+      offhandPrefixId: undefined,
+      offhandSuffixId: undefined
+    });
   }
   syncCombat?.(ps);
 }
@@ -135,7 +153,7 @@ export function equipFromChest(ps: PlayingStateShape, chestIndex: number, bagInd
   ps.chestSlots[chestIndex] = null;
 }
 
-/** Take weapon from chest and equip directly to mainhand or offhand. */
+/** Take weapon from chest and equip directly to mainhand or offhand (active set). */
 export function equipFromChestToHand(
   ps: PlayingStateShape,
   chestIndex: number,
@@ -148,25 +166,32 @@ export function equipFromChestToHand(
   if (instance.durability <= 0) return;
   if (!canEquipWeaponInSlot(instance.key, slot)) return;
   const weapon = getWeapon(instance.key);
+  const active = getActiveWeaponSet(ps);
   if (slot === 'mainhand') {
-    if (weapon?.twoHanded && ps.equippedOffhandKey && ps.equippedOffhandKey !== 'none') {
+    if (weapon?.twoHanded && active.offhandKey && active.offhandKey !== 'none') {
       unequipToInventory(ps, 'offhand', undefined, undefined, syncCombat);
     }
-    ps.equippedMainhandKey = instance.key;
-    ps.equippedMainhandDurability = instance.durability;
-    ps.equippedMainhandPrefixId = instance.prefixId;
-    ps.equippedMainhandSuffixId = instance.suffixId;
+    setActiveWeaponSet(ps, {
+      mainhandKey: instance.key,
+      mainhandDurability: instance.durability,
+      mainhandPrefixId: instance.prefixId,
+      mainhandSuffixId: instance.suffixId
+    });
     if (weapon?.twoHanded) {
-      ps.equippedOffhandKey = 'none';
-      ps.equippedOffhandDurability = MAX_WEAPON_DURABILITY;
-      ps.equippedOffhandPrefixId = undefined;
-      ps.equippedOffhandSuffixId = undefined;
+      setActiveWeaponSet(ps, {
+        offhandKey: 'none',
+        offhandDurability: MAX_WEAPON_DURABILITY,
+        offhandPrefixId: undefined,
+        offhandSuffixId: undefined
+      });
     }
   } else {
-    ps.equippedOffhandKey = instance.key;
-    ps.equippedOffhandDurability = instance.durability;
-    ps.equippedOffhandPrefixId = instance.prefixId;
-    ps.equippedOffhandSuffixId = instance.suffixId;
+    setActiveWeaponSet(ps, {
+      offhandKey: instance.key,
+      offhandDurability: instance.durability,
+      offhandPrefixId: instance.prefixId,
+      offhandSuffixId: instance.suffixId
+    });
   }
   ps.chestSlots[chestIndex] = null;
   syncCombat?.(ps);
@@ -182,29 +207,44 @@ export function putInChestFromInventory(ps: PlayingStateShape, bagIndex: number)
   if (empty >= 0) ps.chestSlots[empty] = { key: item.key, durability: item.durability, prefixId: item.prefixId, suffixId: item.suffixId };
 }
 
+/** Swap two chest slots (for reordering when dragging within the chest). */
+export function swapChestSlots(ps: PlayingStateShape, indexA: number, indexB: number): void {
+  if (!ps.chestSlots || ps.chestSlots.length !== CHEST_SLOT_COUNT) return;
+  if (indexA < 0 || indexA >= CHEST_SLOT_COUNT || indexB < 0 || indexB >= CHEST_SLOT_COUNT || indexA === indexB) return;
+  const a = ps.chestSlots[indexA];
+  const b = ps.chestSlots[indexB];
+  ps.chestSlots[indexA] = b;
+  ps.chestSlots[indexB] = a;
+}
+
 export function putInChestFromEquipment(
   ps: PlayingStateShape,
   equipSlot: 'mainhand' | 'offhand',
   syncCombat?: SyncCombat
 ): void {
-  const key = equipSlot === 'mainhand' ? ps.equippedMainhandKey : ps.equippedOffhandKey;
-  const durability = equipSlot === 'mainhand' ? ps.equippedMainhandDurability : ps.equippedOffhandDurability;
-  const prefixId = equipSlot === 'mainhand' ? ps.equippedMainhandPrefixId : ps.equippedOffhandPrefixId;
-  const suffixId = equipSlot === 'mainhand' ? ps.equippedMainhandSuffixId : ps.equippedOffhandSuffixId;
+  const active = getActiveWeaponSet(ps);
+  const key = equipSlot === 'mainhand' ? active.mainhandKey : active.offhandKey;
+  const durability = equipSlot === 'mainhand' ? active.mainhandDurability : active.offhandDurability;
+  const prefixId = equipSlot === 'mainhand' ? active.mainhandPrefixId : active.offhandPrefixId;
+  const suffixId = equipSlot === 'mainhand' ? active.mainhandSuffixId : active.offhandSuffixId;
   if (!key || key === 'none') return;
   if (!ps.chestSlots || ps.chestSlots.length !== CHEST_SLOT_COUNT) return;
   const empty = ps.chestSlots.findIndex((s) => s == null);
   if (empty >= 0) ps.chestSlots[empty] = { key, durability, prefixId, suffixId };
   if (equipSlot === 'mainhand') {
-    ps.equippedMainhandKey = 'none';
-    ps.equippedMainhandDurability = MAX_WEAPON_DURABILITY;
-    ps.equippedMainhandPrefixId = undefined;
-    ps.equippedMainhandSuffixId = undefined;
+    setActiveWeaponSet(ps, {
+      mainhandKey: 'none',
+      mainhandDurability: MAX_WEAPON_DURABILITY,
+      mainhandPrefixId: undefined,
+      mainhandSuffixId: undefined
+    });
   } else {
-    ps.equippedOffhandKey = 'none';
-    ps.equippedOffhandDurability = MAX_WEAPON_DURABILITY;
-    ps.equippedOffhandPrefixId = undefined;
-    ps.equippedOffhandSuffixId = undefined;
+    setActiveWeaponSet(ps, {
+      offhandKey: 'none',
+      offhandDurability: MAX_WEAPON_DURABILITY,
+      offhandPrefixId: undefined,
+      offhandSuffixId: undefined
+    });
   }
   syncCombat?.(ps);
 }
@@ -219,31 +259,38 @@ export function swapEquipmentWithInventory(
   const bagItem = ps.inventorySlots[bagIndex];
   if (!bagItem || !isWeaponInstance(bagItem)) return;
   if (bagItem.durability <= 0 || !canEquipWeaponInSlot(bagItem.key, equipSlot)) return;
-  const equipKey = equipSlot === 'mainhand' ? ps.equippedMainhandKey : ps.equippedOffhandKey;
-  const equipDurability = equipSlot === 'mainhand' ? ps.equippedMainhandDurability : ps.equippedOffhandDurability;
-  const equipPrefixId = equipSlot === 'mainhand' ? ps.equippedMainhandPrefixId : ps.equippedOffhandPrefixId;
-  const equipSuffixId = equipSlot === 'mainhand' ? ps.equippedMainhandSuffixId : ps.equippedOffhandSuffixId;
+  const active = getActiveWeaponSet(ps);
+  const equipKey = equipSlot === 'mainhand' ? active.mainhandKey : active.offhandKey;
+  const equipDurability = equipSlot === 'mainhand' ? active.mainhandDurability : active.offhandDurability;
+  const equipPrefixId = equipSlot === 'mainhand' ? active.mainhandPrefixId : active.offhandPrefixId;
+  const equipSuffixId = equipSlot === 'mainhand' ? active.mainhandSuffixId : active.offhandSuffixId;
 
   if (equipSlot === 'mainhand') {
     const newMainWeapon = bagItem ? getWeapon(bagItem.key) : undefined;
-    if (newMainWeapon?.twoHanded && ps.equippedOffhandKey && ps.equippedOffhandKey !== 'none') {
+    if (newMainWeapon?.twoHanded && active.offhandKey && active.offhandKey !== 'none') {
       unequipToInventory(ps, 'offhand', undefined, undefined, syncCombat);
     }
-    ps.equippedMainhandKey = bagItem ? bagItem.key : 'none';
-    ps.equippedMainhandDurability = bagItem ? bagItem.durability : MAX_WEAPON_DURABILITY;
-    ps.equippedMainhandPrefixId = bagItem?.prefixId;
-    ps.equippedMainhandSuffixId = bagItem?.suffixId;
+    setActiveWeaponSet(ps, {
+      mainhandKey: bagItem ? bagItem.key : 'none',
+      mainhandDurability: bagItem ? bagItem.durability : MAX_WEAPON_DURABILITY,
+      mainhandPrefixId: bagItem?.prefixId,
+      mainhandSuffixId: bagItem?.suffixId
+    });
     if (newMainWeapon?.twoHanded) {
-      ps.equippedOffhandKey = 'none';
-      ps.equippedOffhandDurability = MAX_WEAPON_DURABILITY;
-      ps.equippedOffhandPrefixId = undefined;
-      ps.equippedOffhandSuffixId = undefined;
+      setActiveWeaponSet(ps, {
+        offhandKey: 'none',
+        offhandDurability: MAX_WEAPON_DURABILITY,
+        offhandPrefixId: undefined,
+        offhandSuffixId: undefined
+      });
     }
   } else {
-    ps.equippedOffhandKey = bagItem ? bagItem.key : 'none';
-    ps.equippedOffhandDurability = bagItem ? bagItem.durability : MAX_WEAPON_DURABILITY;
-    ps.equippedOffhandPrefixId = bagItem?.prefixId;
-    ps.equippedOffhandSuffixId = bagItem?.suffixId;
+    setActiveWeaponSet(ps, {
+      offhandKey: bagItem ? bagItem.key : 'none',
+      offhandDurability: bagItem ? bagItem.durability : MAX_WEAPON_DURABILITY,
+      offhandPrefixId: bagItem?.prefixId,
+      offhandSuffixId: bagItem?.suffixId
+    });
   }
   ps.inventorySlots[bagIndex] =
     equipKey && equipKey !== 'none' ? { key: equipKey, durability: equipDurability, prefixId: equipPrefixId, suffixId: equipSuffixId } : null;
@@ -251,24 +298,27 @@ export function swapEquipmentWithInventory(
 }
 
 export function swapEquipmentWithEquipment(ps: PlayingStateShape, syncCombat?: SyncCombat): void {
-  const mainKey = ps.equippedMainhandKey;
-  const mainDur = ps.equippedMainhandDurability;
-  const mainPrefix = ps.equippedMainhandPrefixId;
-  const mainSuffix = ps.equippedMainhandSuffixId;
-  const offKey = ps.equippedOffhandKey;
-  const offDur = ps.equippedOffhandDurability;
-  const offPrefix = ps.equippedOffhandPrefixId;
-  const offSuffix = ps.equippedOffhandSuffixId;
+  const active = getActiveWeaponSet(ps);
+  const mainKey = active.mainhandKey;
+  const mainDur = active.mainhandDurability;
+  const mainPrefix = active.mainhandPrefixId;
+  const mainSuffix = active.mainhandSuffixId;
+  const offKey = active.offhandKey;
+  const offDur = active.offhandDurability;
+  const offPrefix = active.offhandPrefixId;
+  const offSuffix = active.offhandSuffixId;
   if (mainKey && mainKey !== 'none' && !canEquipWeaponInSlot(mainKey, 'offhand')) return;
   if (offKey && offKey !== 'none' && !canEquipWeaponInSlot(offKey, 'mainhand')) return;
-  ps.equippedMainhandKey = offKey;
-  ps.equippedMainhandDurability = offDur;
-  ps.equippedMainhandPrefixId = offPrefix;
-  ps.equippedMainhandSuffixId = offSuffix;
-  ps.equippedOffhandKey = mainKey;
-  ps.equippedOffhandDurability = mainDur;
-  ps.equippedOffhandPrefixId = mainPrefix;
-  ps.equippedOffhandSuffixId = mainSuffix;
+  setActiveWeaponSet(ps, {
+    mainhandKey: offKey,
+    mainhandDurability: offDur,
+    mainhandPrefixId: offPrefix,
+    mainhandSuffixId: offSuffix,
+    offhandKey: mainKey,
+    offhandDurability: mainDur,
+    offhandPrefixId: mainPrefix,
+    offhandSuffixId: mainSuffix
+  });
   syncCombat?.(ps);
 }
 
@@ -322,29 +372,36 @@ export function moveToRerollSlot(
     if (!instance?.key) return false;
   } else {
     const equipSlot = index === 0 ? 'mainhand' : 'offhand';
-    const key = equipSlot === 'mainhand' ? ps.equippedMainhandKey : ps.equippedOffhandKey;
-    const durability = equipSlot === 'mainhand' ? ps.equippedMainhandDurability : ps.equippedOffhandDurability;
-    const prefixId = equipSlot === 'mainhand' ? ps.equippedMainhandPrefixId : ps.equippedOffhandPrefixId;
-    const suffixId = equipSlot === 'mainhand' ? ps.equippedMainhandSuffixId : ps.equippedOffhandSuffixId;
+    const active = getActiveWeaponSet(ps);
+    const key = equipSlot === 'mainhand' ? active.mainhandKey : active.offhandKey;
+    const durability = equipSlot === 'mainhand' ? active.mainhandDurability : active.offhandDurability;
+    const prefixId = equipSlot === 'mainhand' ? active.mainhandPrefixId : active.offhandPrefixId;
+    const suffixId = equipSlot === 'mainhand' ? active.mainhandSuffixId : active.offhandSuffixId;
     if (!key || key === 'none') return false;
     instance = { key, durability, prefixId, suffixId };
     if (equipSlot === 'mainhand') {
-      ps.equippedMainhandKey = 'none';
-      ps.equippedMainhandDurability = MAX_WEAPON_DURABILITY;
-      ps.equippedMainhandPrefixId = undefined;
-      ps.equippedMainhandSuffixId = undefined;
+      setActiveWeaponSet(ps, {
+        mainhandKey: 'none',
+        mainhandDurability: MAX_WEAPON_DURABILITY,
+        mainhandPrefixId: undefined,
+        mainhandSuffixId: undefined
+      });
       const weapon = getWeapon(key);
       if (weapon?.twoHanded) {
-        ps.equippedOffhandKey = 'none';
-        ps.equippedOffhandDurability = MAX_WEAPON_DURABILITY;
-        ps.equippedOffhandPrefixId = undefined;
-        ps.equippedOffhandSuffixId = undefined;
+        setActiveWeaponSet(ps, {
+          offhandKey: 'none',
+          offhandDurability: MAX_WEAPON_DURABILITY,
+          offhandPrefixId: undefined,
+          offhandSuffixId: undefined
+        });
       }
     } else {
-      ps.equippedOffhandKey = 'none';
-      ps.equippedOffhandDurability = MAX_WEAPON_DURABILITY;
-      ps.equippedOffhandPrefixId = undefined;
-      ps.equippedOffhandSuffixId = undefined;
+      setActiveWeaponSet(ps, {
+        offhandKey: 'none',
+        offhandDurability: MAX_WEAPON_DURABILITY,
+        offhandPrefixId: undefined,
+        offhandSuffixId: undefined
+      });
     }
     syncCombat?.(ps);
   }
@@ -383,25 +440,32 @@ export function moveFromRerollSlotTo(
   const equipSlot = targetIndex === 0 ? 'mainhand' : 'offhand';
   if (!canEquipWeaponInSlot(instance.key, equipSlot)) return false;
   const weapon = getWeapon(instance.key);
-  if (equipSlot === 'mainhand' && weapon?.twoHanded && ps.equippedOffhandKey && ps.equippedOffhandKey !== 'none') {
+  const active = getActiveWeaponSet(ps);
+  if (equipSlot === 'mainhand' && weapon?.twoHanded && active.offhandKey && active.offhandKey !== 'none') {
     unequipToInventory(ps, 'offhand', undefined, undefined, syncCombat);
   }
   if (equipSlot === 'mainhand') {
-    ps.equippedMainhandKey = instance.key;
-    ps.equippedMainhandDurability = instance.durability;
-    ps.equippedMainhandPrefixId = instance.prefixId;
-    ps.equippedMainhandSuffixId = instance.suffixId;
+    setActiveWeaponSet(ps, {
+      mainhandKey: instance.key,
+      mainhandDurability: instance.durability,
+      mainhandPrefixId: instance.prefixId,
+      mainhandSuffixId: instance.suffixId
+    });
     if (weapon?.twoHanded) {
-      ps.equippedOffhandKey = 'none';
-      ps.equippedOffhandDurability = MAX_WEAPON_DURABILITY;
-      ps.equippedOffhandPrefixId = undefined;
-      ps.equippedOffhandSuffixId = undefined;
+      setActiveWeaponSet(ps, {
+        offhandKey: 'none',
+        offhandDurability: MAX_WEAPON_DURABILITY,
+        offhandPrefixId: undefined,
+        offhandSuffixId: undefined
+      });
     }
   } else {
-    ps.equippedOffhandKey = instance.key;
-    ps.equippedOffhandDurability = instance.durability;
-    ps.equippedOffhandPrefixId = instance.prefixId;
-    ps.equippedOffhandSuffixId = instance.suffixId;
+    setActiveWeaponSet(ps, {
+      offhandKey: instance.key,
+      offhandDurability: instance.durability,
+      offhandPrefixId: instance.prefixId,
+      offhandSuffixId: instance.suffixId
+    });
   }
   ps.rerollSlotItem = null;
   syncCombat?.(ps);
@@ -478,8 +542,66 @@ export function addMushroomToInventory(ps: PlayingStateShape): boolean {
 }
 
 /**
- * Use one whetstone from the given inventory slot on a weapon. Target can be equipped mainhand/offhand or an inventory weapon slot.
- * Repairs that weapon by 35% of max durability. Returns true if used.
+ * Add one honey to inventory: stack with existing honey slot or use first empty slot.
+ * Returns true if added.
+ */
+export function addHoneyToInventory(ps: PlayingStateShape): boolean {
+  if (!ps.inventorySlots || ps.inventorySlots.length !== INVENTORY_SLOT_COUNT) return false;
+  const existing = ps.inventorySlots.findIndex((s): s is HoneyConsumable => isHoneySlot(s));
+  if (existing >= 0) {
+    (ps.inventorySlots[existing] as HoneyConsumable).count += 1;
+    return true;
+  }
+  const empty = ps.inventorySlots.findIndex((s) => s == null);
+  if (empty < 0) return false;
+  ps.inventorySlots[empty] = { type: 'honey', count: 1 };
+  return true;
+}
+
+/**
+ * Add one potion to inventory: stack with existing potion slot or use first empty slot.
+ * Returns true if added.
+ */
+export function addPotionToInventory(ps: PlayingStateShape): boolean {
+  if (!ps.inventorySlots || ps.inventorySlots.length !== INVENTORY_SLOT_COUNT) return false;
+  const existing = ps.inventorySlots.findIndex((s): s is PotionConsumable => isPotionSlot(s));
+  if (existing >= 0) {
+    (ps.inventorySlots[existing] as PotionConsumable).count += 1;
+    return true;
+  }
+  const empty = ps.inventorySlots.findIndex((s) => s == null);
+  if (empty < 0) return false;
+  ps.inventorySlots[empty] = { type: 'potion', count: 1 };
+  return true;
+}
+
+/**
+ * Find first inventory slot index containing at least one potion.
+ */
+export function findFirstPotionSlotIndex(ps: PlayingStateShape): number {
+  if (!ps.inventorySlots || ps.inventorySlots.length !== INVENTORY_SLOT_COUNT) return -1;
+  return ps.inventorySlots.findIndex((s) => isPotionSlot(s) && s.count >= 1);
+}
+
+/**
+ * Use one potion from the given inventory slot (consumes 1; caller adds heal charge).
+ * Returns true if a potion was consumed.
+ */
+export function usePotionFromInventory(ps: PlayingStateShape, slotIndex: number): boolean {
+  if (slotIndex < 0 || slotIndex >= INVENTORY_SLOT_COUNT || !ps.inventorySlots) return false;
+  const slot = ps.inventorySlots[slotIndex];
+  if (!isPotionSlot(slot) || slot.count < 1) return false;
+  if (slot.count === 1) {
+    ps.inventorySlots[slotIndex] = null;
+  } else {
+    (ps.inventorySlots[slotIndex] as PotionConsumable).count -= 1;
+  }
+  return true;
+}
+
+/**
+ * Use one whetstone from the given inventory slot on a weapon. Target can be equipped mainhand/offhand (repairs both hands) or an inventory weapon slot.
+ * Repairs by 35% of max durability per target. One whetstone used. Returns true if used.
  */
 export function useWhetstoneOnWeapon(
   ps: PlayingStateShape,
@@ -491,12 +613,21 @@ export function useWhetstoneOnWeapon(
   if (!isWhetstoneSlot(slot) || slot.count < 1) return false;
   const repairAmount = Math.floor(MAX_WEAPON_DURABILITY * WHETSTONE_REPAIR_PERCENT);
 
-  if (target === 'mainhand') {
-    if (!ps.equippedMainhandKey || ps.equippedMainhandKey === 'none') return false;
-    ps.equippedMainhandDurability = Math.min(MAX_WEAPON_DURABILITY, ps.equippedMainhandDurability + repairAmount);
-  } else if (target === 'offhand') {
-    if (!ps.equippedOffhandKey || ps.equippedOffhandKey === 'none') return false;
-    ps.equippedOffhandDurability = Math.min(MAX_WEAPON_DURABILITY, ps.equippedOffhandDurability + repairAmount);
+  if (target === 'mainhand' || target === 'offhand') {
+    // One whetstone applies to both equipped hands (active set)
+    const active = getActiveWeaponSet(ps);
+    let repaired = false;
+    const updates: Partial<{ mainhandDurability: number; offhandDurability: number }> = {};
+    if (active.mainhandKey && active.mainhandKey !== 'none') {
+      updates.mainhandDurability = Math.min(MAX_WEAPON_DURABILITY, active.mainhandDurability + repairAmount);
+      repaired = true;
+    }
+    if (active.offhandKey && active.offhandKey !== 'none') {
+      updates.offhandDurability = Math.min(MAX_WEAPON_DURABILITY, active.offhandDurability + repairAmount);
+      repaired = true;
+    }
+    if (!repaired) return false;
+    setActiveWeaponSet(ps, updates);
   } else {
     const bagIndex = target.bagIndex;
     if (bagIndex < 0 || bagIndex >= INVENTORY_SLOT_COUNT || !ps.inventorySlots[bagIndex]) return false;

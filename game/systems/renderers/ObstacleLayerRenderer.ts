@@ -150,6 +150,64 @@ export class ObstacleLayerRenderer {
             return;
         }
 
+        // Cave entrance (den): rock formation with black semi-circle opening for the player to enter
+        if (obstacle.type === 'caveEntrance') {
+            const lw = Math.max(1, 2 / zoom);
+            const cx = screenX + w / 2;
+            const groundY = screenY + h;
+
+            // Opening: black semi-circle with flat bottom on the ground and arch on top
+            const openRadiusX = w * 0.3;
+            const openRadiusY = h * 0.36;
+            const openCx = cx;
+            const openCy = groundY; // ellipse center on ground so the chord is the ground line
+
+            // 1) Rock mass: irregular boulder shape (polygon) so it reads as a rock, not a flat wall
+            ctx.fillStyle = obstacle.color || '#3d3832';
+            ctx.beginPath();
+            const rockPoints: [number, number][] = [
+                [screenX + w * 0.05, groundY],
+                [screenX + w * 0.12, screenY + h * 0.75],
+                [screenX + w * 0.28, screenY + h * 0.5],
+                [screenX + w * 0.15, screenY + h * 0.35],
+                [screenX + w * 0.22, screenY + h * 0.18],
+                [screenX + w * 0.5, screenY + h * 0.08],
+                [screenX + w * 0.78, screenY + h * 0.18],
+                [screenX + w * 0.85, screenY + h * 0.35],
+                [screenX + w * 0.72, screenY + h * 0.5],
+                [screenX + w * 0.88, screenY + h * 0.75],
+                [screenX + w * 0.95, groundY],
+            ];
+            ctx.moveTo(rockPoints[0][0], rockPoints[0][1]);
+            for (let i = 1; i < rockPoints.length; i++) ctx.lineTo(rockPoints[i][0], rockPoints[i][1]);
+            ctx.closePath();
+            ctx.fill();
+            ctx.strokeStyle = '#2a2520';
+            ctx.lineWidth = lw;
+            ctx.stroke();
+
+            // 2) Rock highlight (lighter face)
+            ctx.fillStyle = 'rgba(90, 85, 78, 0.5)';
+            ctx.beginPath();
+            ctx.ellipse(screenX + w * 0.35, screenY + h * 0.25, w * 0.2, h * 0.22, -0.2, 0, Math.PI * 2);
+            ctx.fill();
+
+            // 3) Black semi-circle opening (arch at top, flat on ground)
+            ctx.fillStyle = '#0a0806';
+            ctx.beginPath();
+            ctx.ellipse(openCx, openCy, openRadiusX, openRadiusY, 0, Math.PI, 0);
+            ctx.closePath();
+            ctx.fill();
+
+            // 4) Dark rim around opening so it reads as a hole
+            ctx.strokeStyle = '#1a1512';
+            ctx.lineWidth = Math.max(1, 1.5 / zoom);
+            ctx.beginPath();
+            ctx.ellipse(openCx, openCy, openRadiusX, openRadiusY, 0, Math.PI, 0);
+            ctx.stroke();
+            return;
+        }
+
         // Well: stone ring, dark shaft, peaked roof, crank
         if (obstacle.type === 'well') {
             const lw = Math.max(1, 2 / zoom);
@@ -440,6 +498,43 @@ export class ObstacleLayerRenderer {
             ctx.moveTo(topX, topY);
             ctx.lineTo(topX + w * 0.38, topY - h * 0.12);
             ctx.stroke();
+        } else if (obstacle.type === 'beehive') {
+            const hiveCx = screenX + w / 2;
+            const hiveCy = screenY + h / 2;
+            const rx = w * 0.45;
+            const ry = h * 0.4;
+            ctx.fillStyle = '#5c4a28';
+            ctx.strokeStyle = '#3d3018';
+            ctx.lineWidth = Math.max(1, 2 / zoom);
+            ctx.beginPath();
+            ctx.ellipse(hiveCx, hiveCy - h * 0.05, rx, ry, 0, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.stroke();
+            ctx.fillStyle = '#8b6914';
+            ctx.strokeStyle = '#6b5010';
+            ctx.beginPath();
+            ctx.ellipse(hiveCx, hiveCy - h * 0.05, rx * 0.88, ry * 0.88, 0, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.stroke();
+            const r = Math.min(rx, ry) * 0.28;
+            for (let i = 0; i < 2; i++) {
+                for (let j = 0; j < 2; j++) {
+                    const hx = hiveCx + (j - 0.5) * rx * 0.7;
+                    const hy = hiveCy - h * 0.05 + (i - 0.5) * ry * 0.6;
+                    ctx.beginPath();
+                    ctx.arc(hx, hy, r, 0, Math.PI * 2);
+                    ctx.fillStyle = '#c9a227';
+                    ctx.fill();
+                    ctx.strokeStyle = '#8b6914';
+                    ctx.stroke();
+                }
+            }
+            ctx.fillStyle = '#5c4a28';
+            ctx.beginPath();
+            ctx.ellipse(hiveCx, hiveCy + ry * 0.5, w * 0.12, h * 0.2, 0, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.strokeStyle = '#3d3018';
+            ctx.stroke();
         } else if (obstacle.type === 'mushroom') {
             ctx.fillStyle = '#2a221c';
             if (obstacle.leafless) {
@@ -568,7 +663,7 @@ export class ObstacleLayerRenderer {
         if (!obstacleManager) return;
         const zoom = camera.zoom;
         const useEnvironmentSprites = !settings || settings.useEnvironmentSprites !== false;
-        const depthSortTypes = ['tree', 'deadTree', 'bush', 'rock', 'elderTrunk', 'pillar', 'brokenPillar', 'column', 'statueBase', 'arch'];
+        const depthSortTypes = ['tree', 'deadTree', 'beehive', 'bush', 'rock', 'elderTrunk', 'pillar', 'brokenPillar', 'column', 'statueBase', 'arch'];
 
         // View bounds in world space (with margin so we don't clip at edges)
         const margin = 80;

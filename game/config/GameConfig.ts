@@ -69,8 +69,21 @@ const GameConfig: GameConfigShape = {
       /** Seconds to reach charge level 3 (three arrows). */
       chargeLevel3: 0.9,
     },
+    staff: {
+      speed: 700,
+      range: 500,
+      aoeRadius: 55,
+      cooldown: 0.5,
+      staminaCost: 12,
+      stunBuildup: 20,
+      orbWidth: 26,
+      orbHeight: 26,
+      color: '#88aaff',
+    },
     heal: {
       maxCharges: 3,
+      /** Start with 0 charges so the player must use potions from inventory (Q consumes a potion to add a charge, then drink). */
+      initialCharges: 0,
       drinkTime: 1,
       regenRate: 50,
       regenDuration: 1,
@@ -285,6 +298,7 @@ const GameConfig: GameConfigShape = {
             { id: 'goblinCamp', weight: 1 },
             { id: 'goblinCampB', weight: 1 },
             { id: 'banditAmbush', weight: 0.4 },
+            { id: 'ogreDen', weight: 0.5 },
           ],
         },
       },
@@ -504,6 +518,28 @@ const GameConfig: GameConfigShape = {
           cols: 1,
           rows: 1,
           pool: [{ id: 'dungeon.dragonArena', weight: 1 }],
+        },
+      },
+    },
+    12: {
+      name: "Ogre's Den",
+      worldWidth: 1200,
+      worldHeight: 1200,
+      bossSpawn: { x: 600, y: 220, type: 'villageOgre' },
+      killsToUnlockPortal: 1,
+      enemyTypes: ['villageOgre'],
+      theme: {
+        ground: { r: 42, g: 34, b: 28, variation: 10 },
+        sky: 'rgba(25, 20, 18, 0.16)',
+      },
+      obstacles: {
+        border: { spacing: 40, type: 'rock' },
+        useSceneTiles: true,
+        sceneTileLayout: {
+          tileSize: 1200,
+          cols: 1,
+          rows: 1,
+          pool: [{ id: 'dungeon.ogreDenInterior', weight: 1 }],
         },
       },
     },

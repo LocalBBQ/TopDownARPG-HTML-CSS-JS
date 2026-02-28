@@ -413,6 +413,7 @@ export class WeaponAttackHandler {
             let aoeRadius = 0;
             const w = this.weapon;
             const get = w && (w.getHeavySmashProperties || w.getChargeReleaseProperties);
+            const enemyHeavySmash = this.options?.heavySmash as { aoeOffset?: number; aoeRadius?: number } | undefined;
             if (typeof get === 'function') {
                 const p = get.call(w);
                 if (p) {
@@ -425,8 +426,11 @@ export class WeaponAttackHandler {
                     if (p.isCircular) isCircular = true;
                     if (p.aoeInFront) {
                         aoeInFront = true;
-                        aoeOffset = p.aoeOffset != null ? p.aoeOffset : 55;
-                        aoeRadius = p.aoeRadius != null ? p.aoeRadius : 42;
+                        aoeOffset = enemyHeavySmash?.aoeOffset != null ? enemyHeavySmash.aoeOffset : (p.aoeOffset != null ? p.aoeOffset : 55);
+                        aoeRadius = enemyHeavySmash?.aoeRadius != null ? enemyHeavySmash.aoeRadius : (p.aoeRadius != null ? p.aoeRadius : 42);
+                        if (enemyHeavySmash && (enemyHeavySmash.aoeOffset != null || enemyHeavySmash.aoeRadius != null)) {
+                            this.attackRange = aoeOffset + aoeRadius;
+                        }
                     }
                 }
             }
